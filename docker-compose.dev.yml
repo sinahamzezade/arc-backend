@@ -1,0 +1,55 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - '9000:9000'
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USERNAME: arc
+      DB_PASSWORD: arc
+      DB_NAME: arc
+      DB_SYNC: 'true'
+      NODE_ENV: development
+      JWT_ACCESS_SECRET: dev-access-secret-change-me
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_SECRET: dev-refresh-secret-change-me
+      JWT_REFRESH_TTL: 30d
+      CORS_ORIGIN: http://localhost:3000
+      EMAIL_FROM: "${EMAIL_FROM:-Arc <onboarding@resend.dev>}"
+      EMAIL_PROVIDER_API_KEY: "${EMAIL_PROVIDER_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      ROADMAP_GENERATOR_PROMPT_VERSION: "${ROADMAP_GENERATOR_PROMPT_VERSION:-roadmap_generator_v1}"
+      OPENAI_ROADMAP_MODEL: "${OPENAI_ROADMAP_MODEL:-gpt-4o-mini}"
+      QUESTIONNAIRE_AI_ENABLED: "${QUESTIONNAIRE_AI_ENABLED:-true}"
+      QUESTIONNAIRE_AI_PROMPT_VERSION: "${QUESTIONNAIRE_AI_PROMPT_VERSION:-questionnaire_copy_v1}"
+      OPENAI_QUESTIONNAIRE_MODEL: "${OPENAI_QUESTIONNAIRE_MODEL:-gpt-4o-mini}"
+      QUESTIONNAIRE_RESET_ON_BOOT: "${QUESTIONNAIRE_RESET_ON_BOOT:-false}"
+    volumes:
+      - .:/app # mount your source code
+      - /app/node_modules # keep container's node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16
+    restart: always
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: arc
+      POSTGRES_PASSWORD: arc
+      POSTGRES_DB: arc
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U arc']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

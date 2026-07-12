@@ -1,0 +1,3 @@
+export const QUESTIONNAIRE_SCHEMA_VERSION = 2;
+export const OTHER_TEXT_MAX = 500;
+

@@ -1,0 +1,48 @@
+services:
+  app:
+    build: .
+    ports:
+      - '9000:9000'
+    environment:
+      DB_HOST: db # <-- service name, NOT localhost
+      DB_PORT: 5432
+      DB_USERNAME: arc
+      DB_PASSWORD: arc
+      DB_NAME: arc
+      DB_SYNC: 'false'
+      NODE_ENV: production
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-30d}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@arc.app}
+      EMAIL_PROVIDER_API_KEY: ${EMAIL_PROVIDER_API_KEY:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ROADMAP_GENERATOR_PROMPT_VERSION: ${ROADMAP_GENERATOR_PROMPT_VERSION:-roadmap_generator_v1}
+      OPENAI_ROADMAP_MODEL: ${OPENAI_ROADMAP_MODEL:-gpt-4o-mini}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16
+    restart: always
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: arc
+      POSTGRES_PASSWORD: arc
+      POSTGRES_DB: arc
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U arc']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
