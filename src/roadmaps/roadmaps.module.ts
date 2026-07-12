@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
+import { ContentPoolModule } from '../content-pool/content-pool.module';
+import { CourseTimingModule } from '../course-timing/course-timing.module';
 import { Goal } from '../goals/entities/goal.entity';
 import { SkillGraphModule } from '../skill-graph/skill-graph.module';
 import { Lesson } from './entities/lesson.entity';
@@ -28,6 +30,8 @@ import { RoadmapsService } from './roadmaps.service';
     ]),
     AuthModule,
     SkillGraphModule,
+    ContentPoolModule,
+    CourseTimingModule,
   ],
   controllers: [RoadmapsController],
   providers: [
@@ -36,6 +40,6 @@ import { RoadmapsService } from './roadmaps.service';
     RoadmapJobsProcessor,
     RoadmapAiService,
   ],
-  exports: [RoadmapsService],
+  exports: [RoadmapsService, RoadmapGeneratorService],
 })
 export class RoadmapsModule {}

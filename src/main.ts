@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Logger,
+  RequestMethod,
   ValidationPipe,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -16,7 +17,9 @@ async function bootstrap() {
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
 
-  app.setGlobalPrefix('api/v1');
+  app.setGlobalPrefix('api/v1', {
+    exclude: [{ path: 'r/(.*)', method: RequestMethod.ALL }],
+  });
   app.use(helmet());
   app.use(cookieParser());
 

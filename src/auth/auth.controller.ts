@@ -161,6 +161,8 @@ export class AuthController {
     return {
       userAgent: req.headers['user-agent'],
       ip: req.ip,
+      referralToken:
+        typeof req.cookies?.arc_ref === 'string' ? req.cookies.arc_ref : null,
     };
   }
 

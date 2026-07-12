@@ -1,6 +1,5 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
-import { WeeklyTaskStatus } from '../entities/weekly-task.entity';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class UpdateWeeklyTaskDto {
   @ApiPropertyOptional({ minimum: 0, maximum: 6 })
@@ -10,10 +9,24 @@ export class UpdateWeeklyTaskDto {
   @Max(6)
   dayIndex?: number;
 
-  @ApiPropertyOptional({
-    enum: ['upcoming', 'today', 'done', 'missed', 'skipped'],
-  })
+  /** Client may only skip or move — never mark done. */
+  @ApiPropertyOptional({ enum: ['skipped', 'upcoming', 'missed'] })
   @IsOptional()
-  @IsIn(['upcoming', 'today', 'done', 'missed', 'skipped'])
-  status?: WeeklyTaskStatus;
+  @IsIn(['skipped', 'upcoming', 'missed'])
+  status?: 'skipped' | 'upcoming' | 'missed';
+}
+
+export class MoveWeeklyTaskDto {
+  @ApiProperty({ minimum: 0, maximum: 6 })
+  @IsInt()
+  @Min(0)
+  @Max(6)
+  dayIndex!: number;
+}
+
+export class SkipWeeklyTaskDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  reason?: string;
 }

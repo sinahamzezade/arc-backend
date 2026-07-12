@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
@@ -8,6 +8,7 @@ import {
   Profile,
   QuestionnaireStatus,
 } from '../profiles/entities/profile.entity';
+import { ReferralsService } from '../referrals/referrals.service';
 import { RoadmapsService } from '../roadmaps/roadmaps.service';
 import {
   QuestionnaireResponse,
@@ -37,6 +38,8 @@ export class QuestionnaireService {
     private readonly schemaService: QuestionnaireSchemaService,
     private readonly roadmapsService: RoadmapsService,
     private readonly dataSource: DataSource,
+    @Optional()
+    private readonly referrals?: ReferralsService,
   ) {}
 
   getSchema() {
@@ -178,6 +181,12 @@ export class QuestionnaireService {
     );
 
     const roadmap = await this.roadmapsService.enqueueGenerate(goal.id, userId);
+
+    try {
+      await this.referrals?.evaluateInvitee(userId);
+    } catch {
+      /* referral progress must not block questionnaire */
+    }
 
     return {
       questionnaire: toQuestionnaireDto(saved),

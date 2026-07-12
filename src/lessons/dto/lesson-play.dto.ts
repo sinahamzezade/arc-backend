@@ -48,12 +48,26 @@ export class UpdateLessonProgressDto {
   @IsInt()
   @Min(0)
   timeSpentMinutes?: number;
+
+  @ApiPropertyOptional({ description: 'Active attempt — validates answer IDs' })
+  @IsOptional()
+  @IsString()
+  attemptId?: string;
 }
 
 export class CheckPracticeDto {
   @ApiProperty()
   @IsString()
   optionId!: string;
+
+  @ApiProperty({ description: 'Active attempt id from start/play' })
+  @IsString()
+  attemptId!: string;
+
+  @ApiPropertyOptional({ description: 'True if learner opened the hint' })
+  @IsOptional()
+  @IsBoolean()
+  hintUsed?: boolean;
 }
 
 export class CheckQuizDto {
@@ -64,6 +78,10 @@ export class CheckQuizDto {
   @ApiProperty()
   @IsString()
   optionId!: string;
+
+  @ApiProperty({ description: 'Active attempt id from start/play' })
+  @IsString()
+  attemptId!: string;
 }
 
 export class CompleteLessonDto {
@@ -86,4 +104,14 @@ export class CompleteLessonDto {
   @IsInt()
   @Min(0)
   timeSpentMinutes?: number;
+
+  @ApiProperty({ description: 'Active attempt id from start/play' })
+  @IsString()
+  attemptId!: string;
+}
+
+export class ArloChatDto {
+  @ApiProperty()
+  @IsString()
+  message!: string;
 }

@@ -1,12 +1,19 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
+import { ContentPoolModule } from '../content-pool/content-pool.module';
+import { CourseTimingModule } from '../course-timing/course-timing.module';
+import { GamificationModule } from '../gamification/gamification.module';
 import { ProfilesModule } from '../profiles/profiles.module';
 import { Lesson } from '../roadmaps/entities/lesson.entity';
 import { LessonProgress } from '../roadmaps/entities/lesson-progress.entity';
 import { Roadmap } from '../roadmaps/entities/roadmap.entity';
 import { WeeksModule } from '../weeks/weeks.module';
+import { LessonAttempt } from './entities/lesson-attempt.entity';
+import { LessonCompletionResult } from './entities/lesson-completion-result.entity';
 import { UserBadge } from './entities/user-badge.entity';
+import { LessonArloService } from './lesson-arlo.service';
+import { LessonCompletionOrchestrator } from './lesson-completion.orchestrator';
 import { LessonContentService } from './lesson-content.service';
 import { LessonRewardsService } from './lesson-rewards.service';
 import { LessonUnlockService } from './lesson-unlock.service';
@@ -20,9 +27,14 @@ import { LessonsService } from './lessons.service';
       LessonProgress,
       Roadmap,
       UserBadge,
+      LessonAttempt,
+      LessonCompletionResult,
     ]),
     AuthModule,
     ProfilesModule,
+    GamificationModule,
+    ContentPoolModule,
+    CourseTimingModule,
     forwardRef(() => WeeksModule),
   ],
   controllers: [LessonsController],
@@ -31,6 +43,8 @@ import { LessonsService } from './lessons.service';
     LessonContentService,
     LessonRewardsService,
     LessonUnlockService,
+    LessonCompletionOrchestrator,
+    LessonArloService,
   ],
   exports: [LessonsService],
 })

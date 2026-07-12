@@ -87,6 +87,9 @@ export class LessonProgress {
   @Column({ name: 'practice_correct', type: 'boolean', nullable: true })
   practiceCorrect: boolean | null;
 
+  @Column({ name: 'active_attempt_id', type: 'uuid', nullable: true })
+  activeAttemptId: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

@@ -3,9 +3,14 @@ import { EntityManager } from 'typeorm';
 import { Profile } from '../profiles/entities/profile.entity';
 import { Lesson } from '../roadmaps/entities/lesson.entity';
 import { LessonProgress } from '../roadmaps/entities/lesson-progress.entity';
+import {
+  AssistanceLevel,
+  actionKindFromLessonType,
+  type LessonActionKind,
+} from '../gamification/reward-calculator.constants';
+import { RewardCalculatorService } from '../gamification/reward-calculator.service';
 import { UserBadge } from './entities/user-badge.entity';
 import type { LessonPlayOutline } from './lesson-play.types';
-import { LessonContentService } from './lesson-content.service';
 
 export type ComputedReward = {
   xp: number;
@@ -15,11 +20,12 @@ export type ComputedReward = {
   badgeLabel?: string;
   arloLine: string;
   firstTime: boolean;
+  calcMetadata?: Record<string, unknown>;
 };
 
 @Injectable()
 export class LessonRewardsService {
-  constructor(private readonly content: LessonContentService) {}
+  constructor(private readonly calculator: RewardCalculatorService) {}
 
   computeReward(input: {
     lesson: Lesson;
@@ -28,10 +34,14 @@ export class LessonRewardsService {
     quizTotal: number;
     alreadyCompleted: boolean;
     isFirstLessonEver: boolean;
+    pathPercentile?: number;
+    assistance?: AssistanceLevel;
+    attemptKind?: 'first' | 'review_7d' | 'review_later' | 'after_solution';
+    weeklyOnTrack?: boolean;
+    actionKind?: LessonActionKind;
   }): ComputedReward {
     const { lesson, outline, quizCorrect, quizTotal, alreadyCompleted } =
       input;
-    const perfect = quizTotal > 0 && quizCorrect === quizTotal;
 
     if (alreadyCompleted) {
       return {
@@ -45,12 +55,31 @@ export class LessonRewardsService {
       };
     }
 
-    const baseGems =
-      outline.reward?.gems ??
-      this.content.gemsForDifficulty(lesson.difficulty);
-    const gems = baseGems + (perfect ? 2 : 0);
-    const coins = outline.reward?.coins ?? 10;
-    const xp = lesson.xpReward;
+    const rewardClass =
+      lesson.rewardClassSnapshot ??
+      lesson.lessonTemplate?.rewardClass ??
+      undefined;
+
+    const actionKind =
+      input.actionKind ??
+      actionKindFromLessonType(lesson.lessonType, rewardClass);
+
+    const calc = this.calculator.compute({
+      actionKind,
+      modality: lesson.lessonType,
+      title: lesson.title,
+      track: lesson.missionName ?? undefined,
+      rewardClass,
+      estimatedMinutes: lesson.estimatedMinutes,
+      difficulty: lesson.difficulty,
+      pathPercentile: input.pathPercentile,
+      quizCorrect,
+      quizTotal,
+      assistance: input.assistance ?? 'none',
+      attemptKind: input.attemptKind ?? 'first',
+      weeklyOnTrack: input.weeklyOnTrack,
+      isFirstLessonEver: input.isFirstLessonEver,
+    });
 
     let badgeId = outline.reward?.badgeId ?? undefined;
     let badgeLabel = outline.reward?.badgeLabel ?? undefined;
@@ -63,15 +92,16 @@ export class LessonRewardsService {
     }
 
     return {
-      xp,
-      gems,
-      coins,
+      xp: calc.xp,
+      gems: calc.gems,
+      coins: calc.coins,
       badgeId: badgeId ?? undefined,
       badgeLabel: badgeLabel ?? undefined,
       arloLine:
         outline.reward?.arloLine ??
         `Nice — “${lesson.title}” is on the map now.`,
-      firstTime: true,
+      firstTime: calc.firstTime,
+      calcMetadata: calc.metadata,
     };
   }
 
@@ -79,6 +109,7 @@ export class LessonRewardsService {
     lesson: Lesson;
     outline: LessonPlayOutline;
     isFirstLessonEver: boolean;
+    pathPercentile?: number;
   }) {
     return this.computeReward({
       ...input,
@@ -86,6 +117,19 @@ export class LessonRewardsService {
       quizTotal: input.outline.quiz.length,
       alreadyCompleted: false,
     });
+  }
+
+  mapAssistance(assistanceUsed?: Record<string, unknown> | null): AssistanceLevel {
+    if (!assistanceUsed) return 'none';
+    if (Number(assistanceUsed.solutionCount ?? 0) > 0) return 'solution';
+    if (Number(assistanceUsed.removeOptionsCount ?? 0) > 0) {
+      return 'remove_options';
+    }
+    if (Number(assistanceUsed.premiumHintCount ?? 0) > 0) {
+      return 'premium_hint';
+    }
+    if (Number(assistanceUsed.hintCount ?? 0) > 0) return 'hint';
+    return 'none';
   }
 
   async applyReward(

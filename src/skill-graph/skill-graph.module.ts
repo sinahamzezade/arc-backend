@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { CareerRole } from '../content-pool/entities/career-role.entity';
 import { AssessmentTemplate } from './entities/assessment-template.entity';
 import { LessonTemplate } from './entities/lesson-template.entity';
 import { Resource } from './entities/resource.entity';
@@ -10,6 +11,7 @@ import { SkillGraphService } from './skill-graph.service';
 
 /**
  * Skill Graph Engine — shared curriculum DAG.
+ * Extended by ContentPoolModule (versions, questions, personalization).
  */
 @Module({
   imports: [
@@ -20,6 +22,7 @@ import { SkillGraphService } from './skill-graph.service';
       AssessmentTemplate,
       Resource,
       RoleRecipe,
+      CareerRole,
     ]),
   ],
   providers: [SkillGraphService],

@@ -2,19 +2,24 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
   CurrentUser,
   type AuthUserPayload,
 } from '../common/decorators/current-user.decorator';
+import { AppException } from '../common/errors/app.exception';
+import { AuthErrorCode } from '../common/errors/auth-error.codes';
 import {
+  ArloChatDto,
   CheckPracticeDto,
   CheckQuizDto,
   CompleteLessonDto,
@@ -78,14 +83,38 @@ export class LessonsController {
   }
 
   @Post(':lessonId/complete')
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description: 'Client-generated unique key for this completion claim',
+  })
   @ApiOperation({
-    summary: 'Complete lesson — award XP/gems/coins, unlock next',
+    summary: 'Complete lesson — award XP/gems/coins via ledger, unlock next',
   })
   complete(
     @CurrentUser() user: AuthUserPayload,
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
     @Body() dto: CompleteLessonDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.lessonsService.complete(user.userId, lessonId, dto);
+    const key = idempotencyKey?.trim();
+    if (!key) {
+      throw new AppException(
+        AuthErrorCode.IDEMPOTENCY_KEY_REQUIRED,
+        'Idempotency-Key header is required',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    return this.lessonsService.complete(user.userId, lessonId, dto, key);
+  }
+
+  @Post(':lessonId/arlo/chat')
+  @ApiOperation({ summary: 'Lesson-scoped Arlo coach reply' })
+  arloChat(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('lessonId', ParseUUIDPipe) lessonId: string,
+    @Body() dto: ArloChatDto,
+  ) {
+    return this.lessonsService.arloChat(user.userId, lessonId, dto.message);
   }
 }

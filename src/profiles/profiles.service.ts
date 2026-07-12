@@ -1,6 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { Profile, QuestionnaireStatus } from './entities/profile.entity';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { AppException } from '../common/errors/app.exception';
@@ -78,6 +78,78 @@ export class ProfilesService {
       );
     }
     return this.profilesRepo.save(profile);
+  }
+
+  /** Debit coins inside an open transaction. Throws if balance too low. */
+  async debitCoins(
+    manager: EntityManager,
+    userId: string,
+    amount: number,
+  ): Promise<Profile> {
+    const profile = await manager.getRepository(Profile).findOne({
+      where: { userId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!profile) {
+      throw new AppException(
+        AuthErrorCode.UNAUTHORIZED,
+        'Profile not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    const debit = Math.max(0, Math.floor(amount));
+    if (profile.coins < debit) {
+      throw new AppException(
+        AuthErrorCode.BATTLE_INSUFFICIENT_COINS,
+        'Insufficient coins',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    profile.coins -= debit;
+    return manager.getRepository(Profile).save(profile);
+  }
+
+  /** Credit coins inside an open transaction. */
+  async creditCoins(
+    manager: EntityManager,
+    userId: string,
+    amount: number,
+  ): Promise<Profile> {
+    const profile = await manager.getRepository(Profile).findOne({
+      where: { userId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!profile) {
+      throw new AppException(
+        AuthErrorCode.UNAUTHORIZED,
+        'Profile not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    profile.coins += Math.max(0, Math.floor(amount));
+    return manager.getRepository(Profile).save(profile);
+  }
+
+  /** Apply XP/coins inside an open transaction (battle rewards). */
+  async applyRewardsInTx(
+    manager: EntityManager,
+    userId: string,
+    input: { xp?: number; coins?: number },
+  ): Promise<Profile> {
+    const profile = await manager.getRepository(Profile).findOne({
+      where: { userId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!profile) {
+      throw new AppException(
+        AuthErrorCode.UNAUTHORIZED,
+        'Profile not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    if (input.xp) profile.totalXp += Math.max(0, Math.floor(input.xp));
+    if (input.coins) profile.coins += Math.max(0, Math.floor(input.coins));
+    return manager.getRepository(Profile).save(profile);
   }
 
   async resetWeeklyStreak(userId: string): Promise<Profile> {

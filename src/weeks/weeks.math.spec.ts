@@ -44,11 +44,11 @@ describe('weeks.math', () => {
 
   describe('computeOnTrack', () => {
     it('allows one session behind', () => {
-      // Wed (dayIndex 2), 4 planned → expected ceil(4*3/7)=2 → need >=1
+      // Wed (dayIndex 2), 4 planned → expected floor(4*3/7)=1 → need >=0
       expect(
         computeOnTrack({
           sealed: false,
-          sessionsDone: 1,
+          sessionsDone: 0,
           sessionsPlanned: 4,
           dayIndex: 2,
         }),
@@ -56,12 +56,13 @@ describe('weeks.math', () => {
     });
 
     it('flags behind when more than one short', () => {
+      // Sat (dayIndex 5), 4 planned → expected floor(4*6/7)=3 → need >=2
       expect(
         computeOnTrack({
           sealed: false,
           sessionsDone: 0,
           sessionsPlanned: 4,
-          dayIndex: 2,
+          dayIndex: 5,
         }),
       ).toBe(false);
     });

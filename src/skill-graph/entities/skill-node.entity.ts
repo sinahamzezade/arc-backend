@@ -48,6 +48,13 @@ export class SkillNode {
   })
   estimatedHours: string;
 
+  @Column({
+    name: 'estimated_mastery_minutes',
+    type: 'int',
+    nullable: true,
+  })
+  estimatedMasteryMinutes: number | null;
+
   @Column({ type: 'varchar', default: 'beginner' })
   difficulty: string;
 
@@ -62,6 +69,13 @@ export class SkillNode {
 
   @Column({ type: 'text', array: true, default: '{}' })
   tags: string[];
+
+  @Column({
+    name: 'proof_requirements',
+    type: 'jsonb',
+    default: () => "'{}'",
+  })
+  proofRequirements: Record<string, unknown>;
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;

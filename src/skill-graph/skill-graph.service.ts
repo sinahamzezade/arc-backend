@@ -1,6 +1,8 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
+import { CareerRole } from '../content-pool/entities/career-role.entity';
+import { ContentPublicationStatus } from '../content-pool/content-pool.constants';
 import { AssessmentTemplate } from './entities/assessment-template.entity';
 import { LessonTemplate } from './entities/lesson-template.entity';
 import { Resource } from './entities/resource.entity';
@@ -78,7 +80,12 @@ export class SkillGraphService implements OnModuleInit {
     const skillsByStackSlug = new Map<string, LoadedSkillNode[]>();
     for (const skill of skills) {
       const activeLessons = (skill.lessonTemplates ?? [])
-        .filter((l) => l.isActive)
+        .filter(
+          (l) =>
+            l.isActive &&
+            l.status !== ContentPublicationStatus.Retired &&
+            l.status !== ContentPublicationStatus.Blocked,
+        )
         .sort((a, b) => a.orderHint - b.orderHint);
       const loaded = {
         ...skill,
@@ -113,6 +120,7 @@ export class SkillGraphService implements OnModuleInit {
     if (existing > 0) {
       this.logger.log('Skill graph catalog already seeded');
       await this.backfillEmptyOutlines();
+      await this.backfillCareerRoles();
       return;
     }
 
@@ -158,6 +166,7 @@ export class SkillGraphService implements OnModuleInit {
               description: skillSeed.description ?? '',
               orderHint: skillSeed.orderHint,
               estimatedHours: String(skillSeed.estimatedHours),
+              estimatedMasteryMinutes: Math.round(skillSeed.estimatedHours * 60),
               tags: skillSeed.tags,
               prerequisiteSkillIds: [],
               isActive: true,
@@ -187,6 +196,7 @@ export class SkillGraphService implements OnModuleInit {
                   ? (resourceIdBySlug.get(lessonSeed.resourceSlug) ?? null)
                   : null,
                 contentOutline,
+                status: ContentPublicationStatus.Published,
                 isActive: true,
               }),
             );
@@ -194,7 +204,6 @@ export class SkillGraphService implements OnModuleInit {
         }
       }
 
-      // Resolve prereqs (slug refs → ids)
       for (const stackSeed of CATALOG_SEED.stacks) {
         for (const skillSeed of stackSeed.skills) {
           if (!skillSeed.prereqSlugs?.length) continue;
@@ -215,13 +224,43 @@ export class SkillGraphService implements OnModuleInit {
       }
 
       for (const recipe of CATALOG_SEED.recipes) {
+        const career = await manager.save(
+          manager.create(CareerRole, {
+            slug: recipe.targetRoleSlug,
+            title: recipe.title.replace(/ Path$/, ''),
+            description: recipe.summary,
+            category: 'career',
+            isActive: true,
+          }),
+        );
+
+        const requiredSkillNodeIds: string[] = [];
+        const optionalSkillNodeIds: string[] = [];
+        for (const phase of recipe.phases) {
+          for (const stackSlug of phase.tech_stack_slugs) {
+            for (const [key, id] of skillIdByKey) {
+              if (!key.startsWith(`${stackSlug}:`)) continue;
+              if (phase.required) requiredSkillNodeIds.push(id);
+              else optionalSkillNodeIds.push(id);
+            }
+          }
+        }
+
         await manager.save(
           manager.create(RoleRecipe, {
+            careerRoleId: career.id,
             targetRoleSlug: recipe.targetRoleSlug,
             title: recipe.title,
             summary: recipe.summary,
+            version: 1,
             defaultTimelineWeeks: recipe.defaultTimelineWeeks,
             stackPlan: { phases: recipe.phases },
+            requiredSkillNodeIds: [...new Set(requiredSkillNodeIds)],
+            optionalSkillNodeIds: [...new Set(optionalSkillNodeIds)],
+            minimumAssessmentRules: {
+              requireDiagnosticForSkip: true,
+              minConfidenceForSkip: 'confident',
+            },
             isActive: true,
           }),
         );
@@ -231,7 +270,6 @@ export class SkillGraphService implements OnModuleInit {
     this.logger.log('Skill graph catalog seeded');
   }
 
-  /** Fill content_outline for templates created before play payloads existed. */
   private async backfillEmptyOutlines() {
     const templates = await this.lessonsRepo.find();
     let updated = 0;
@@ -248,6 +286,30 @@ export class SkillGraphService implements OnModuleInit {
     }
     if (updated > 0) {
       this.logger.log(`Backfilled content_outline on ${updated} lesson templates`);
+    }
+  }
+
+  private async backfillCareerRoles() {
+    const recipes = await this.recipesRepo.find();
+    const careerRepo = this.dataSource.getRepository(CareerRole);
+    for (const recipe of recipes) {
+      if (recipe.careerRoleId) continue;
+      let career = await careerRepo.findOne({
+        where: { slug: recipe.targetRoleSlug },
+      });
+      if (!career) {
+        career = await careerRepo.save(
+          careerRepo.create({
+            slug: recipe.targetRoleSlug,
+            title: recipe.title.replace(/ Path$/, ''),
+            description: recipe.summary,
+            category: 'career',
+            isActive: true,
+          }),
+        );
+      }
+      recipe.careerRoleId = career.id;
+      await this.recipesRepo.save(recipe);
     }
   }
 }

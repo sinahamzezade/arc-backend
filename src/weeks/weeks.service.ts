@@ -1,8 +1,14 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
+import { GamificationService } from '../gamification/gamification.service';
+import {
+  OUTBOX_SCHEDULE_REPLANNED,
+  SEAL_REWARD_RULE_KEY,
+} from '../gamification/reward-constants';
+import { OutboxService } from '../gamification/outbox.service';
 import { GoalsService } from '../goals/goals.service';
 import {
   NotificationChannel,
@@ -13,7 +19,15 @@ import { Profile } from '../profiles/entities/profile.entity';
 import { ProfilesService } from '../profiles/profiles.service';
 import { RoadmapsService } from '../roadmaps/roadmaps.service';
 import { ReplanWeekDto } from './dto/replan-week.dto';
-import { UpdateWeeklyTaskDto } from './dto/update-weekly-task.dto';
+import {
+  MoveWeeklyTaskDto,
+  SkipWeeklyTaskDto,
+  UpdateWeeklyTaskDto,
+} from './dto/update-weekly-task.dto';
+import {
+  WeeklyPlanEvent,
+  WeeklyPlanEventType,
+} from './entities/weekly-plan-event.entity';
 import {
   WeeklyPlan,
   WeeklyPlanStatus,
@@ -25,9 +39,14 @@ import {
 import { replanMaxPerWeek, streakResetOnMiss } from './weeks.constants';
 import { meetsSealCriteria, num, round1 } from './weeks.math';
 import { WeeksPlannerService } from './weeks.planner.service';
-import { toWeekCurrentDto, type WeekCurrentDto } from './weeks.serializer';
+import {
+  buildingWeekDto,
+  toWeekCurrentDto,
+  type WeekCurrentDto,
+} from './weeks.serializer';
 import {
   dayIndexNow,
+  learningWeekWindow,
   resolveTz,
   weekStartMonday,
 } from './weeks.time';
@@ -39,24 +58,20 @@ export class WeeksService {
     private readonly plansRepo: Repository<WeeklyPlan>,
     @InjectRepository(WeeklyTask)
     private readonly tasksRepo: Repository<WeeklyTask>,
+    @InjectRepository(WeeklyPlanEvent)
+    private readonly eventsRepo: Repository<WeeklyPlanEvent>,
     private readonly planner: WeeksPlannerService,
     private readonly profiles: ProfilesService,
     private readonly goals: GoalsService,
     private readonly roadmaps: RoadmapsService,
     private readonly notifications: NotificationsService,
+    private readonly gamification: GamificationService,
+    private readonly outbox: OutboxService,
     private readonly dataSource: DataSource,
   ) {}
 
   async getCurrent(userId: string): Promise<WeekCurrentDto> {
-    const profile = await this.profiles.findByUserId(userId);
-    if (!profile) {
-      throw new AppException(
-        AuthErrorCode.UNAUTHORIZED,
-        'Profile not found',
-        HttpStatus.UNAUTHORIZED,
-      );
-    }
-
+    const profile = await this.requireProfile(userId);
     const tz = resolveTz(profile.timezone);
     const now = new Date();
     const weekStart = weekStartMonday(now, tz);
@@ -69,7 +84,20 @@ export class WeeksService {
     });
 
     if (!plan) {
-      plan = await this.ensurePlan(userId, weekStart, profile.weeklyStreak);
+      try {
+        plan = await this.ensurePlan(userId, weekStart, profile.weeklyStreak, tz);
+      } catch (err) {
+        if (
+          err instanceof AppException &&
+          err.code === AuthErrorCode.ROADMAP_NOT_READY
+        ) {
+          return buildingWeekDto({
+            weekStart,
+            weeklyStreak: profile.weeklyStreak,
+          });
+        }
+        throw err;
+      }
     }
 
     const tasks = await this.tasksRepo.find({
@@ -77,6 +105,38 @@ export class WeeksService {
       order: { dayIndex: 'ASC', sortOrder: 'ASC' },
     });
 
+    return toWeekCurrentDto({
+      plan,
+      tasks,
+      weeklyStreak: profile.weeklyStreak,
+      dayIndexNow: todayIndex,
+    });
+  }
+
+  async getByWeekStart(
+    userId: string,
+    weekStart: string,
+  ): Promise<WeekCurrentDto> {
+    const profile = await this.requireProfile(userId);
+    const tz = resolveTz(profile.timezone);
+    const plan = await this.plansRepo.findOne({
+      where: { userId, weekStart },
+    });
+    if (!plan) {
+      throw new AppException(
+        AuthErrorCode.WEEK_PLAN_NOT_FOUND,
+        'Week plan not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    const tasks = await this.tasksRepo.find({
+      where: { weeklyPlanId: plan.id },
+      order: { dayIndex: 'ASC', sortOrder: 'ASC' },
+    });
+    const todayIndex =
+      weekStart === weekStartMonday(new Date(), tz)
+        ? dayIndexNow(new Date(), tz)
+        : 0;
     return toWeekCurrentDto({
       plan,
       tasks,
@@ -97,21 +157,21 @@ export class WeeksService {
     });
     if (!plan) {
       throw new AppException(
-        AuthErrorCode.WEEK_NOT_FOUND,
+        AuthErrorCode.WEEK_PLAN_NOT_FOUND,
         'No weekly plan for current week',
         HttpStatus.NOT_FOUND,
       );
     }
     if (plan.status === WeeklyPlanStatus.Sealed) {
       throw new AppException(
-        AuthErrorCode.WEEK_ALREADY_SEALED,
+        AuthErrorCode.WEEK_PLAN_ALREADY_SEALED,
         'Week already sealed',
         HttpStatus.CONFLICT,
       );
     }
     if (plan.replanCount >= replanMaxPerWeek()) {
       throw new AppException(
-        AuthErrorCode.REPLAN_LIMIT,
+        AuthErrorCode.WEEK_REPLAN_NOT_ALLOWED,
         'Replan limit reached for this week',
         HttpStatus.TOO_MANY_REQUESTS,
       );
@@ -123,14 +183,41 @@ export class WeeksService {
     const goal = await this.goals.findActiveByUserId(userId);
     const roadmap = await this.roadmaps.findReadyWithLessons(userId);
 
+    const mode = this.mapReplanMode(dto.mode);
     const result = await this.planner.replan({
       plan,
       tasks,
-      mode: dto.mode ?? 'catch_up',
-      reduceHours: Boolean(dto.reduceHours),
+      mode,
+      reduceHours: Boolean(dto.reduceHours) || mode === 'reduce',
       goal,
       roadmap,
       dayIndexNow: todayIndex,
+    });
+
+    result.plan.planVersion += 1;
+    result.plan.scheduleVersion += 1;
+    await this.plansRepo.save(result.plan);
+
+    await this.recordEvent({
+      userId,
+      planId: result.plan.id,
+      type: WeeklyPlanEventType.Replanned,
+      payload: { mode, reason: dto.reason ?? dto.mode ?? 'user_request' },
+    });
+
+    await this.dataSource.transaction(async (manager) => {
+      await this.outbox.enqueue(manager, {
+        type: OUTBOX_SCHEDULE_REPLANNED,
+        aggregateId: result.plan.id,
+        payload: {
+          userId,
+          weeklyPlanId: result.plan.id,
+          weekStart,
+          scheduleVersion: result.plan.scheduleVersion,
+          planVersion: result.plan.planVersion,
+          mode,
+        },
+      });
     });
 
     await this.notifications.create({
@@ -141,6 +228,8 @@ export class WeeksService {
       actionUrl: '/week',
       channels: [NotificationChannel.InApp],
     });
+
+    void this.gamification.processPendingOutbox().catch(() => undefined);
 
     const freshProfile = await this.profiles.findByUserId(userId);
     return toWeekCurrentDto({
@@ -156,76 +245,165 @@ export class WeeksService {
     taskId: string,
     dto: UpdateWeeklyTaskDto,
   ): Promise<WeekCurrentDto> {
-    const profile = await this.requireProfile(userId);
+    if ((dto as { status?: string }).status === 'done') {
+      throw new AppException(
+        AuthErrorCode.WEEK_CLIENT_DONE_FORBIDDEN,
+        'Client cannot mark task done — complete the lesson instead',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    if (dto.dayIndex !== undefined) {
+      return this.moveTask(userId, taskId, { dayIndex: dto.dayIndex });
+    }
+    if (dto.status === 'skipped') {
+      return this.skipTask(userId, taskId, {});
+    }
+    if (dto.status) {
+      const { plan, task } = await this.requireCurrentTask(userId, taskId);
+      task.status = dto.status as WeeklyTaskStatus;
+      await this.tasksRepo.save(task);
+      void plan;
+      return this.getCurrent(userId);
+    }
+    return this.getCurrent(userId);
+  }
+
+  async moveTask(
+    userId: string,
+    taskId: string,
+    dto: MoveWeeklyTaskDto,
+  ): Promise<WeekCurrentDto> {
+    const { plan, task } = await this.requireCurrentTask(userId, taskId);
+    if (task.status === WeeklyTaskStatus.Done) {
+      throw new AppException(
+        AuthErrorCode.WEEK_TASK_ALREADY_COMPLETED,
+        'Completed tasks cannot move',
+        HttpStatus.CONFLICT,
+      );
+    }
+    const from = task.dayIndex;
+    task.dayIndex = dto.dayIndex;
+    task.status = WeeklyTaskStatus.Moved;
+    await this.tasksRepo.save(task);
+    await this.recordEvent({
+      userId,
+      planId: plan.id,
+      type: WeeklyPlanEventType.TaskMoved,
+      taskId: task.id,
+      payload: { from, to: dto.dayIndex },
+    });
+    return this.getCurrent(userId);
+  }
+
+  async skipTask(
+    userId: string,
+    taskId: string,
+    dto: SkipWeeklyTaskDto,
+  ): Promise<WeekCurrentDto> {
+    const { plan, task } = await this.requireCurrentTask(userId, taskId);
+    if (task.status === WeeklyTaskStatus.Done) {
+      throw new AppException(
+        AuthErrorCode.WEEK_TASK_ALREADY_COMPLETED,
+        'Completed tasks cannot be skipped',
+        HttpStatus.CONFLICT,
+      );
+    }
+    task.status = WeeklyTaskStatus.Skipped;
+    await this.tasksRepo.save(task);
+    // Shrink planned sessions so seal remains reachable
+    plan.sessionsPlanned = Math.max(
+      plan.sessionsDone,
+      plan.sessionsPlanned - 1,
+    );
+    await this.plansRepo.save(plan);
+    await this.recordEvent({
+      userId,
+      planId: plan.id,
+      type: WeeklyPlanEventType.TaskSkipped,
+      taskId: task.id,
+      payload: { reason: dto.reason ?? 'user_skip' },
+    });
+    await this.trySeal(userId, plan);
+    return this.getCurrent(userId);
+  }
+
+  async markLessonDoneInTx(
+    manager: EntityManager,
+    userId: string,
+    lessonId: string,
+    minutes: number,
+    completionSourceId?: string,
+  ): Promise<{ weeklyTaskId: string | null; weeklyPlanId: string | null }> {
+    const profile = await manager.getRepository(Profile).findOne({
+      where: { userId },
+    });
+    if (!profile) return { weeklyTaskId: null, weeklyPlanId: null };
+
     const tz = resolveTz(profile.timezone);
     const now = new Date();
     const weekStart = weekStartMonday(now, tz);
 
-    const plan = await this.plansRepo.findOne({
+    const plan = await manager.getRepository(WeeklyPlan).findOne({
       where: { userId, weekStart },
     });
-    if (!plan) {
-      throw new AppException(
-        AuthErrorCode.WEEK_NOT_FOUND,
-        'No weekly plan for current week',
-        HttpStatus.NOT_FOUND,
-      );
-    }
-    if (plan.status === WeeklyPlanStatus.Sealed) {
-      throw new AppException(
-        AuthErrorCode.WEEK_ALREADY_SEALED,
-        'Week already sealed',
-        HttpStatus.CONFLICT,
-      );
+    if (!plan || plan.status === WeeklyPlanStatus.Sealed) {
+      return { weeklyTaskId: null, weeklyPlanId: plan?.id ?? null };
     }
 
-    const task = await this.tasksRepo.findOne({
-      where: { id: taskId, weeklyPlanId: plan.id },
+    const tasks = await manager.getRepository(WeeklyTask).find({
+      where: { weeklyPlanId: plan.id },
     });
-    if (!task) {
-      throw new AppException(
-        AuthErrorCode.TASK_NOT_FOUND,
-        'Task not found',
-        HttpStatus.NOT_FOUND,
-      );
+    const linked = tasks.find(
+      (t) =>
+        t.lessonId === lessonId && t.status !== WeeklyTaskStatus.Done,
+    );
+    if (!linked) {
+      return { weeklyTaskId: null, weeklyPlanId: plan.id };
     }
 
-    const wasDone = task.status === WeeklyTaskStatus.Done;
-
-    if (dto.dayIndex !== undefined) task.dayIndex = dto.dayIndex;
-    if (dto.status !== undefined) {
-      task.status = dto.status;
-      if (dto.status === WeeklyTaskStatus.Done && !wasDone) {
-        task.completedAt = now;
-        plan.sessionsDone += 1;
-        plan.hoursDone = String(
-          round1(num(plan.hoursDone) + task.minutes / 60),
-        );
-      }
-      if (wasDone && dto.status !== WeeklyTaskStatus.Done) {
-        task.completedAt = null;
-        plan.sessionsDone = Math.max(0, plan.sessionsDone - 1);
-        plan.hoursDone = String(
-          Math.max(0, round1(num(plan.hoursDone) - task.minutes / 60)),
-        );
-      }
+    // Idempotent: same completion source cannot double-count
+    if (
+      completionSourceId &&
+      linked.completionSourceId === completionSourceId
+    ) {
+      return { weeklyTaskId: linked.id, weeklyPlanId: plan.id };
     }
 
-    await this.tasksRepo.save(task);
-    await this.plansRepo.save(plan);
-    await this.trySeal(userId, plan);
+    linked.status = WeeklyTaskStatus.Done;
+    linked.completedAt = now;
+    linked.verifiedMinutes = minutes || linked.minutes;
+    linked.completionSourceType = 'lesson';
+    linked.completionSourceId = completionSourceId ?? null;
+    await manager.getRepository(WeeklyTask).save(linked);
+    plan.sessionsDone += 1;
+    plan.hoursDone = String(
+      round1(num(plan.hoursDone) + (minutes || linked.minutes) / 60),
+    );
+    plan.verifiedMinutesDone += minutes || linked.minutes;
+    await manager.getRepository(WeeklyPlan).save(plan);
 
-    return this.getCurrent(userId);
+    await manager.getRepository(WeeklyPlanEvent).save(
+      manager.getRepository(WeeklyPlanEvent).create({
+        userId,
+        weeklyPlanId: plan.id,
+        type: WeeklyPlanEventType.TaskCompleted,
+        taskId: linked.id,
+        payload: {
+          lessonId,
+          minutes: minutes || linked.minutes,
+          completionSourceId: completionSourceId ?? null,
+        },
+      }),
+    );
+
+    return { weeklyTaskId: linked.id, weeklyPlanId: plan.id };
   }
 
-  /**
-   * Hook from LessonsService.complete — marks linked weekly task done, may seal.
-   * Soft-fails (returns null) when no plan / roadmap yet.
-   */
   async onLessonCompleted(
     userId: string,
     lessonId: string,
     minutes: number,
+    completionSourceId?: string,
   ): Promise<WeekCurrentDto | null> {
     const profile = await this.profiles.findByUserId(userId);
     if (!profile) return null;
@@ -239,7 +417,12 @@ export class WeeksService {
     });
     if (!plan) {
       try {
-        plan = await this.ensurePlan(userId, weekStart, profile.weeklyStreak);
+        plan = await this.ensurePlan(
+          userId,
+          weekStart,
+          profile.weeklyStreak,
+          tz,
+        );
       } catch {
         return null;
       }
@@ -257,24 +440,86 @@ export class WeeksService {
     );
 
     if (linked) {
+      if (
+        completionSourceId &&
+        linked.completionSourceId === completionSourceId
+      ) {
+        await this.trySeal(userId, plan);
+        return this.getCurrent(userId);
+      }
       linked.status = WeeklyTaskStatus.Done;
       linked.completedAt = now;
+      linked.verifiedMinutes = minutes || linked.minutes;
+      linked.completionSourceType = 'lesson';
+      linked.completionSourceId = completionSourceId ?? null;
       await this.tasksRepo.save(linked);
       plan.sessionsDone += 1;
       plan.hoursDone = String(
         round1(num(plan.hoursDone) + (minutes || linked.minutes) / 60),
       );
+      plan.verifiedMinutesDone += minutes || linked.minutes;
       await this.plansRepo.save(plan);
+      await this.recordEvent({
+        userId,
+        planId: plan.id,
+        type: WeeklyPlanEventType.TaskCompleted,
+        taskId: linked.id,
+        payload: { lessonId, minutes },
+      });
     }
 
     await this.trySeal(userId, plan);
     return this.getCurrent(userId);
   }
 
+  private mapReplanMode(
+    mode?: string,
+  ): 'catch_up' | 'reduce' | 'rebuild' {
+    if (!mode) return 'catch_up';
+    if (mode === 'reduce' || mode === 'reduce_workload') return 'reduce';
+    if (mode === 'rebuild' || mode === 'increase_pace') return 'rebuild';
+    return 'catch_up';
+  }
+
+  private async requireCurrentTask(userId: string, taskId: string) {
+    const profile = await this.requireProfile(userId);
+    const tz = resolveTz(profile.timezone);
+    const weekStart = weekStartMonday(new Date(), tz);
+    const plan = await this.plansRepo.findOne({
+      where: { userId, weekStart },
+    });
+    if (!plan) {
+      throw new AppException(
+        AuthErrorCode.WEEK_PLAN_NOT_FOUND,
+        'No weekly plan for current week',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    if (plan.status === WeeklyPlanStatus.Sealed) {
+      throw new AppException(
+        AuthErrorCode.WEEK_PLAN_ALREADY_SEALED,
+        'Week already sealed',
+        HttpStatus.CONFLICT,
+      );
+    }
+    const task = await this.tasksRepo.findOne({
+      where: { id: taskId, weeklyPlanId: plan.id },
+    });
+    if (!task) {
+      throw new AppException(
+        AuthErrorCode.WEEK_TASK_NOT_FOUND,
+        'Task not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    return { plan, task, profile, tz };
+  }
+
   private async ensurePlan(
     userId: string,
     weekStart: string,
     weeklyStreak: number,
+    tz: string,
   ): Promise<WeeklyPlan> {
     const roadmap = await this.roadmaps.findReadyWithLessons(userId);
     if (!roadmap) {
@@ -285,13 +530,24 @@ export class WeeksService {
       );
     }
     const goal = await this.goals.findActiveByUserId(userId);
-    return this.planner.createPlan({
+    const { windowStartAt, windowEndAt } = learningWeekWindow(weekStart, tz);
+    const plan = await this.planner.createPlan({
       userId,
       weekStart,
       weekIndex: weeklyStreak + 1,
       goal,
       roadmap,
+      timezoneSnapshot: tz,
+      windowStartAt,
+      windowEndAt,
     });
+    await this.recordEvent({
+      userId,
+      planId: plan.id,
+      type: WeeklyPlanEventType.Generated,
+      payload: { weekStart, scheduleVersion: plan.scheduleVersion },
+    });
+    return plan;
   }
 
   private async trySeal(userId: string, plan: WeeklyPlan): Promise<void> {
@@ -306,6 +562,7 @@ export class WeeksService {
     if (!ok) return;
 
     let didSeal = false;
+    let sealedPlan = plan;
 
     await this.dataSource.transaction(async (manager) => {
       const locked = await manager.findOne(WeeklyPlan, {
@@ -326,16 +583,31 @@ export class WeeksService {
       locked.sealedAt = new Date();
       await manager.save(locked);
 
-      const profile = await manager.findOne(Profile, {
-        where: { userId },
+      await this.gamification.sealWeek(manager, {
+        userId,
+        planId: locked.id,
+        weekStart: locked.weekStart,
+        xp: locked.lockRewardXp,
+        gems: locked.lockRewardGems,
+        weekIndex: locked.weekIndex,
       });
-      if (profile) {
-        profile.weeklyStreak += 1;
-        profile.totalXp += locked.lockRewardXp;
-        profile.gems += locked.lockRewardGems;
-        await manager.save(profile);
-      }
+
+      await manager.getRepository(WeeklyPlanEvent).save(
+        manager.getRepository(WeeklyPlanEvent).create({
+          userId,
+          weeklyPlanId: locked.id,
+          type: WeeklyPlanEventType.Sealed,
+          taskId: null,
+          payload: {
+            xp: locked.lockRewardXp,
+            gems: locked.lockRewardGems,
+            sealRewardRuleKey: SEAL_REWARD_RULE_KEY,
+          },
+        }),
+      );
+
       didSeal = true;
+      sealedPlan = locked;
       Object.assign(plan, locked);
     });
 
@@ -344,10 +616,11 @@ export class WeeksService {
         userId,
         type: NotificationType.WeeklyRecap,
         title: 'Week sealed',
-        body: `You locked the week — +${plan.lockRewardXp} XP and +${plan.lockRewardGems} gems.`,
+        body: `You locked the week — +${sealedPlan.lockRewardXp} XP and +${sealedPlan.lockRewardGems} gems.`,
         actionUrl: '/week',
         channels: [NotificationChannel.InApp],
       });
+      void this.gamification.processPendingOutbox().catch(() => undefined);
     }
   }
 
@@ -368,6 +641,25 @@ export class WeeksService {
     previous.status = WeeklyPlanStatus.Missed;
     await this.plansRepo.save(previous);
 
+    await this.recordEvent({
+      userId,
+      planId: previous.id,
+      type: WeeklyPlanEventType.Missed,
+      payload: { weekStart: previous.weekStart },
+    });
+
+    // Archive older sealed/missed plans beyond the previous one
+    await this.plansRepo
+      .createQueryBuilder()
+      .update(WeeklyPlan)
+      .set({ status: WeeklyPlanStatus.Archived })
+      .where('user_id = :userId', { userId })
+      .andWhere('week_start < :prev', { prev: previous.weekStart })
+      .andWhere('status IN (:...statuses)', {
+        statuses: [WeeklyPlanStatus.Sealed, WeeklyPlanStatus.Missed],
+      })
+      .execute();
+
     if (streakResetOnMiss()) {
       await this.profiles.resetWeeklyStreak(userId);
     }
@@ -380,6 +672,24 @@ export class WeeksService {
       actionUrl: '/week',
       channels: [NotificationChannel.InApp],
     });
+  }
+
+  private async recordEvent(input: {
+    userId: string;
+    planId: string;
+    type: WeeklyPlanEventType;
+    taskId?: string | null;
+    payload?: Record<string, unknown>;
+  }) {
+    await this.eventsRepo.save(
+      this.eventsRepo.create({
+        userId: input.userId,
+        weeklyPlanId: input.planId,
+        type: input.type,
+        taskId: input.taskId ?? null,
+        payload: input.payload ?? {},
+      }),
+    );
   }
 
   private async requireProfile(userId: string) {

@@ -80,6 +80,18 @@ export class Lesson {
   @Column({ name: 'play_content', type: 'jsonb', nullable: true })
   playContent: Record<string, unknown> | null;
 
+  /** Pinned published LessonVersion id at roadmap generation time. */
+  @Column({ name: 'source_version_id', type: 'uuid', nullable: true })
+  sourceVersionId: string | null;
+
+  /** Snapshot of template reward class (not wallet amount). */
+  @Column({ name: 'reward_class_snapshot', type: 'varchar', nullable: true })
+  rewardClassSnapshot: string | null;
+
+  /** Window batch this lesson was materialized into (null = outline-only). */
+  @Column({ name: 'materialized_window', type: 'int', nullable: true })
+  materializedWindow: number | null;
+
   @Column({ type: 'text', nullable: true })
   objective: string | null;
 

@@ -1,8 +1,9 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { Goal } from '../goals/entities/goal.entity';
 import { Profile } from '../profiles/entities/profile.entity';
+import { ReferralsModule } from '../referrals/referrals.module';
 import { RoadmapsModule } from '../roadmaps/roadmaps.module';
 import { QuestionnaireDefinition } from './entities/questionnaire-definition.entity';
 import { QuestionnaireOption } from './entities/questionnaire-option.entity';
@@ -29,6 +30,7 @@ import { QuestionnaireService } from './questionnaire.service';
     ]),
     AuthModule,
     RoadmapsModule,
+    forwardRef(() => ReferralsModule),
   ],
   controllers: [QuestionnaireController],
   providers: [

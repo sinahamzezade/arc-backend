@@ -54,6 +54,7 @@ export function confidenceMeets(
 export function budgetMinutes(
   hoursPerWeek: number,
   timelineWeeks: number,
+  safetyFactor = 0.85,
 ): number {
-  return Math.round(hoursPerWeek * timelineWeeks * 60);
+  return Math.round(hoursPerWeek * timelineWeeks * 60 * safetyFactor);
 }

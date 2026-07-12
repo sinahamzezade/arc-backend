@@ -12,6 +12,7 @@ import {
 } from '../common/utils/password.util';
 import { Profile } from '../profiles/entities/profile.entity';
 import { ProfilesService } from '../profiles/profiles.service';
+import { ReferralsService } from '../referrals/referrals.service';
 import { AuthProvider, User } from '../users/entities/user.entity';
 import { UsersService } from '../users/users.service';
 import { toAuthUserDto, toProfileDto, toUserDto } from './auth.serializer';
@@ -33,7 +34,11 @@ const OTP_MAX_ATTEMPTS = 5;
 const OTP_RESEND_WINDOW_MS = 60 * 1000;
 const RESET_TOKEN_TTL = '15m';
 
-type RequestMeta = { userAgent?: string; ip?: string };
+type RequestMeta = {
+  userAgent?: string;
+  ip?: string;
+  referralToken?: string | null;
+};
 
 @Injectable()
 export class AuthService {
@@ -47,6 +52,7 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly jwt: JwtService,
     private readonly dataSource: DataSource,
+    private readonly referralsService: ReferralsService,
     @InjectRepository(AuthChallenge)
     private readonly challengesRepo: Repository<AuthChallenge>,
     @InjectRepository(AuthIdentity)
@@ -103,6 +109,16 @@ export class AuthService {
         return { user, profile };
       },
     );
+
+    try {
+      await this.referralsService.attachOnRegister({
+        inviteeUserId: user.id,
+        referralCode: dto.referralCode ?? null,
+        referralToken: meta?.referralToken ?? null,
+      });
+    } catch {
+      // Attribution failure must not block registration.
+    }
 
     await this.requestEmailVerification(user);
     return this.buildAuthResponse(user, profile, meta);
@@ -224,6 +240,11 @@ export class AuthService {
       await this.consumeOtp(user, AuthChallengePurpose.EMAIL_VERIFY, otp);
       await this.usersService.markEmailVerified(user.id);
       user.emailVerifiedAt = new Date();
+      try {
+        await this.referralsService.evaluateInvitee(user.id);
+      } catch {
+        /* referral progress must not block verify */
+      }
     }
 
     const profile = await this.profilesService.findByUserId(user.id);
@@ -364,6 +385,8 @@ export class AuthService {
       }
     }
 
+    let isNewUser = false;
+
     if (!user) {
       if (!identity.email) {
         throw new AppException(
@@ -373,6 +396,7 @@ export class AuthService {
         );
       }
 
+      isNewUser = true;
       user = await this.dataSource.transaction(async (manager) => {
         const userRepo = manager.getRepository(User);
         const profileRepo = manager.getRepository(Profile);
@@ -435,6 +459,18 @@ export class AuthService {
 
     await this.usersService.touchLastLogin(user.id);
     const profile = await this.requireProfile(user);
+
+    if (isNewUser) {
+      try {
+        await this.referralsService.attachOnRegister({
+          inviteeUserId: user.id,
+          referralToken: meta?.referralToken ?? null,
+        });
+      } catch {
+        /* attribution failure must not block oauth */
+      }
+    }
+
     return this.buildAuthResponse(user, profile, meta);
   }
 

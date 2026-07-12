@@ -16,6 +16,15 @@ export enum WeeklyTaskStatus {
   Done = 'done',
   Missed = 'missed',
   Skipped = 'skipped',
+  Moved = 'moved',
+}
+
+export enum WeeklyTaskType {
+  Lesson = 'lesson',
+  Review = 'review',
+  Challenge = 'challenge',
+  Project = 'project',
+  Recovery = 'recovery',
 }
 
 @Entity('weekly_tasks')
@@ -37,6 +46,14 @@ export class WeeklyTask {
   @JoinColumn({ name: 'lesson_id' })
   lesson: Lesson | null;
 
+  @Column({
+    name: 'task_type',
+    type: 'enum',
+    enum: WeeklyTaskType,
+    default: WeeklyTaskType.Lesson,
+  })
+  taskType: WeeklyTaskType;
+
   /** 0=Mon … 6=Sun */
   @Column({ name: 'day_index', type: 'smallint' })
   dayIndex: number;
@@ -50,8 +67,14 @@ export class WeeklyTask {
   @Column({ type: 'int' })
   minutes: number;
 
+  @Column({ name: 'verified_minutes', type: 'int', default: 0 })
+  verifiedMinutes: number;
+
   @Column({ name: 'xp_reward', type: 'int', default: 20 })
   xpReward: number;
+
+  @Column({ type: 'int', default: 0 })
+  priority: number;
 
   @Column({
     type: 'enum',
@@ -59,6 +82,12 @@ export class WeeklyTask {
     default: WeeklyTaskStatus.Upcoming,
   })
   status: WeeklyTaskStatus;
+
+  @Column({ name: 'completion_source_type', type: 'varchar', nullable: true })
+  completionSourceType: string | null;
+
+  @Column({ name: 'completion_source_id', type: 'uuid', nullable: true })
+  completionSourceId: string | null;
 
   @Column({ name: 'completed_at', type: 'timestamptz', nullable: true })
   completedAt: Date | null;

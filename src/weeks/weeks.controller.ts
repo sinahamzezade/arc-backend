@@ -15,7 +15,11 @@ import {
   type AuthUserPayload,
 } from '../common/decorators/current-user.decorator';
 import { ReplanWeekDto } from './dto/replan-week.dto';
-import { UpdateWeeklyTaskDto } from './dto/update-weekly-task.dto';
+import {
+  MoveWeeklyTaskDto,
+  SkipWeeklyTaskDto,
+  UpdateWeeklyTaskDto,
+} from './dto/update-weekly-task.dto';
 import { WeeksService } from './weeks.service';
 
 @ApiTags('weeks')
@@ -31,6 +35,15 @@ export class WeeksController {
     return this.weeksService.getCurrent(user.userId);
   }
 
+  @Get(':weekStart')
+  @ApiOperation({ summary: 'Historical week plan by weekStart (YYYY-MM-DD)' })
+  getByWeekStart(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('weekStart') weekStart: string,
+  ) {
+    return this.weeksService.getByWeekStart(user.userId, weekStart);
+  }
+
   @Post('current/replan')
   @ApiOperation({ summary: 'Replan remaining sessions this week' })
   replan(
@@ -41,12 +54,34 @@ export class WeeksController {
   }
 
   @Patch('current/tasks/:taskId')
-  @ApiOperation({ summary: 'Reschedule or skip a weekly task' })
+  @ApiOperation({
+    summary: 'Reschedule or skip a weekly task (client cannot mark done)',
+  })
   updateTask(
     @CurrentUser() user: AuthUserPayload,
     @Param('taskId', ParseUUIDPipe) taskId: string,
     @Body() dto: UpdateWeeklyTaskDto,
   ) {
     return this.weeksService.updateTask(user.userId, taskId, dto);
+  }
+
+  @Post('current/tasks/:taskId/move')
+  @ApiOperation({ summary: 'Move task to another day this week' })
+  moveTask(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('taskId', ParseUUIDPipe) taskId: string,
+    @Body() dto: MoveWeeklyTaskDto,
+  ) {
+    return this.weeksService.moveTask(user.userId, taskId, dto);
+  }
+
+  @Post('current/tasks/:taskId/skip')
+  @ApiOperation({ summary: 'Skip a weekly task (policy-checked)' })
+  skipTask(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('taskId', ParseUUIDPipe) taskId: string,
+    @Body() dto: SkipWeeklyTaskDto,
+  ) {
+    return this.weeksService.skipTask(user.userId, taskId, dto);
   }
 }

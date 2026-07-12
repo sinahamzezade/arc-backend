@@ -4,10 +4,13 @@ import { In, Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
 import { SkillGraphService } from '../skill-graph/skill-graph.service';
+import { Lesson, LessonStatus } from './entities/lesson.entity';
+import { Milestone } from './entities/milestone.entity';
 import {
   Roadmap,
   RoadmapStatus,
 } from './entities/roadmap.entity';
+import { RoadmapPhase } from './entities/roadmap-phase.entity';
 import {
   RoadmapGenerationJob,
   RoadmapJobStatus,
@@ -31,6 +34,10 @@ export class RoadmapsService {
     private readonly jobsRepo: Repository<RoadmapGenerationJob>,
     @InjectRepository(Roadmap)
     private readonly roadmapsRepo: Repository<Roadmap>,
+    @InjectRepository(Lesson)
+    private readonly lessonsRepo: Repository<Lesson>,
+    @InjectRepository(RoadmapPhase)
+    private readonly phasesRepo: Repository<RoadmapPhase>,
     private readonly processor: RoadmapJobsProcessor,
     private readonly skillGraph: SkillGraphService,
   ) {
@@ -66,7 +73,7 @@ export class RoadmapsService {
       order: { createdAt: 'DESC' },
     });
 
-    const roadmap = await this.roadmapsRepo.findOne({
+    let roadmap = await this.roadmapsRepo.findOne({
       where: {
         userId,
         status: In([RoadmapStatus.Ready, RoadmapStatus.Generating]),
@@ -82,6 +89,25 @@ export class RoadmapsService {
         },
       },
     });
+
+    // Heal paths stuck with zero Available (e.g. old XP hard-gate after week seal).
+    if (roadmap?.status === RoadmapStatus.Ready) {
+      const healed = await this.healStuckPath(roadmap);
+      if (healed) {
+        roadmap = await this.roadmapsRepo.findOne({
+          where: { id: roadmap.id },
+          relations: {
+            phases: {
+              milestones: {
+                lessons: {
+                  resource: true,
+                },
+              },
+            },
+          },
+        });
+      }
+    }
 
     return {
       job: toJobDto(job),
@@ -117,5 +143,64 @@ export class RoadmapsService {
       );
     }
     return toJobDto(job);
+  }
+
+  /**
+   * If Path has no Available lesson but locked ones remain after progress,
+   * unlock the next one so week-goal / ahead users can keep learning.
+   */
+  private async healStuckPath(roadmap: Roadmap): Promise<boolean> {
+    const ordered = this.flattenLessons(roadmap);
+    if (!ordered.length) return false;
+    if (ordered.some((l) => l.status === LessonStatus.Available)) return false;
+
+    let unlockIdx = -1;
+    const lastCompletedIdx = ordered.reduce(
+      (acc, l, i) => (l.status === LessonStatus.Completed ? i : acc),
+      -1,
+    );
+    if (lastCompletedIdx >= 0) {
+      unlockIdx = ordered.findIndex(
+        (l, i) => i > lastCompletedIdx && l.status === LessonStatus.Locked,
+      );
+    } else {
+      unlockIdx = ordered.findIndex((l) => l.status === LessonStatus.Locked);
+    }
+    if (unlockIdx < 0) return false;
+
+    const next = ordered[unlockIdx]!;
+    next.status = LessonStatus.Available;
+    await this.lessonsRepo.save(next);
+
+    if (next.milestone?.phase?.locked) {
+      next.milestone.phase.locked = false;
+      await this.phasesRepo.save(next.milestone.phase);
+    }
+    return true;
+  }
+
+  private flattenLessons(roadmap: Roadmap): Lesson[] {
+    const phases = [...(roadmap.phases ?? [])].sort(
+      (a, b) => a.orderIndex - b.orderIndex,
+    );
+    const out: Lesson[] = [];
+    for (const phase of phases) {
+      const milestones = [...(phase.milestones ?? [])].sort(
+        (a, b) => a.orderIndex - b.orderIndex,
+      );
+      for (const milestone of milestones) {
+        const lessons = [...(milestone.lessons ?? [])].sort(
+          (a, b) => a.orderIndex - b.orderIndex,
+        );
+        for (const lesson of lessons) {
+          (lesson as Lesson & { milestone?: Milestone }).milestone = milestone;
+          if (!milestone.phase) {
+            (milestone as Milestone & { phase?: RoadmapPhase }).phase = phase;
+          }
+          out.push(lesson);
+        }
+      }
+    }
+    return out;
   }
 }

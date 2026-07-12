@@ -4,6 +4,7 @@ import {
   IsEnum,
   IsInt,
   IsOptional,
+  IsString,
   Max,
   Min,
 } from 'class-validator';
@@ -13,6 +14,9 @@ export enum NotificationListFilter {
   Unread = 'unread',
   Rewards = 'rewards',
   Social = 'social',
+  Learning = 'learning',
+  Coach = 'coach',
+  System = 'system',
 }
 
 export class ListNotificationsDto {
@@ -29,10 +33,16 @@ export class ListNotificationsDto {
   @Max(100)
   limit?: number = 50;
 
+  /** @deprecated Prefer cursor. Kept for FE compat. */
   @ApiPropertyOptional({ default: 0 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
   offset?: number = 0;
+
+  @ApiPropertyOptional({ description: 'Opaque cursor from previous page' })
+  @IsOptional()
+  @IsString()
+  cursor?: string;
 }

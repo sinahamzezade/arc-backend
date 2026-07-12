@@ -84,6 +84,9 @@ export class WeeksPlannerService {
     weekIndex: number;
     goal: Goal | null;
     roadmap: Roadmap;
+    timezoneSnapshot?: string;
+    windowStartAt?: Date;
+    windowEndAt?: Date;
   }): Promise<WeeklyPlan> {
     const hoursPlanned = this.hoursFromGoal(input.goal, input.roadmap);
     const daySlots = availabilityDayIndices(input.goal?.availability?.days);
@@ -97,8 +100,8 @@ export class WeeksPlannerService {
       sessionsPlanned,
     );
 
-    // If fewer incomplete lessons than sessions, shrink sessions
     const sessionCount = Math.max(1, lessons.length || sessionsPlanned);
+    const minutesPlanned = Math.round(hoursPlanned * 60);
 
     const plan = await this.plansRepo.save(
       this.plansRepo.create({
@@ -106,12 +109,24 @@ export class WeeksPlannerService {
         roadmapId: input.roadmap.id,
         weekStart: input.weekStart,
         weekIndex: input.weekIndex,
+        planVersion: 1,
+        scheduleVersion: 1,
+        timezoneSnapshot: input.timezoneSnapshot ?? null,
+        windowStartAt: input.windowStartAt ?? null,
+        windowEndAt: input.windowEndAt ?? null,
         sessionsPlanned: sessionCount,
         sessionsDone: 0,
         hoursPlanned: String(round1(hoursPlanned)),
         hoursDone: '0',
+        minutesPlanned,
+        verifiedMinutesDone: 0,
         lockRewardXp: lockRewardXpDefault(),
         lockRewardGems: lockRewardGemsDefault(),
+        sealRewardRuleKey: 'week-seal-v1',
+        sealRuleSnapshot: {
+          sessionsOrHoursRatio: 0.8,
+          version: 'week-seal-v1',
+        },
         status: WeeklyPlanStatus.Active,
         sealedAt: null,
         replanCount: 0,

@@ -1,15 +1,18 @@
 import { HttpStatus, Inject, Injectable, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
-import { Profile } from '../profiles/entities/profile.entity';
+import {
+  CONTENT_SCHEMA_VERSION,
+  REWARD_RULE_VERSION,
+} from '../gamification/reward-constants';
 import { Lesson, LessonStatus } from '../roadmaps/entities/lesson.entity';
 import {
   LessonProgress,
   LessonProgressStatus,
 } from '../roadmaps/entities/lesson-progress.entity';
-import { Roadmap, RoadmapStatus } from '../roadmaps/entities/roadmap.entity';
+import { Roadmap } from '../roadmaps/entities/roadmap.entity';
 import { WeeksService } from '../weeks/weeks.service';
 import {
   CheckPracticeDto,
@@ -17,6 +20,12 @@ import {
   CompleteLessonDto,
   UpdateLessonProgressDto,
 } from './dto/lesson-play.dto';
+import {
+  LessonAttempt,
+  LessonAttemptStatus,
+} from './entities/lesson-attempt.entity';
+import { LessonArloService } from './lesson-arlo.service';
+import { LessonCompletionOrchestrator } from './lesson-completion.orchestrator';
 import { LessonContentService } from './lesson-content.service';
 import { LessonRewardsService } from './lesson-rewards.service';
 import { LessonUnlockService } from './lesson-unlock.service';
@@ -34,29 +43,48 @@ export class LessonsService {
     private readonly lessonsRepo: Repository<Lesson>,
     @InjectRepository(LessonProgress)
     private readonly progressRepo: Repository<LessonProgress>,
-    private readonly dataSource: DataSource,
+    @InjectRepository(LessonAttempt)
+    private readonly attemptsRepo: Repository<LessonAttempt>,
     private readonly content: LessonContentService,
     private readonly rewards: LessonRewardsService,
     private readonly unlock: LessonUnlockService,
+    private readonly orchestrator: LessonCompletionOrchestrator,
+    private readonly arlo: LessonArloService,
     @Inject(forwardRef(() => WeeksService))
-    private readonly weeks: WeeksService,
-  ) {}
+    private readonly _weeks: WeeksService,
+  ) {
+    void this._weeks;
+  }
 
   async getPlay(userId: string, lessonId: string) {
     const ctx = await this.requireOwnedLesson(userId, lessonId, {
       allowLocked: false,
     });
     const { lesson, lessonNumber, progress } = ctx;
-    const outline = this.content.resolveOutline(
+
+    let pinnedVersionId: string | null = null;
+    if (progress?.activeAttemptId) {
+      const attempt = await this.attemptsRepo.findOne({
+        where: { id: progress.activeAttemptId },
+      });
+      pinnedVersionId = attempt?.contentVersionId ?? null;
+    }
+
+    const resolved = await this.content.resolveAuthoritative(
       lesson,
       lesson.lessonTemplate,
+      pinnedVersionId,
     );
+    const { outline } = resolved;
     const publicBody = this.content.toPublicPlayBody(outline);
-      const isFirstEver = await this.isFirstLessonEver(userId);
+    const isFirstEver = await this.isFirstLessonEver(userId);
+    const roadmap = lesson.milestone.phase.roadmap;
+    const pathPercentile = this.unlock.percentileInRoadmap(roadmap, lesson.id);
     const preview = this.rewards.previewReward({
       lesson,
       outline,
       isFirstLessonEver: isFirstEver,
+      pathPercentile,
     });
 
     const resource = lesson.resource
@@ -76,6 +104,7 @@ export class LessonsService {
         };
 
     const session = progress?.sessionState ?? {};
+    const serverNow = new Date().toISOString();
 
     return {
       id: lesson.id,
@@ -83,9 +112,22 @@ export class LessonsService {
       title: lesson.title,
       missionName: lesson.missionName,
       minutes: lesson.estimatedMinutes,
-      xpReward: lesson.xpReward,
+      xpReward: preview.xp,
       objective: lesson.objective ?? outline.objective,
       status: lesson.status,
+      contentVersionId: resolved.contentVersionId,
+      contentSchemaVersion: resolved.contentSchemaVersion,
+      rewardRuleVersion: REWARD_RULE_VERSION,
+      attemptId: progress?.activeAttemptId ?? null,
+      serverTime: serverNow,
+      contentSource: {
+        lessonTemplateId: lesson.lessonTemplateId ?? null,
+        lessonVersionId: resolved.contentVersionId,
+        version: resolved.contentSchemaVersion,
+        status: lesson.lessonTemplate?.status ?? null,
+        rewardClass: lesson.lessonTemplate?.rewardClass ?? null,
+        source: resolved.source,
+      },
       resource,
       arloPrompt: outline.arloPrompt,
       content: publicBody.content,
@@ -104,6 +146,7 @@ export class LessonsService {
         status: progress?.status ?? LessonProgressStatus.NotStarted,
         contentStep: session.contentStep ?? 0,
         practiceDone: session.practiceDone ?? false,
+        practiceOptionId: session.practiceOptionId ?? null,
         quizAnswers: session.quizAnswers ?? {},
         quizIndex: session.quizIndex ?? 0,
         startedAt: progress?.startedAt ?? null,
@@ -119,6 +162,12 @@ export class LessonsService {
       { allowLocked: false },
     );
 
+    const resolved = await this.content.resolveAuthoritative(
+      lesson,
+      lesson.lessonTemplate,
+    );
+    const contentVersionId = resolved.contentVersionId;
+
     let row = progress;
     if (!row) {
       row = this.progressRepo.create({
@@ -133,6 +182,7 @@ export class LessonsService {
       row.status = LessonProgressStatus.InProgress;
       row.sessionState = {};
       row.completedAt = null;
+      row.activeAttemptId = null;
     } else if (row.status === LessonProgressStatus.NotStarted) {
       row.status = LessonProgressStatus.InProgress;
       row.startedAt = row.startedAt ?? new Date();
@@ -142,10 +192,24 @@ export class LessonsService {
 
     row = await this.progressRepo.save(row);
 
+    const attempt = await this.ensureActiveAttempt(
+      userId,
+      lesson,
+      row,
+      contentVersionId,
+      resolved.contentSchemaVersion,
+    );
+    row.activeAttemptId = attempt.id;
+    row = await this.progressRepo.save(row);
+
     return {
       lessonId: lesson.id,
       status: row.status,
       startedAt: row.startedAt?.toISOString() ?? new Date().toISOString(),
+      attemptId: attempt.id,
+      contentVersionId,
+      contentSchemaVersion: resolved.contentSchemaVersion,
+      rewardRuleVersion: REWARD_RULE_VERSION,
     };
   }
 
@@ -175,24 +239,63 @@ export class LessonsService {
       row.startedAt = row.startedAt ?? new Date();
     }
 
+    let attempt: LessonAttempt | null = null;
+    if (dto.attemptId || row.activeAttemptId) {
+      attempt = await this.requireAttempt(
+        userId,
+        lesson,
+        row,
+        dto.attemptId ?? row.activeAttemptId!,
+      );
+    }
+
+    const resolved = await this.content.resolveAuthoritative(
+      lesson,
+      lesson.lessonTemplate,
+      attempt?.contentVersionId,
+    );
+
+    // Client may submit navigation / incremental answers only.
     const session = { ...(row.sessionState ?? {}) };
     if (dto.contentStep !== undefined) session.contentStep = dto.contentStep;
-    if (dto.practiceDone !== undefined) session.practiceDone = dto.practiceDone;
     if (dto.practiceOptionId !== undefined) {
+      if (
+        !this.content.hasValidAnswerIds(resolved.outline, {
+          practiceOptionId: dto.practiceOptionId,
+        })
+      ) {
+        throw new AppException(
+          AuthErrorCode.LESSON_INVALID_ANSWER,
+          'practiceOptionId not valid for content version',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
       session.practiceOptionId = dto.practiceOptionId;
     }
     if (dto.quizAnswers !== undefined) {
+      if (
+        !this.content.hasValidAnswerIds(resolved.outline, {
+          quizAnswers: dto.quizAnswers,
+        })
+      ) {
+        throw new AppException(
+          AuthErrorCode.LESSON_INVALID_ANSWER,
+          'quizAnswers not valid for content version',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
       session.quizAnswers = {
         ...(session.quizAnswers ?? {}),
         ...dto.quizAnswers,
       };
     }
     if (dto.quizIndex !== undefined) session.quizIndex = dto.quizIndex;
-    row.sessionState = session;
-
     if (dto.timeSpentMinutes !== undefined) {
-      row.timeSpentMinutes = dto.timeSpentMinutes;
+      const prev = row.timeSpentMinutes ?? 0;
+      const next = Math.max(prev, dto.timeSpentMinutes);
+      row.timeSpentMinutes = Math.min(next, prev + 120);
     }
+    row.sessionState = session;
 
     row = await this.progressRepo.save(row);
     return {
@@ -200,6 +303,7 @@ export class LessonsService {
       status: row.status,
       sessionState: row.sessionState,
       timeSpentMinutes: row.timeSpentMinutes,
+      attemptId: row.activeAttemptId,
     };
   }
 
@@ -213,15 +317,23 @@ export class LessonsService {
       lessonId,
       { allowLocked: false },
     );
-    const outline = this.content.resolveOutline(
+    const attempt = await this.requireAttempt(
+      userId,
+      lesson,
+      progress,
+      dto.attemptId,
+    );
+    const resolved = await this.content.resolveAuthoritative(
       lesson,
       lesson.lessonTemplate,
+      attempt.contentVersionId,
     );
+    const outline = resolved.outline;
     const option = outline.practice.options.find((o) => o.id === dto.optionId);
     if (!option) {
       throw new AppException(
         AuthErrorCode.LESSON_INVALID_ANSWER,
-        'Unknown practice option',
+        'Unknown practice option for content version',
         HttpStatus.BAD_REQUEST,
       );
     }
@@ -231,6 +343,15 @@ export class LessonsService {
     const feedback = correct
       ? (outline.practice.feedbackCorrect ?? 'Nailed it.')
       : (outline.practice.feedbackIncorrect ?? 'Not quite — try the hint.');
+
+    if (dto.hintUsed) {
+      attempt.assistanceUsed = {
+        ...(attempt.assistanceUsed ?? {}),
+        hintUsed: true,
+        hintCount: Number(attempt.assistanceUsed?.hintCount ?? 0) + 1,
+      };
+      await this.attemptsRepo.save(attempt);
+    }
 
     await this.patchSession(userId, lesson.id, progress, {
       practiceDone: true,
@@ -250,15 +371,23 @@ export class LessonsService {
       lessonId,
       { allowLocked: false },
     );
-    const outline = this.content.resolveOutline(
+    const attempt = await this.requireAttempt(
+      userId,
+      lesson,
+      progress,
+      dto.attemptId,
+    );
+    const resolved = await this.content.resolveAuthoritative(
       lesson,
       lesson.lessonTemplate,
+      attempt.contentVersionId,
     );
+    const outline = resolved.outline;
     const question = outline.quiz.find((q) => q.id === dto.questionId);
     if (!question) {
       throw new AppException(
         AuthErrorCode.LESSON_INVALID_ANSWER,
-        'Unknown quiz question',
+        'Unknown quiz question for content version',
         HttpStatus.BAD_REQUEST,
       );
     }
@@ -266,7 +395,7 @@ export class LessonsService {
     if (!optionOk) {
       throw new AppException(
         AuthErrorCode.LESSON_INVALID_ANSWER,
-        'Unknown quiz option',
+        'Unknown quiz option for content version',
         HttpStatus.BAD_REQUEST,
       );
     }
@@ -287,197 +416,184 @@ export class LessonsService {
     };
   }
 
-  async complete(userId: string, lessonId: string, dto: CompleteLessonDto) {
+  async complete(
+    userId: string,
+    lessonId: string,
+    dto: CompleteLessonDto,
+    idempotencyKey: string,
+  ) {
     const ctx = await this.requireOwnedLesson(userId, lessonId, {
       allowLocked: false,
     });
-    const { lesson } = ctx;
-    const outline = this.content.resolveOutline(
+    const { lesson, progress } = ctx;
+    const attempt = await this.requireAttempt(
+      userId,
+      lesson,
+      progress,
+      dto.attemptId,
+    );
+    const resolved = await this.content.resolveAuthoritative(
       lesson,
       lesson.lessonTemplate,
+      attempt.contentVersionId,
     );
-
-    const result = await this.dataSource.transaction(async (manager) => {
-      const progressRepo = manager.getRepository(LessonProgress);
-      let progress = await progressRepo.findOne({
-        where: { userId, lessonId: lesson.id },
-      });
-
-      const previouslyAwarded =
-        (progress?.xpAwarded ?? 0) > 0 ||
-        (progress?.gemsAwarded ?? 0) > 0 ||
-        (progress?.coinsAwarded ?? 0) > 0;
-
-      const alreadyCompleted =
-        progress?.status === LessonProgressStatus.Completed &&
-        (previouslyAwarded || Boolean(progress.completedAt));
-
-      if (alreadyCompleted && progress) {
-        const profile = await manager
-          .getRepository(Profile)
-          .findOne({ where: { userId } });
-        return {
-          lessonId: lesson.id,
-          status: LessonProgressStatus.Completed,
-          quizScore: {
-            correct: progress.quizCorrect ?? 0,
-            total: progress.quizTotal ?? outline.quiz.length,
-            perfect:
-              (progress.quizCorrect ?? 0) ===
-              (progress.quizTotal ?? outline.quiz.length),
-          },
-          reward: {
-            xp: progress.xpAwarded,
-            gems: progress.gemsAwarded,
-            coins: progress.coinsAwarded,
-            badgeId: undefined,
-            badgeLabel: undefined,
-            arloLine:
-              outline.reward?.arloLine ??
-              `“${lesson.title}” stays on the map — no double loot.`,
-          },
-          profile: {
-            totalXp: profile?.totalXp ?? 0,
-            gems: profile?.gems ?? 0,
-            coins: profile?.coins ?? 0,
-          },
-          unlockedLessonIds: [] as string[],
-          roadmapProgressPercent: Number(
-            (
-              await manager.getRepository(Roadmap).findOne({
-                where: { userId, status: RoadmapStatus.Ready },
-                order: { updatedAt: 'DESC' },
-              })
-            )?.progressPercent ?? 0,
-          ),
-          firstCompletion: false,
-          minutes: progress.timeSpentMinutes || lesson.estimatedMinutes,
-        };
-      }
-
-      const quizAnswers = {
-        ...(progress?.sessionState?.quizAnswers ?? {}),
-        ...(dto.quizAnswers ?? {}),
-      };
-      const practiceOptionId =
-        dto.practiceOptionId ??
-        progress?.sessionState?.practiceOptionId ??
-        null;
-
-      let quizCorrect = 0;
-      for (const q of outline.quiz) {
-        if (quizAnswers[q.id] === q.correctOptionId) quizCorrect += 1;
-      }
-      const quizTotal = outline.quiz.length;
-      const practiceCorrect = practiceOptionId
-        ? Boolean(
-            outline.practice.options.find(
-              (o) => o.id === practiceOptionId && o.correct,
-            ),
-          )
-        : null;
-
-      const completedCount = await progressRepo.count({
-        where: { userId, status: LessonProgressStatus.Completed },
-      });
-      const isFirstLessonEver = completedCount === 0 && !previouslyAwarded;
-
-      const reward = this.rewards.computeReward({
-        lesson,
-        outline,
-        quizCorrect,
-        quizTotal,
-        alreadyCompleted: previouslyAwarded,
-        isFirstLessonEver,
-      });
-
-      if (!progress) {
-        progress = progressRepo.create({
-          userId,
-          lessonId: lesson.id,
-          status: LessonProgressStatus.InProgress,
-          startedAt: new Date(),
-          sessionState: {},
-        });
-      }
-
-      progress.status = LessonProgressStatus.Completed;
-      progress.completedAt = new Date();
-      progress.quizCorrect = quizCorrect;
-      progress.quizTotal = quizTotal;
-      progress.practiceCorrect = practiceCorrect;
-      if (dto.timeSpentMinutes !== undefined) {
-        progress.timeSpentMinutes = dto.timeSpentMinutes;
-      }
-      progress.sessionState = {
-        ...(progress.sessionState ?? {}),
-        practiceDone: true,
-        practiceOptionId,
-        quizAnswers,
-      };
-
-      const profileSnapshot = await this.rewards.applyReward(
-        manager,
-        userId,
-        progress,
-        reward,
+    if (
+      !this.content.hasValidAnswerIds(resolved.outline, {
+        practiceOptionId: dto.practiceOptionId,
+        quizAnswers: dto.quizAnswers,
+      })
+    ) {
+      throw new AppException(
+        AuthErrorCode.LESSON_INVALID_ANSWER,
+        'Answers not valid for content version',
+        HttpStatus.BAD_REQUEST,
       );
-      await progressRepo.save(progress);
-
-      const lessonRow = await manager.getRepository(Lesson).findOneOrFail({
-        where: { id: lesson.id },
-      });
-      const unlockResult = await this.unlock.afterComplete(
-        manager,
-        userId,
-        lessonRow,
-      );
-
-      return {
-        lessonId: lesson.id,
-        status: LessonProgressStatus.Completed,
-        quizScore: {
-          correct: quizCorrect,
-          total: quizTotal,
-          perfect: quizTotal > 0 && quizCorrect === quizTotal,
-        },
-        reward: {
-          xp: reward.xp,
-          gems: reward.gems,
-          coins: reward.coins,
-          badgeId: profileSnapshot.badgeId ?? reward.badgeId,
-          badgeLabel: profileSnapshot.badgeLabel ?? reward.badgeLabel,
-          arloLine: reward.arloLine,
-        },
-        profile: {
-          totalXp: profileSnapshot.totalXp,
-          gems: profileSnapshot.gems,
-          coins: profileSnapshot.coins,
-        },
-        unlockedLessonIds: unlockResult.unlockedLessonIds,
-        roadmapProgressPercent: unlockResult.progressPercent,
-        firstCompletion: true,
-        minutes:
-          progress.timeSpentMinutes ||
-          dto.timeSpentMinutes ||
-          lesson.estimatedMinutes,
-      };
+    }
+    return this.orchestrator.complete({
+      userId,
+      lesson,
+      outline: resolved.outline,
+      dto,
+      idempotencyKey,
+      contentVersionId: resolved.contentVersionId,
+      contentSchemaVersion: resolved.contentSchemaVersion,
+      attempt,
     });
+  }
 
-    if (result.firstCompletion) {
-      try {
-        await this.weeks.onLessonCompleted(
-          userId,
-          lesson.id,
-          result.minutes,
-        );
-      } catch {
-        /* week plan optional if roadmap/plan missing */
+  async arloChat(userId: string, lessonId: string, message: string) {
+    const { lesson, progress } = await this.requireOwnedLesson(
+      userId,
+      lessonId,
+      { allowLocked: false },
+    );
+    let pinned: string | null = null;
+    if (progress?.activeAttemptId) {
+      const attempt = await this.attemptsRepo.findOne({
+        where: { id: progress.activeAttemptId },
+      });
+      pinned = attempt?.contentVersionId ?? null;
+    }
+    const resolved = await this.content.resolveAuthoritative(
+      lesson,
+      lesson.lessonTemplate,
+      pinned,
+    );
+    return this.arlo.chat({ lesson, outline: resolved.outline, message });
+  }
+
+  private async ensureActiveAttempt(
+    userId: string,
+    lesson: Lesson,
+    progress: LessonProgress,
+    contentVersionId: string,
+    contentSchemaVersion = CONTENT_SCHEMA_VERSION,
+  ): Promise<LessonAttempt> {
+    if (progress.activeAttemptId) {
+      const existing = await this.attemptsRepo.findOne({
+        where: { id: progress.activeAttemptId },
+      });
+      if (
+        existing &&
+        existing.status === LessonAttemptStatus.InProgress &&
+        existing.contentVersionId === contentVersionId
+      ) {
+        return existing;
+      }
+      if (existing && existing.status === LessonAttemptStatus.InProgress) {
+        existing.status = LessonAttemptStatus.Abandoned;
+        await this.attemptsRepo.save(existing);
       }
     }
 
-    const { firstCompletion: _f, minutes: _m, ...response } = result;
-    return response;
+    const last =
+      (
+        await this.attemptsRepo.find({
+          where: { userId, lessonId: lesson.id },
+          order: { attemptNumber: 'DESC' },
+          take: 1,
+        })
+      )[0]?.attemptNumber ?? 0;
+
+    return this.attemptsRepo.save(
+      this.attemptsRepo.create({
+        userId,
+        lessonId: lesson.id,
+        lessonProgressId: progress.id,
+        attemptNumber: last + 1,
+        contentVersionId,
+        contentSchemaVersion,
+        rewardRuleVersion: REWARD_RULE_VERSION,
+        status: LessonAttemptStatus.InProgress,
+        startedAt: progress.startedAt ?? new Date(),
+        rewardEligible: true,
+        assistanceUsed: {},
+      }),
+    );
+  }
+
+  /** Require attemptId — must match active attempt + pinned content version. */
+  private async requireAttempt(
+    userId: string,
+    lesson: Lesson,
+    progress: LessonProgress | null,
+    attemptId: string,
+  ): Promise<LessonAttempt> {
+    if (!attemptId?.trim()) {
+      throw new AppException(
+        AuthErrorCode.LESSON_ATTEMPT_MISMATCH,
+        'attemptId is required',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const attempt = await this.attemptsRepo.findOne({
+      where: { id: attemptId, userId, lessonId: lesson.id },
+    });
+    if (!attempt) {
+      throw new AppException(
+        AuthErrorCode.LESSON_ATTEMPT_MISMATCH,
+        'Invalid or expired attempt',
+        HttpStatus.CONFLICT,
+      );
+    }
+    if (
+      progress?.activeAttemptId &&
+      progress.activeAttemptId !== attemptId
+    ) {
+      throw new AppException(
+        AuthErrorCode.LESSON_ATTEMPT_MISMATCH,
+        'Attempt is not the active session',
+        HttpStatus.CONFLICT,
+      );
+    }
+    if (
+      attempt.status !== LessonAttemptStatus.InProgress &&
+      attempt.status !== LessonAttemptStatus.Completed
+    ) {
+      throw new AppException(
+        AuthErrorCode.LESSON_ATTEMPT_MISMATCH,
+        'Attempt is not active',
+        HttpStatus.CONFLICT,
+      );
+    }
+    return attempt;
+  }
+
+  /** @deprecated use requireAttempt */
+  private async assertAttempt(
+    userId: string,
+    lesson: Lesson,
+    progress: LessonProgress | null,
+    attemptId?: string,
+  ) {
+    if (!attemptId) {
+      throw new AppException(
+        AuthErrorCode.LESSON_ATTEMPT_MISMATCH,
+        'attemptId is required',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    await this.requireAttempt(userId, lesson, progress, attemptId);
   }
 
   private async patchSession(
@@ -551,10 +667,7 @@ export class LessonsService {
       );
     }
 
-    if (
-      !opts.allowLocked &&
-      lesson.status === LessonStatus.Locked
-    ) {
+    if (!opts.allowLocked && lesson.status === LessonStatus.Locked) {
       throw new AppException(
         AuthErrorCode.LESSON_LOCKED,
         'Lesson is locked',

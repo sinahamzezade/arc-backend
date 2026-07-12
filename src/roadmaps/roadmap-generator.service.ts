@@ -3,6 +3,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
+import { ContentPersonalizationService } from '../content-pool/content-personalization.service';
+import { ContentQueryService } from '../content-pool/content-query.service';
+import { TimingService } from '../course-timing/timing.service';
 import { Goal } from '../goals/entities/goal.entity';
 import { LessonTemplate } from '../skill-graph/entities/lesson-template.entity';
 import { isPlayOutline } from '../lessons/lesson-play.types';
@@ -37,6 +40,9 @@ export class RoadmapGeneratorService {
 
   constructor(
     private readonly skillGraph: SkillGraphService,
+    private readonly personalization: ContentPersonalizationService,
+    private readonly contentQuery: ContentQueryService,
+    private readonly timing: TimingService,
     private readonly dataSource: DataSource,
     private readonly roadmapAi: RoadmapAiService,
     @InjectRepository(Goal)
@@ -56,7 +62,7 @@ export class RoadmapGeneratorService {
     const primaryRole = goal.targetRoles[0];
     if (!primaryRole) {
       throw new AppException(
-        AuthErrorCode.ROLE_RECIPE_MISSING,
+        AuthErrorCode.CONTENT_ROLE_RECIPE_MISSING,
         'Goal has no target role',
         HttpStatus.BAD_REQUEST,
       );
@@ -65,14 +71,22 @@ export class RoadmapGeneratorService {
     const recipe = await this.skillGraph.findRecipeByRole(primaryRole);
     if (!recipe) {
       throw new AppException(
-        AuthErrorCode.ROLE_RECIPE_MISSING,
+        AuthErrorCode.CONTENT_ROLE_RECIPE_MISSING,
         `No role recipe for ${primaryRole}`,
         HttpStatus.BAD_REQUEST,
       );
     }
 
-    const subgraph = await this.skillGraph.loadSubgraphForRecipe(recipe);
-    const hours = decodeWeeklyHours(goal.weeklyHours);
+    const personalization = await this.personalization.getPersonalizationCandidates(
+      goalId,
+    );
+    if (personalization.feasibility === 'required_budget_exceeded') {
+      this.logger.warn(
+        `CONTENT_REQUIRED_BUDGET_EXCEEDED goal=${goalId} required=${personalization.requiredMinutes}m budget=${personalization.budgetMinutes}m`,
+      );
+    }
+
+    const subgraph = await this.skillGraph.loadSubgraphForRecipe(recipe);    const hours = decodeWeeklyHours(goal.weeklyHours);
     const weeks = decodeTimelineWeeks(
       goal.targetDeadline,
       recipe.defaultTimelineWeeks,
@@ -161,6 +175,26 @@ export class RoadmapGeneratorService {
     this.logger.log(
       `Assembled roadmap ${roadmap.id} for goal ${goalId} (${phases.length} phases, aiUsed=${aiUsed})`,
     );
+
+    try {
+      await this.contentQuery.materializeRoadmapContent(roadmap.id, {
+        weeks: 3,
+        fromWeek: 1,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Materialize window failed for ${roadmap.id}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+
+    try {
+      await this.timing.bootstrapFromRoadmap(roadmap.id);
+    } catch (err) {
+      this.logger.warn(
+        `Course timing bootstrap failed for ${roadmap.id}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+
     return roadmap;
   }
 
@@ -460,6 +494,9 @@ export class RoadmapGeneratorService {
                 resourceId: pl.resourceId,
                 status: pl.status,
                 playContent: outline,
+                sourceVersionId: pl.template.publishedVersionId ?? null,
+                rewardClassSnapshot: pl.template.rewardClass ?? 'standard',
+                materializedWindow: null,
                 objective:
                   outline && typeof outline === 'object' && 'objective' in outline
                     ? String((outline as { objective: string }).objective)

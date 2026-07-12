@@ -22,13 +22,45 @@ export function computeOnTrack(input: {
   sessionsPlanned: number;
   dayIndex: number; // Mon=0 … Sun=6
 }): boolean {
-  if (input.sealed) return true;
-  if (input.sessionsPlanned <= 0) return true;
-  const expected = Math.ceil(
-    (input.sessionsPlanned * (input.dayIndex + 1)) / 7,
+  const status = computeProgressStatus(input);
+  return (
+    status === 'ahead' || status === 'on_track' || status === 'sealed'
   );
-  // Soft: allow one session behind
-  return input.sessionsDone >= expected - 1;
+}
+
+export type ProgressStatus =
+  | 'ahead'
+  | 'on_track'
+  | 'catch_up'
+  | 'at_risk'
+  | 'sealed';
+
+/** Doc §10 — time + session pace. */
+export function computeProgressStatus(input: {
+  sealed: boolean;
+  sessionsDone: number;
+  sessionsPlanned: number;
+  dayIndex: number;
+  verifiedMinutesDone?: number;
+  minutesPlanned?: number;
+}): ProgressStatus {
+  if (input.sealed) return 'sealed';
+  if (input.sessionsPlanned <= 0) return 'on_track';
+
+  const elapsedRatio = Math.min(1, (input.dayIndex + 1) / 7);
+  const expectedSessions = Math.floor(
+    input.sessionsPlanned * elapsedRatio,
+  );
+  const remainingSessions = Math.max(
+    0,
+    input.sessionsPlanned - input.sessionsDone,
+  );
+  const daysLeft = Math.max(0, 6 - input.dayIndex);
+
+  if (input.sessionsDone >= expectedSessions + 1) return 'ahead';
+  if (input.sessionsDone >= expectedSessions - 1) return 'on_track';
+  if (remainingSessions > daysLeft + 1) return 'at_risk';
+  return 'catch_up';
 }
 
 export function meetsSealCriteria(input: {

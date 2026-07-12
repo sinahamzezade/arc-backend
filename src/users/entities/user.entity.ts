@@ -47,6 +47,10 @@ export class User {
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 
+  /** Content-admin / CMS access. */
+  @Column({ name: 'is_admin', type: 'boolean', default: false })
+  isAdmin: boolean;
+
   @Column({ name: 'last_login_at', type: 'timestamptz', nullable: true })
   lastLoginAt: Date | null;
 
