@@ -301,7 +301,7 @@ export function toWeekCurrentDto(input: {
     sealed,
     sessionsLeft: left,
     estimateMinutes,
-    replanHref: '/week',
+    replanHref: '/week/plan',
     weeklyStreak,
     todayMission,
     progress: {
@@ -368,7 +368,7 @@ export function buildingWeekDto(input: {
     sealed: false,
     sessionsLeft: 0,
     estimateMinutes: 0,
-    replanHref: '/week',
+    replanHref: '/week/plan',
     weeklyStreak: input.weeklyStreak,
     todayMission: null,
     progress: {

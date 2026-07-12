@@ -124,6 +124,15 @@ export class BattlesController {
     return this.battles.submitAnswer(user.userId, id, dto);
   }
 
+  @Post(':id/continue')
+  @ApiOperation({ summary: 'Advance past revealed question to next round' })
+  continuePlay(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.battles.continuePlay(user.userId, id);
+  }
+
   @Post(':id/heartbeat')
   @ApiOperation({ summary: 'Live heartbeat (disconnect enforcement)' })
   heartbeat(

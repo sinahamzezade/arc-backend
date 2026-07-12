@@ -62,6 +62,8 @@ export function toBattleDto(
     participants?: BattleParticipant[];
     currentQuestion?: BattleQuestion | null;
     currentAnswers?: BattleAnswer[];
+    youAnswered?: boolean;
+    opponentAnswered?: boolean;
     opponentProfile?: {
       displayName: string | null;
       username: string | null;
@@ -107,6 +109,8 @@ export function toBattleDto(
     theirScore,
     youReady: you?.isReady ?? false,
     opponentReady: them?.isReady ?? false,
+    youAnswered: extras?.youAnswered ?? false,
+    opponentAnswered: extras?.opponentAnswered ?? false,
     youOnline: you?.connectionState === 'online',
     opponentOnline: them?.connectionState === 'online',
     suddenDeathCount: battle.suddenDeathCount,

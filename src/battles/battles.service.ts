@@ -78,6 +78,18 @@ function timeoutAnswerIdemKey(
   return `t:${q}:${p.slice(0, 24)}`;
 }
 
+/**
+ * Scope client idempotency keys per user so both players can submit the same
+ * question without the second answer being treated as a duplicate.
+ */
+function answerIdempotencyKey(
+  userId: string,
+  clientKey: string,
+): string {
+  const raw = `u:${userId}:${clientKey}`;
+  return raw.length <= 128 ? raw : raw.slice(0, 128);
+}
+
 @Injectable()
 export class BattlesService {
   private readonly logger = new Logger(BattlesService.name);
@@ -610,7 +622,65 @@ export class BattlesService {
     await this.runMaintenance();
     await this.maybeTimeoutCurrentQuestion(battleId);
     await this.enforceDisconnectRules(battleId);
+    await this.maybeAutoContinueAfterReveal(battleId);
     return this.serializeBattle(userId, battleId);
+  }
+
+  /**
+   * After a revealed question, open the next round (or settle if finished).
+   * Reveal stays on the current question until clients call this.
+   */
+  async continuePlay(userId: string, battleId: string) {
+    return this.dataSource.transaction(async (manager) => {
+      const battle = await manager.getRepository(Battle).findOne({
+        where: { id: battleId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!battle) {
+        throw new AppException(
+          AuthErrorCode.BATTLE_NOT_FOUND,
+          'Battle not found',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      this.assertParticipant(battle, userId);
+      if (
+        ![BattleStatus.InProgress, BattleStatus.SuddenDeath].includes(
+          battle.status,
+        )
+      ) {
+        return this.serializeBattle(userId, battleId, manager);
+      }
+
+      const qRepo = manager.getRepository(BattleQuestion);
+      const current = await qRepo.findOne({
+        where: { battleId, orderIndex: battle.currentRound },
+      });
+      if (!current?.revealedAt) {
+        return this.serializeBattle(userId, battleId, manager);
+      }
+
+      if (battle.status === BattleStatus.InProgress) {
+        const normalQs = await qRepo.find({
+          where: { battleId, isSuddenDeath: false },
+          order: { orderIndex: 'ASC' },
+        });
+        const next = normalQs.find((q) => !q.revealedAt && !q.openedAt);
+        if (next) {
+          battle.currentRound = next.orderIndex;
+          await manager.getRepository(Battle).save(battle);
+          await this.openQuestion(manager, battle, next.orderIndex);
+          return this.serializeBattle(userId, battleId, manager);
+        }
+        // Last normal question revealed — settle / sudden death.
+        await this.advanceAfterReveal(manager, battle);
+        return this.serializeBattle(userId, battleId, manager);
+      }
+
+      // Sudden death: if still tied after reveal, open another SD question.
+      await this.advanceAfterReveal(manager, battle);
+      return this.serializeBattle(userId, battleId, manager);
+    });
   }
 
   async heartbeat(userId: string, battleId: string) {
@@ -667,7 +737,9 @@ export class BattlesService {
       }
 
       const existingByKey = await manager.getRepository(BattleAnswer).findOne({
-        where: { idempotencyKey: dto.idempotencyKey },
+        where: {
+          idempotencyKey: answerIdempotencyKey(userId, dto.idempotencyKey),
+        },
       });
       if (existingByKey) {
         return this.serializeBattle(userId, battleId, manager);
@@ -722,11 +794,8 @@ export class BattlesService {
         where: { participantId: me.id, battleQuestionId: question.id },
       });
       if (prior) {
-        throw new AppException(
-          AuthErrorCode.BATTLE_ANSWER_ALREADY_SUBMITTED,
-          'Answer already submitted',
-          HttpStatus.CONFLICT,
-        );
+        // Idempotent retry after a successful submit.
+        return this.serializeBattle(userId, battleId, manager);
       }
 
       const selected = timedOut ? null : (dto.selectedOptionId ?? null);
@@ -762,7 +831,7 @@ export class BattlesService {
           streakBonus: breakdown.streakBonus,
           questionScore: breakdown.questionScore,
           timedOut,
-          idempotencyKey: dto.idempotencyKey,
+          idempotencyKey: answerIdempotencyKey(userId, dto.idempotencyKey),
           submittedAt: new Date(),
         }),
       );
@@ -1060,12 +1129,8 @@ export class BattlesService {
     const allNormalRevealed = normalQs.every((q) => q.revealedAt);
 
     if (battle.status === BattleStatus.InProgress && !allNormalRevealed) {
-      const next = normalQs.find((q) => !q.revealedAt && !q.openedAt);
-      if (next) {
-        battle.currentRound = next.orderIndex;
-        await battleRepo.save(battle);
-        await this.openQuestion(manager, battle, next.orderIndex);
-      }
+      // Stay on revealed question so clients can show answer reveal.
+      // Next question opens via continuePlay.
       return;
     }
 
@@ -1654,6 +1719,62 @@ export class BattlesService {
     });
   }
 
+  /** Auto-advance ~6s after reveal so matches do not stall on Continue. */
+  private async maybeAutoContinueAfterReveal(battleId: string) {
+    const battle = await this.battlesRepo.findOneBy({ id: battleId });
+    if (
+      !battle ||
+      ![BattleStatus.InProgress, BattleStatus.SuddenDeath].includes(
+        battle.status,
+      )
+    ) {
+      return;
+    }
+    const q = await this.questionsRepo.findOne({
+      where: { battleId, orderIndex: battle.currentRound },
+    });
+    if (!q?.revealedAt) return;
+    if (Date.now() - q.revealedAt.getTime() < 6_000) return;
+
+    await this.dataSource.transaction(async (manager) => {
+      const lockedBattle = await manager.getRepository(Battle).findOne({
+        where: { id: battleId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!lockedBattle) return;
+      if (
+        ![BattleStatus.InProgress, BattleStatus.SuddenDeath].includes(
+          lockedBattle.status,
+        )
+      ) {
+        return;
+      }
+      const lockedQ = await manager.getRepository(BattleQuestion).findOne({
+        where: {
+          battleId,
+          orderIndex: lockedBattle.currentRound,
+        },
+      });
+      if (!lockedQ?.revealedAt) return;
+      if (Date.now() - lockedQ.revealedAt.getTime() < 6_000) return;
+
+      if (lockedBattle.status === BattleStatus.InProgress) {
+        const normalQs = await manager.getRepository(BattleQuestion).find({
+          where: { battleId, isSuddenDeath: false },
+          order: { orderIndex: 'ASC' },
+        });
+        const next = normalQs.find((row) => !row.revealedAt && !row.openedAt);
+        if (next) {
+          lockedBattle.currentRound = next.orderIndex;
+          await manager.getRepository(Battle).save(lockedBattle);
+          await this.openQuestion(manager, lockedBattle, next.orderIndex);
+          return;
+        }
+      }
+      await this.advanceAfterReveal(manager, lockedBattle);
+    });
+  }
+
   private async serializeBattle(
     userId: string,
     battleId: string,
@@ -1697,23 +1818,26 @@ export class BattlesService {
         })) ?? null;
     }
 
+    const you = participants.find((p) => p.userId === userId);
+    const them = participants.find((p) => p.userId !== userId);
+
     let currentAnswers: BattleAnswer[] = [];
-    if (currentQuestion?.revealedAt) {
-      currentAnswers = await aRepo.find({
+    let youAnswered = false;
+    let opponentAnswered = false;
+
+    if (currentQuestion) {
+      const allForQuestion = await aRepo.find({
         where: { battleQuestionId: currentQuestion.id },
       });
-    } else if (currentQuestion) {
-      // Show only whether opponent answered (no content).
-      const parts = participants;
-      const me = parts.find((p) => p.userId === userId);
-      if (me) {
-        const mine = await aRepo.findOne({
-          where: {
-            participantId: me.id,
-            battleQuestionId: currentQuestion.id,
-          },
-        });
-        if (mine) currentAnswers = [mine];
+      youAnswered = Boolean(
+        you && allForQuestion.some((a) => a.participantId === you.id),
+      );
+      opponentAnswered = Boolean(
+        them && allForQuestion.some((a) => a.participantId === them.id),
+      );
+
+      if (currentQuestion.revealedAt) {
+        currentAnswers = allForQuestion;
       }
     }
 
@@ -1721,6 +1845,8 @@ export class BattlesService {
       participants,
       currentQuestion,
       currentAnswers: currentQuestion?.revealedAt ? currentAnswers : undefined,
+      youAnswered,
+      opponentAnswered,
       opponentProfile,
     });
   }
