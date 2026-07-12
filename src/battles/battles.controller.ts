@@ -43,7 +43,9 @@ export class BattlesController {
   }
 
   @Get('invites')
-  @ApiOperation({ summary: 'Incoming + outgoing open invites' })
+  @ApiOperation({
+    summary: 'Open battles: invites + live/ready/funding matches',
+  })
   invites(@CurrentUser() user: AuthUserPayload) {
     return this.battles.listInvites(user.userId);
   }

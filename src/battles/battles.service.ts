@@ -1,4 +1,11 @@
-import { HttpStatus, Inject, Injectable, Logger, Optional, forwardRef } from '@nestjs/common';
+import {
+  HttpStatus,
+  Inject,
+  Injectable,
+  Logger,
+  Optional,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, MoreThanOrEqual, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
@@ -82,10 +89,7 @@ function timeoutAnswerIdemKey(
  * Scope client idempotency keys per user so both players can submit the same
  * question without the second answer being treated as a duplicate.
  */
-function answerIdempotencyKey(
-  userId: string,
-  clientKey: string,
-): string {
+function answerIdempotencyKey(userId: string, clientKey: string): string {
   const raw = `u:${userId}:${clientKey}`;
   return raw.length <= 128 ? raw : raw.slice(0, 128);
 }
@@ -284,16 +288,21 @@ export class BattlesService {
     await this.runMaintenance();
     const battles = await this.battlesRepo.find({
       where: [
-        { opponentId: userId, status: BattleStatus.Invited },
-        { challengerId: userId, status: BattleStatus.Invited },
+        { opponentId: userId, status: In(ACTIVE_STATUSES) },
+        { challengerId: userId, status: In(ACTIVE_STATUSES) },
       ],
-      order: { createdAt: 'DESC' },
+      order: { updatedAt: 'DESC' },
       take: 50,
     });
+    // Deduplicate (user can match both where clauses only if self-battle — still safe).
+    const seen = new Set<string>();
+    const unique = battles.filter((b) => {
+      if (seen.has(b.id)) return false;
+      seen.add(b.id);
+      return true;
+    });
     return {
-      items: await Promise.all(
-        battles.map((b) => this.getBattle(userId, b.id)),
-      ),
+      items: await Promise.all(unique.map((b) => this.getBattle(userId, b.id))),
     };
   }
 
