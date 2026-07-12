@@ -1,4 +1,11 @@
-import { Controller, Get, Param, ParseUUIDPipe, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
@@ -18,6 +25,12 @@ export class RoadmapsController {
   @ApiOperation({ summary: 'Current user roadmap tree or generation status' })
   getCurrent(@CurrentUser() user: AuthUserPayload) {
     return this.roadmapsService.getCurrent(user.userId);
+  }
+
+  @Post('current/retry')
+  @ApiOperation({ summary: 'Re-enqueue roadmap generation (Redraw map)' })
+  retry(@CurrentUser() user: AuthUserPayload) {
+    return this.roadmapsService.retryGenerate(user.userId);
   }
 
   @Get('jobs/:jobId')

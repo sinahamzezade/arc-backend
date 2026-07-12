@@ -67,6 +67,34 @@ export class RoadmapsService {
     };
   }
 
+  /** Re-enqueue generation from latest job's goal (Redraw map). */
+  async retryGenerate(userId: string): Promise<RoadmapJobResult> {
+    const latest = await this.jobsRepo.findOne({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+    });
+    if (!latest?.goalId) {
+      throw new AppException(
+        AuthErrorCode.GOAL_NOT_FOUND,
+        'No roadmap job to retry — finish the questionnaire first',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    if (
+      latest.status === RoadmapJobStatus.Queued ||
+      latest.status === RoadmapJobStatus.Processing
+    ) {
+      return {
+        status: latest.status === RoadmapJobStatus.Processing
+          ? 'processing'
+          : 'queued',
+        jobId: latest.id,
+        roadmapId: latest.roadmapId,
+      };
+    }
+    return this.enqueueGenerate(latest.goalId, userId);
+  }
+
   async getCurrent(userId: string) {
     const job = await this.jobsRepo.findOne({
       where: { userId },

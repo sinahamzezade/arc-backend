@@ -9,7 +9,7 @@ import {
   RewardReasonType,
 } from '../gamification/entities/reward-ledger-entry.entity';
 import { UserInventoryItem } from '../gamification/entities/user-inventory-item.entity';
-import { UserBadge } from '../lessons/entities/user-badge.entity';
+import { UserBadge } from '../badges/entities/user-badge.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
 import { ProfilesService } from '../profiles/profiles.service';

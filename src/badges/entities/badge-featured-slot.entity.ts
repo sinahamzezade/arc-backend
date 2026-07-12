@@ -1,22 +1,20 @@
 import {
   Column,
-  CreateDateColumn,
   Entity,
-  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
   Unique,
+  UpdateDateColumn,
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 
-@Entity('user_badges')
-@Unique(['userId', 'badgeId'])
-export class UserBadge {
+@Entity('badge_featured_slots')
+@Unique(['userId', 'slotIndex'])
+export class BadgeFeaturedSlot {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Index()
   @Column({ name: 'user_id', type: 'uuid' })
   userId: string;
 
@@ -24,12 +22,12 @@ export class UserBadge {
   @JoinColumn({ name: 'user_id' })
   user: User;
 
-  @Column({ name: 'badge_id', type: 'varchar' })
-  badgeId: string;
+  @Column({ name: 'slot_index', type: 'int' })
+  slotIndex: number;
 
-  @Column({ name: 'badge_label', type: 'varchar' })
-  badgeLabel: string;
+  @Column({ name: 'badge_code', type: 'varchar', length: 64 })
+  badgeCode: string;
 
-  @CreateDateColumn({ name: 'unlocked_at', type: 'timestamptz' })
-  unlockedAt: Date;
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt: Date;
 }

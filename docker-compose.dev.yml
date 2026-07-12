@@ -27,6 +27,7 @@ services:
       QUESTIONNAIRE_AI_PROMPT_VERSION: "${QUESTIONNAIRE_AI_PROMPT_VERSION:-questionnaire_copy_v1}"
       OPENAI_QUESTIONNAIRE_MODEL: "${OPENAI_QUESTIONNAIRE_MODEL:-gpt-4o-mini}"
       QUESTIONNAIRE_RESET_ON_BOOT: "${QUESTIONNAIRE_RESET_ON_BOOT:-false}"
+      SKILL_GRAPH_RESET_ON_BOOT: "${SKILL_GRAPH_RESET_ON_BOOT:-false}"
     volumes:
       - .:/app # mount your source code
       - /app/node_modules # keep container's node_modules

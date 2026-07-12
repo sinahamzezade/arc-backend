@@ -18,6 +18,16 @@ export type ResolvedPlayOutline = {
   source: 'play_content' | 'lesson_version' | 'template_outline' | 'default';
 };
 
+/** Fisher–Yates — copy so outline / callers stay untouched. */
+function shuffleOptions<T>(items: T[]): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 @Injectable()
 export class LessonContentService {
   constructor(
@@ -114,7 +124,7 @@ export class LessonContentService {
               'schemaVersion' in playable.body &&
               typeof (playable.body as { schemaVersion?: unknown })
                 .schemaVersion === 'number'
-                ? ((playable.body as { schemaVersion: number }).schemaVersion)
+                ? (playable.body as { schemaVersion: number }).schemaVersion
                 : 1,
             source: playable.lessonVersionId
               ? 'lesson_version'
@@ -151,7 +161,7 @@ export class LessonContentService {
     };
   }
 
-  /** Public play payload — no correct keys / explanations. */
+  /** Public play payload — no correct keys / explanations. Options shuffled so correct ≠ always first. */
   toPublicPlayBody(outline: LessonPlayOutline) {
     return {
       objective: outline.objective,
@@ -162,15 +172,19 @@ export class LessonContentService {
         id: outline.practice.id,
         prompt: outline.practice.prompt,
         hint: outline.practice.hint,
-        options: outline.practice.options.map((o) => ({
-          id: o.id,
-          label: o.label,
-        })),
+        options: shuffleOptions(
+          outline.practice.options.map((o) => ({
+            id: o.id,
+            label: o.label,
+          })),
+        ),
       },
       quiz: outline.quiz.map((q) => ({
         id: q.id,
         prompt: q.prompt,
-        options: q.options.map((o) => ({ id: o.id, label: o.label })),
+        options: shuffleOptions(
+          q.options.map((o) => ({ id: o.id, label: o.label })),
+        ),
       })),
     };
   }
@@ -245,7 +259,9 @@ export class LessonContentService {
           return {
             ...fallback,
             objective:
-              typeof b.objective === 'string' ? b.objective : fallback.objective,
+              typeof b.objective === 'string'
+                ? b.objective
+                : fallback.objective,
             content: content.length ? content : fallback.content,
           };
         }
@@ -269,7 +285,9 @@ export class LessonContentService {
     return fallback;
   }
 
-  private normalizeBlock(block: Record<string, unknown>): LessonContentBlock | null {
+  private normalizeBlock(
+    block: Record<string, unknown>,
+  ): LessonContentBlock | null {
     const type = String(block.type ?? '');
     if (type === 'text' && typeof block.body === 'string') {
       return { type: 'text', body: block.body };

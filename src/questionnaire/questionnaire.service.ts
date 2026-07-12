@@ -122,16 +122,22 @@ export class QuestionnaireService {
       existing?.status === QuestionnaireResponseStatus.Submitted &&
       existing.goalId
     ) {
-      const goal = await this.dataSource
-        .getRepository(Goal)
-        .findOne({ where: { id: existing.goalId } });
+      // Allow goal refresh when user re-submits (e.g. after unsupported role).
+      const goal = await this.dataSource.transaction(async (manager) => {
+        const updated = await this.upsertGoal(manager, userId, answers);
+        existing.answers = answers;
+        existing.schemaVersion = schemaVersion;
+        existing.goalId = updated.id;
+        await manager.getRepository(QuestionnaireResponse).save(existing);
+        return updated;
+      });
       const roadmap = await this.roadmapsService.enqueueGenerate(
-        existing.goalId,
+        goal.id,
         userId,
       );
       return {
         questionnaire: toQuestionnaireDto(existing),
-        goal: goal ? this.toGoalSummary(goal) : null,
+        goal: this.toGoalSummary(goal),
         roadmap,
       };
     }

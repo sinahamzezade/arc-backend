@@ -46,6 +46,7 @@ import {
 } from './weeks.serializer';
 import {
   dayIndexNow,
+  eligibleFromDayIndex,
   learningWeekWindow,
   resolveTz,
   weekStartMonday,
@@ -76,6 +77,15 @@ export class WeeksService {
     const now = new Date();
     const weekStart = weekStartMonday(now, tz);
     const todayIndex = dayIndexNow(now, tz);
+    const joinedAt =
+      profile.onboardingCompletedAt ??
+      profile.questionnaireCompletedAt ??
+      profile.createdAt;
+    const eligibleFrom = eligibleFromDayIndex({
+      weekStart,
+      timeZone: tz,
+      joinedAt,
+    });
 
     await this.closePreviousWeekIfNeeded(userId, weekStart);
 
@@ -85,7 +95,13 @@ export class WeeksService {
 
     if (!plan) {
       try {
-        plan = await this.ensurePlan(userId, weekStart, profile.weeklyStreak, tz);
+        plan = await this.ensurePlan(
+          userId,
+          weekStart,
+          profile.weeklyStreak,
+          tz,
+          eligibleFrom,
+        );
       } catch (err) {
         if (
           err instanceof AppException &&
@@ -100,16 +116,20 @@ export class WeeksService {
       }
     }
 
-    const tasks = await this.tasksRepo.find({
+    let tasks = await this.tasksRepo.find({
       where: { weeklyPlanId: plan.id },
       order: { dayIndex: 'ASC', sortOrder: 'ASC' },
     });
+
+    // Heal legacy plans that scheduled pre-join days as missable
+    tasks = await this.scrubPreJoinTasks(plan, tasks, eligibleFrom, todayIndex);
 
     return toWeekCurrentDto({
       plan,
       tasks,
       weeklyStreak: profile.weeklyStreak,
       dayIndexNow: todayIndex,
+      eligibleFromDayIndex: eligibleFrom,
     });
   }
 
@@ -136,12 +156,22 @@ export class WeeksService {
     const todayIndex =
       weekStart === weekStartMonday(new Date(), tz)
         ? dayIndexNow(new Date(), tz)
-        : 0;
+        : 6;
+    const joinedAt =
+      profile.onboardingCompletedAt ??
+      profile.questionnaireCompletedAt ??
+      profile.createdAt;
+    const eligibleFrom = eligibleFromDayIndex({
+      weekStart,
+      timeZone: tz,
+      joinedAt,
+    });
     return toWeekCurrentDto({
       plan,
       tasks,
       weeklyStreak: profile.weeklyStreak,
       dayIndexNow: todayIndex,
+      eligibleFromDayIndex: eligibleFrom,
     });
   }
 
@@ -232,11 +262,24 @@ export class WeeksService {
     void this.gamification.processPendingOutbox().catch(() => undefined);
 
     const freshProfile = await this.profiles.findByUserId(userId);
+    const joinedAt =
+      freshProfile?.onboardingCompletedAt ??
+      freshProfile?.questionnaireCompletedAt ??
+      freshProfile?.createdAt ??
+      profile.onboardingCompletedAt ??
+      profile.questionnaireCompletedAt ??
+      profile.createdAt;
+    const eligibleFrom = eligibleFromDayIndex({
+      weekStart,
+      timeZone: tz,
+      joinedAt,
+    });
     return toWeekCurrentDto({
       plan: result.plan,
       tasks: result.tasks,
       weeklyStreak: freshProfile?.weeklyStreak ?? profile.weeklyStreak,
       dayIndexNow: todayIndex,
+      eligibleFromDayIndex: eligibleFrom,
     });
   }
 
@@ -417,11 +460,20 @@ export class WeeksService {
     });
     if (!plan) {
       try {
+        const eligibleFrom = eligibleFromDayIndex({
+          weekStart,
+          timeZone: tz,
+          joinedAt:
+            profile.onboardingCompletedAt ??
+            profile.questionnaireCompletedAt ??
+            profile.createdAt,
+        });
         plan = await this.ensurePlan(
           userId,
           weekStart,
           profile.weeklyStreak,
           tz,
+          eligibleFrom,
         );
       } catch {
         return null;
@@ -520,6 +572,7 @@ export class WeeksService {
     weekStart: string,
     weeklyStreak: number,
     tz: string,
+    eligibleFrom = 0,
   ): Promise<WeeklyPlan> {
     const roadmap = await this.roadmaps.findReadyWithLessons(userId);
     if (!roadmap) {
@@ -540,14 +593,72 @@ export class WeeksService {
       timezoneSnapshot: tz,
       windowStartAt,
       windowEndAt,
+      eligibleFromDayIndex: eligibleFrom,
     });
     await this.recordEvent({
       userId,
       planId: plan.id,
       type: WeeklyPlanEventType.Generated,
-      payload: { weekStart, scheduleVersion: plan.scheduleVersion },
+      payload: {
+        weekStart,
+        scheduleVersion: plan.scheduleVersion,
+        eligibleFromDayIndex: eligibleFrom,
+      },
     });
     return plan;
+  }
+
+  /**
+   * Legacy plans may have tasks on days before the user joined.
+   * Skip unfinished ones and pack remaining onto eligible days.
+   */
+  private async scrubPreJoinTasks(
+    plan: WeeklyPlan,
+    tasks: WeeklyTask[],
+    eligibleFrom: number,
+    dayIndexNow: number,
+  ): Promise<WeeklyTask[]> {
+    if (eligibleFrom <= 0 || plan.status === WeeklyPlanStatus.Sealed) {
+      return tasks;
+    }
+
+    const preJoin = tasks.filter(
+      (t) =>
+        t.dayIndex < eligibleFrom &&
+        t.status !== WeeklyTaskStatus.Done &&
+        t.status !== WeeklyTaskStatus.Skipped,
+    );
+    if (!preJoin.length) return tasks;
+
+    const remainingDays = Array.from(
+      { length: 7 - Math.max(eligibleFrom, dayIndexNow) },
+      (_, i) => Math.max(eligibleFrom, dayIndexNow) + i,
+    );
+    const slots =
+      remainingDays.length > 0
+        ? remainingDays
+        : [Math.min(6, Math.max(eligibleFrom, dayIndexNow))];
+
+    preJoin.forEach((task, i) => {
+      task.dayIndex = slots[i % slots.length] ?? 6;
+      task.status = WeeklyTaskStatus.Upcoming;
+    });
+    await this.tasksRepo.save(preJoin);
+
+    // Also clear false Missed on pre-join if already persisted
+    const falseMissed = tasks.filter(
+      (t) =>
+        t.dayIndex < eligibleFrom && t.status === WeeklyTaskStatus.Missed,
+    );
+    for (const t of falseMissed) {
+      t.status = WeeklyTaskStatus.Skipped;
+    }
+    if (falseMissed.length) await this.tasksRepo.save(falseMissed);
+
+    return this.tasksRepo.find({
+      where: { weeklyPlanId: plan.id },
+      order: { dayIndex: 'ASC', sortOrder: 'ASC' },
+    });
   }
 
   private async trySeal(userId: string, plan: WeeklyPlan): Promise<void> {

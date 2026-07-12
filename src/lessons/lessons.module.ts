@@ -11,7 +11,7 @@ import { Roadmap } from '../roadmaps/entities/roadmap.entity';
 import { WeeksModule } from '../weeks/weeks.module';
 import { LessonAttempt } from './entities/lesson-attempt.entity';
 import { LessonCompletionResult } from './entities/lesson-completion-result.entity';
-import { UserBadge } from './entities/user-badge.entity';
+import { UserBadge } from '../badges/entities/user-badge.entity';
 import { LessonArloService } from './lesson-arlo.service';
 import { LessonCompletionOrchestrator } from './lesson-completion.orchestrator';
 import { LessonContentService } from './lesson-content.service';

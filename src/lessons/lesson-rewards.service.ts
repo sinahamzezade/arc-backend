@@ -9,7 +9,6 @@ import {
   type LessonActionKind,
 } from '../gamification/reward-calculator.constants';
 import { RewardCalculatorService } from '../gamification/reward-calculator.service';
-import { UserBadge } from './entities/user-badge.entity';
 import type { LessonPlayOutline } from './lesson-play.types';
 
 export type ComputedReward = {
@@ -168,22 +167,10 @@ export class LessonRewardsService {
     let unlockedBadgeId: string | undefined;
     let unlockedBadgeLabel: string | undefined;
 
+    // Persisted unlocks owned by BadgesModule outbox consumer.
     if (reward.badgeId && reward.badgeLabel) {
-      const badgeRepo = manager.getRepository(UserBadge);
-      const existing = await badgeRepo.findOne({
-        where: { userId, badgeId: reward.badgeId },
-      });
-      if (!existing) {
-        await badgeRepo.save(
-          badgeRepo.create({
-            userId,
-            badgeId: reward.badgeId,
-            badgeLabel: reward.badgeLabel,
-          }),
-        );
-        unlockedBadgeId = reward.badgeId;
-        unlockedBadgeLabel = reward.badgeLabel;
-      }
+      unlockedBadgeId = reward.badgeId;
+      unlockedBadgeLabel = reward.badgeLabel;
     }
 
     return {

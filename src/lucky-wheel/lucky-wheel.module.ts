@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { GamificationModule } from '../gamification/gamification.module';
-import { UserBadge } from '../lessons/entities/user-badge.entity';
+import { UserBadge } from '../badges/entities/user-badge.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ProfilesModule } from '../profiles/profiles.module';
 import { WheelCampaign } from './entities/wheel-campaign.entity';

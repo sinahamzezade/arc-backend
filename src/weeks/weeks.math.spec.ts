@@ -77,6 +77,20 @@ describe('weeks.math', () => {
         }),
       ).toBe(true);
     });
+
+    it('mid-week join does not treat pre-join days as elapsed debt', () => {
+      // Joined Thu (eligibleFrom=3), today Thu, 2 planned, 0 done
+      // Elapsed 1/4 of remaining week → expected floor(2*0.25)=0 → on track
+      expect(
+        computeOnTrack({
+          sealed: false,
+          sessionsDone: 0,
+          sessionsPlanned: 2,
+          dayIndex: 3,
+          eligibleFromDayIndex: 3,
+        }),
+      ).toBe(true);
+    });
   });
 
   describe('helpers', () => {

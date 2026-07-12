@@ -87,9 +87,17 @@ export class WeeksPlannerService {
     timezoneSnapshot?: string;
     windowStartAt?: Date;
     windowEndAt?: Date;
+    /** Skip availability days before this index (mid-week join). */
+    eligibleFromDayIndex?: number;
   }): Promise<WeeklyPlan> {
     const hoursPlanned = this.hoursFromGoal(input.goal, input.roadmap);
-    const daySlots = availabilityDayIndices(input.goal?.availability?.days);
+    const from = Math.min(6, Math.max(0, input.eligibleFromDayIndex ?? 0));
+    let daySlots = availabilityDayIndices(input.goal?.availability?.days).filter(
+      (d) => d >= from,
+    );
+    if (daySlots.length === 0) {
+      daySlots = Array.from({ length: 7 - from }, (_, i) => from + i);
+    }
     const sessionsPlanned = Math.max(
       1,
       Math.min(daySlots.length || 4, Math.max(2, Math.round(hoursPlanned / 1.5))),
@@ -101,7 +109,13 @@ export class WeeksPlannerService {
     );
 
     const sessionCount = Math.max(1, lessons.length || sessionsPlanned);
-    const minutesPlanned = Math.round(hoursPlanned * 60);
+    // Prorate minutes when week started mid-week
+    const scopeRatio = (7 - from) / 7;
+    const minutesPlanned = Math.max(
+      15,
+      Math.round(hoursPlanned * 60 * scopeRatio),
+    );
+    const hoursForPlan = round1(minutesPlanned / 60);
 
     const plan = await this.plansRepo.save(
       this.plansRepo.create({
@@ -116,7 +130,7 @@ export class WeeksPlannerService {
         windowEndAt: input.windowEndAt ?? null,
         sessionsPlanned: sessionCount,
         sessionsDone: 0,
-        hoursPlanned: String(round1(hoursPlanned)),
+        hoursPlanned: String(hoursForPlan),
         hoursDone: '0',
         minutesPlanned,
         verifiedMinutesDone: 0,
@@ -126,6 +140,7 @@ export class WeeksPlannerService {
         sealRuleSnapshot: {
           sessionsOrHoursRatio: 0.8,
           version: 'week-seal-v1',
+          eligibleFromDayIndex: from,
         },
         status: WeeklyPlanStatus.Active,
         sealedAt: null,
@@ -143,7 +158,7 @@ export class WeeksPlannerService {
                 id: null as unknown as string,
                 title: 'Study session',
                 track: input.roadmap.title || 'Path',
-                minutes: Math.round((hoursPlanned * 60) / sessionCount),
+                minutes: Math.round(minutesPlanned / sessionCount),
                 xpReward: 20,
                 status: LessonStatus.Available,
               },

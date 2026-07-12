@@ -78,8 +78,8 @@ export class ContentPersonalizationService {
       );
     }
 
-    const roleSlug = goal.targetRoles[0];
-    if (!roleSlug) {
+    const roles = (goal.targetRoles ?? []).filter(Boolean);
+    if (!roles.length) {
       throw new AppException(
         AuthErrorCode.CONTENT_ROLE_RECIPE_MISSING,
         'Goal has no target role',
@@ -92,7 +92,7 @@ export class ContentPersonalizationService {
     });
     const language = profile?.language || 'en';
 
-    const recipe = await this.contentQuery.getRoleRecipe(roleSlug);
+    const recipe = await this.contentQuery.getRoleRecipeForRoles(roles);
     const gap = await this.calculateSkillGap(goal, recipe);
     const styles = goal.learningStyles?.values ?? [];
     const hours = decodeWeeklyHours(goal.weeklyHours);

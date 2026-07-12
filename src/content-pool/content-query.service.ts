@@ -80,15 +80,19 @@ export class ContentQueryService {
   ) {}
 
   async getRoleRecipe(roleSlug: string): Promise<RoleRecipe> {
-    const recipe = await this.skillGraph.findRecipeByRole(roleSlug);
+    return this.getRoleRecipeForRoles([roleSlug]);
+  }
+
+  async getRoleRecipeForRoles(roleSlugs: string[]): Promise<RoleRecipe> {
+    const recipe = await this.skillGraph.findFirstRecipeForRoles(roleSlugs);
     if (!recipe) {
       throw new AppException(
         AuthErrorCode.CONTENT_ROLE_RECIPE_MISSING,
-        `No role recipe for ${roleSlug}`,
+        `No role recipe for ${roleSlugs.filter(Boolean).join(', ') || '(none)'}`,
         HttpStatus.NOT_FOUND,
       );
     }
-    const key = this.cache.recipeKey(roleSlug, recipe.version);
+    const key = this.cache.recipeKey(recipe.targetRoleSlug, recipe.version);
     this.cache.set(key, {
       id: recipe.id,
       version: recipe.version,

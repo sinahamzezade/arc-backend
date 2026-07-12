@@ -154,6 +154,22 @@ export function dayIndexNow(date: Date, timeZone: string): number {
   return Math.min(6, Math.max(0, diff));
 }
 
+/**
+ * First day index that counts for this learning week.
+ * Days before the user joined (same week) are not missable / not scheduled.
+ * Later weeks → 0 (full week).
+ */
+export function eligibleFromDayIndex(input: {
+  weekStart: string;
+  timeZone: string;
+  joinedAt: Date | null | undefined;
+}): number {
+  if (!input.joinedAt) return 0;
+  const joinWeek = weekStartMonday(input.joinedAt, input.timeZone);
+  if (joinWeek !== input.weekStart) return 0;
+  return dayIndexNow(input.joinedAt, input.timeZone);
+}
+
 export function rangeLabel(weekStart: string): string {
   const [ys, ms, ds] = weekStart.split('-').map(Number);
   const start = new Date(Date.UTC(ys, ms - 1, ds, 12));

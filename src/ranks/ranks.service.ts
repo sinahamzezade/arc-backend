@@ -20,7 +20,7 @@ import { UserInventoryItem } from '../gamification/entities/user-inventory-item.
 import { Wallet } from '../gamification/entities/wallet.entity';
 import { localDayKey } from '../leagues/league-season-bounds';
 import { LeaguesService } from '../leagues/leagues.service';
-import { UserBadge } from '../lessons/entities/user-badge.entity';
+import { UserBadge } from '../badges/entities/user-badge.entity';
 import { NotificationType } from '../notifications/entities/notification.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ProfilesService } from '../profiles/profiles.service';

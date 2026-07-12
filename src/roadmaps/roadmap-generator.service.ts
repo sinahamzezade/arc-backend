@@ -59,8 +59,8 @@ export class RoadmapGeneratorService {
       );
     }
 
-    const primaryRole = goal.targetRoles[0];
-    if (!primaryRole) {
+    const roles = (goal.targetRoles ?? []).filter(Boolean);
+    if (!roles.length) {
       throw new AppException(
         AuthErrorCode.CONTENT_ROLE_RECIPE_MISSING,
         'Goal has no target role',
@@ -68,11 +68,11 @@ export class RoadmapGeneratorService {
       );
     }
 
-    const recipe = await this.skillGraph.findRecipeByRole(primaryRole);
+    const recipe = await this.skillGraph.findFirstRecipeForRoles(roles);
     if (!recipe) {
       throw new AppException(
         AuthErrorCode.CONTENT_ROLE_RECIPE_MISSING,
-        `No role recipe for ${primaryRole}`,
+        `No role recipe for ${roles.join(', ')}`,
         HttpStatus.BAD_REQUEST,
       );
     }
@@ -154,7 +154,7 @@ export class RoadmapGeneratorService {
       goal,
       pathTitle,
       recipe.title,
-      primaryRole,
+      recipe.targetRoleSlug,
       weeks,
       hours,
       phases,

@@ -9,12 +9,27 @@ describe('LessonContentService', () => {
 
   it('strips grading keys from public play body', () => {
     const body = content.toPublicPlayBody(HTML_HELLO_WORLD_OUTLINE);
-    expect(body.practice.options[0]).toEqual({
-      id: 'a',
-      label: '<p>Hello Arc</p>',
-    });
+    expect(body.practice.options).toHaveLength(4);
+    expect(body.practice.options).toEqual(
+      expect.arrayContaining([
+        { id: 'a', label: '<p>Hello Arc</p>' },
+        { id: 'b', label: '<p>Hello Arc<p>' },
+        { id: 'c', label: '</p>Hello Arc<p>' },
+        { id: 'd', label: 'p: Hello Arc' },
+      ]),
+    );
+    expect(body.practice.options.every((o) => !('correct' in o))).toBe(true);
     expect(body.quiz[0]).not.toHaveProperty('correctOptionId');
     expect(body.quiz[0]).not.toHaveProperty('explanation');
+  });
+
+  it('shuffles practice options across calls', () => {
+    const orders = new Set<string>();
+    for (let i = 0; i < 40; i += 1) {
+      const body = content.toPublicPlayBody(HTML_HELLO_WORLD_OUTLINE);
+      orders.add(body.practice.options.map((o) => o.id).join(','));
+    }
+    expect(orders.size).toBeGreaterThan(1);
   });
 });
 

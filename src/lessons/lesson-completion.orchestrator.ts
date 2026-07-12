@@ -27,7 +27,6 @@ import {
   LessonAttemptStatus,
 } from './entities/lesson-attempt.entity';
 import { LessonCompletionResult } from './entities/lesson-completion-result.entity';
-import { UserBadge } from './entities/user-badge.entity';
 import { LessonRewardsService } from './lesson-rewards.service';
 import { LessonUnlockService } from './lesson-unlock.service';
 import type { LessonPlayOutline } from './lesson-play.types';
@@ -318,22 +317,11 @@ export class LessonCompletionOrchestrator {
 
       let unlockedBadgeId: string | undefined;
       let unlockedBadgeLabel: string | undefined;
+      // Badge unlocks are owned by BadgesModule via outbox (lesson.completed.v1).
+      // Still surface intended badge on the reward payload for the lesson UI.
       if (reward.badgeId && reward.badgeLabel && reward.firstTime) {
-        const badgeRepo = manager.getRepository(UserBadge);
-        const existing = await badgeRepo.findOne({
-          where: { userId, badgeId: reward.badgeId },
-        });
-        if (!existing) {
-          await badgeRepo.save(
-            badgeRepo.create({
-              userId,
-              badgeId: reward.badgeId,
-              badgeLabel: reward.badgeLabel,
-            }),
-          );
-          unlockedBadgeId = reward.badgeId;
-          unlockedBadgeLabel = reward.badgeLabel;
-        }
+        unlockedBadgeId = reward.badgeId;
+        unlockedBadgeLabel = reward.badgeLabel;
       }
 
       await progressRepo.save(progress);

@@ -3,7 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { GamificationModule } from '../gamification/gamification.module';
 import { UserInventoryItem } from '../gamification/entities/user-inventory-item.entity';
 import { LeaguesModule } from '../leagues/leagues.module';
-import { UserBadge } from '../lessons/entities/user-badge.entity';
+import { UserBadge } from '../badges/entities/user-badge.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ProfilesModule } from '../profiles/profiles.module';
 import { SocialModule } from '../social/social.module';

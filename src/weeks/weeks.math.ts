@@ -21,6 +21,8 @@ export function computeOnTrack(input: {
   sessionsDone: number;
   sessionsPlanned: number;
   dayIndex: number; // Mon=0 … Sun=6
+  /** First day that counts (join day). Default 0 = Monday. */
+  eligibleFromDayIndex?: number;
 }): boolean {
   const status = computeProgressStatus(input);
   return (
@@ -35,19 +37,27 @@ export type ProgressStatus =
   | 'at_risk'
   | 'sealed';
 
-/** Doc §10 — time + session pace. */
+/** Doc §10 — time + session pace. Elapsed from join day, not always Monday. */
 export function computeProgressStatus(input: {
   sealed: boolean;
   sessionsDone: number;
   sessionsPlanned: number;
   dayIndex: number;
+  eligibleFromDayIndex?: number;
   verifiedMinutesDone?: number;
   minutesPlanned?: number;
 }): ProgressStatus {
   if (input.sealed) return 'sealed';
   if (input.sessionsPlanned <= 0) return 'on_track';
 
-  const elapsedRatio = Math.min(1, (input.dayIndex + 1) / 7);
+  const from = Math.min(
+    6,
+    Math.max(0, input.eligibleFromDayIndex ?? 0),
+  );
+  const day = Math.max(input.dayIndex, from);
+  const daysInScope = Math.max(1, 7 - from);
+  const elapsedDays = Math.min(daysInScope, day - from + 1);
+  const elapsedRatio = Math.min(1, elapsedDays / daysInScope);
   const expectedSessions = Math.floor(
     input.sessionsPlanned * elapsedRatio,
   );
@@ -55,7 +65,7 @@ export function computeProgressStatus(input: {
     0,
     input.sessionsPlanned - input.sessionsDone,
   );
-  const daysLeft = Math.max(0, 6 - input.dayIndex);
+  const daysLeft = Math.max(0, 6 - day);
 
   if (input.sessionsDone >= expectedSessions + 1) return 'ahead';
   if (input.sessionsDone >= expectedSessions - 1) return 'on_track';

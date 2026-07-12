@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BadgesModule } from '../badges/badges.module';
 import { GamificationModule } from '../gamification/gamification.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { Profile } from '../profiles/entities/profile.entity';
@@ -23,6 +24,7 @@ import { StudyTogetherService } from './study-together.service';
     SocialModule,
     NotificationsModule,
     forwardRef(() => GamificationModule),
+    forwardRef(() => BadgesModule),
   ],
   controllers: [StudyTogetherController],
   providers: [StudyTogetherService],

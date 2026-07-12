@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger, Optional, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
   DataSource,
@@ -7,6 +7,8 @@ import {
   LessThan,
   Repository,
 } from 'typeorm';
+import { BadgesService } from '../badges/badges.service';
+import { OUTBOX_STUDY_COMPLETED } from '../badges/badge.constants';
 import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
 import {
@@ -84,6 +86,9 @@ export class StudyTogetherService {
     private readonly socialPermissions: SocialPermissionService,
     private readonly notifications: NotificationsService,
     private readonly ledger: RewardLedgerService,
+    @Optional()
+    @Inject(forwardRef(() => BadgesService))
+    private readonly badges: BadgesService | undefined,
     @InjectRepository(StudySession)
     private readonly sessionsRepo: Repository<StudySession>,
     @InjectRepository(StudySessionParticipant)
@@ -890,6 +895,20 @@ export class StudyTogetherService {
     let sharedGranted = false;
     if (outcome === StudyCompletionOutcome.CompletedByBoth) {
       sharedGranted = await this.tryGrantSharedBonus(session, participants);
+    }
+
+    for (const p of participants) {
+      if (!p.qualified) continue;
+      const partnerId =
+        p.userId === session.creatorId ? session.inviteeId : session.creatorId;
+      await this.badges?.onDomainEvent({
+        type: OUTBOX_STUDY_COMPLETED,
+        payload: {
+          userId: p.userId,
+          partnerId,
+          sessionId: session.id,
+        },
+      });
     }
 
     const partnerId =

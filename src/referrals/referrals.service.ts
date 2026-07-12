@@ -18,7 +18,7 @@ import {
   RewardReasonType,
 } from '../gamification/entities/reward-ledger-entry.entity';
 import { UserInventoryItem } from '../gamification/entities/user-inventory-item.entity';
-import { UserBadge } from '../lessons/entities/user-badge.entity';
+import { UserBadge } from '../badges/entities/user-badge.entity';
 import { NotificationType } from '../notifications/entities/notification.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
@@ -464,7 +464,7 @@ export class ReferralsService {
     });
     if (!link) {
       return {
-        redirectTo: `${this.appBase()}/signup`,
+        redirectTo: `${this.appBase()}/register`,
         cookieToken: null as string | null,
       };
     }
@@ -488,7 +488,7 @@ export class ReferralsService {
     }
 
     return {
-      redirectTo: `${this.appBase()}/signup`,
+      redirectTo: `${this.appBase()}/register`,
       cookieToken: bot ? null : link.publicToken,
       cookieMaxAgeSec: REFERRAL_COOKIE_TTL_DAYS * 24 * 60 * 60,
     };

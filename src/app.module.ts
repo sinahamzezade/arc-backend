@@ -25,6 +25,7 @@ import { CourseTimingModule } from './course-timing/course-timing.module';
 import { LuckyWheelModule } from './lucky-wheel/lucky-wheel.module';
 import { RanksModule } from './ranks/ranks.module';
 import { StudyTogetherModule } from './study-together/study-together.module';
+import { BadgesModule } from './badges/badges.module';
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { StudyTogetherModule } from './study-together/study-together.module';
     LuckyWheelModule,
     RanksModule,
     StudyTogetherModule,
+    BadgesModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

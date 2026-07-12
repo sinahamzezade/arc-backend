@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BadgesModule } from '../badges/badges.module';
 import { ContentPoolModule } from '../content-pool/content-pool.module';
 import { GamificationModule } from '../gamification/gamification.module';
 import { UserLeagueState } from '../leagues/entities/user-league-state.entity';
@@ -39,6 +40,7 @@ import { Battle } from './entities/battle.entity';
     LeaguesModule,
     SocialModule,
     forwardRef(() => GamificationModule),
+    forwardRef(() => BadgesModule),
   ],
   controllers: [BattlesController],
   providers: [BattlesService],

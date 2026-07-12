@@ -1,7 +1,9 @@
-import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger, Optional, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, MoreThanOrEqual, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
+import { BadgesService } from '../badges/badges.service';
+import { OUTBOX_BATTLE_COMPLETED } from '../badges/badge.constants';
 import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
 import { ContentQualityService } from '../content-pool/content-quality.service';
@@ -91,6 +93,9 @@ export class BattlesService {
     private readonly leagues: LeaguesService,
     private readonly socialPermissions: SocialPermissionService,
     private readonly ledger: RewardLedgerService,
+    @Optional()
+    @Inject(forwardRef(() => BadgesService))
+    private readonly badges: BadgesService | undefined,
     @InjectRepository(Battle)
     private readonly battlesRepo: Repository<Battle>,
     @InjectRepository(BattleParticipant)
@@ -1260,6 +1265,16 @@ export class BattlesService {
     });
 
     await this.recordBattleQualitySamples(manager, battle.id);
+
+    await this.badges?.onDomainEvent({
+      type: OUTBOX_BATTLE_COMPLETED,
+      payload: {
+        userId: winnerId,
+        won: true,
+        battleId: battle.id,
+        isWinner: true,
+      },
+    });
   }
 
   private async settleDraw(manager: DataSource['manager'], battle: Battle) {

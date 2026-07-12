@@ -16,24 +16,13 @@ export const QUESTIONNAIRE_SEED: QuestionnaireSchemaDto = {
       uiKind: 'options',
       reviewLabel: 'Goal',
       reviewIcon: 'target',
+      // Only roles with active role_recipes in the learning catalog.
       options: [
-        {
-          value: 'data-analyst',
-          label: 'Data Analyst',
-          icon: 'bar-chart',
-          iconClassName: 'bg-arc-purple-100 text-arc-purple-600',
-        },
         {
           value: 'front-end-developer',
           label: 'Front End Developer',
           icon: 'code',
           iconClassName: 'bg-arc-green-100 text-arc-green-600',
-        },
-        {
-          value: 'back-end-developer',
-          label: 'Back End Developer',
-          icon: 'server',
-          iconClassName: 'bg-arc-purple-100 text-arc-purple-600',
         },
         {
           value: 'marketing-specialist',

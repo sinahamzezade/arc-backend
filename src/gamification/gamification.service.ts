@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
+import { BadgesService } from '../badges/badges.service';
 import { LeaguesService } from '../leagues/leagues.service';
 import { LeagueScoreSourceType } from '../leagues/entities/league.enums';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -58,6 +59,9 @@ export class GamificationService {
     @Optional()
     @Inject(forwardRef(() => ReferralsService))
     private readonly referrals?: ReferralsService,
+    @Optional()
+    @Inject(forwardRef(() => BadgesService))
+    private readonly badges?: BadgesService,
   ) {
     void this.walletsRepo;
   }
@@ -275,6 +279,16 @@ export class GamificationService {
             if (uid) {
               await this.referrals?.evaluateInvitee(uid);
             }
+          }
+          if (
+            event.type === OUTBOX_LESSON_COMPLETED ||
+            event.type === OUTBOX_WEEK_SEALED
+          ) {
+            await this.badges?.onDomainEvent({
+              id: event.id,
+              type: event.type,
+              payload: event.payload as Record<string, unknown>,
+            });
           }
         }
 

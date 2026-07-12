@@ -71,7 +71,7 @@ export type WeekCurrentDto = {
     label: string;
     full: string;
     dayIndex: number;
-    status: 'done' | 'empty' | 'today' | 'completed' | 'current';
+    status: 'done' | 'empty' | 'today' | 'completed' | 'current' | 'inactive';
     minutesPlanned: number;
     minutesDone: number;
   }[];
@@ -93,6 +93,7 @@ export type WeekCurrentDto = {
 function taskLiveStatus(
   task: WeeklyTask,
   dayIndexNow: number,
+  eligibleFromDayIndex = 0,
 ): WeeklyTaskStatus {
   if (
     task.status === WeeklyTaskStatus.Done ||
@@ -100,6 +101,10 @@ function taskLiveStatus(
     task.status === WeeklyTaskStatus.Missed
   ) {
     return task.status;
+  }
+  // Pre-join days never count as missed
+  if (task.dayIndex < eligibleFromDayIndex) {
+    return WeeklyTaskStatus.Skipped;
   }
   if (task.status === WeeklyTaskStatus.Moved) {
     if (task.dayIndex === dayIndexNow) return WeeklyTaskStatus.Today;
@@ -114,11 +119,12 @@ function pickTodayMission(
   tasks: WeeklyTask[],
   dayIndexNow: number,
   sealed: boolean,
+  eligibleFromDayIndex = 0,
 ): WeekCurrentDto['todayMission'] {
   if (sealed) return null;
   const live = tasks.map((t) => ({
     task: t,
-    status: taskLiveStatus(t, dayIndexNow),
+    status: taskLiveStatus(t, dayIndexNow, eligibleFromDayIndex),
   }));
 
   const pick =
@@ -172,9 +178,15 @@ export function toWeekCurrentDto(input: {
   tasks: WeeklyTask[];
   weeklyStreak: number;
   dayIndexNow: number;
+  /** First day index that counts (join day in this week). */
+  eligibleFromDayIndex?: number;
   arloNudge?: string;
 }): WeekCurrentDto {
   const { plan, tasks, weeklyStreak, dayIndexNow } = input;
+  const eligibleFrom = Math.min(
+    6,
+    Math.max(0, input.eligibleFromDayIndex ?? 0),
+  );
   const hoursDone = num(plan.hoursDone);
   const hoursPlanned = num(plan.hoursPlanned);
   const minutesPlanned =
@@ -188,6 +200,7 @@ export function toWeekCurrentDto(input: {
     sessionsDone: plan.sessionsDone,
     sessionsPlanned: plan.sessionsPlanned,
     dayIndex: dayIndexNow,
+    eligibleFromDayIndex: eligibleFrom,
     verifiedMinutesDone: verifiedMinutes,
     minutesPlanned,
   });
@@ -196,6 +209,7 @@ export function toWeekCurrentDto(input: {
     sessionsDone: plan.sessionsDone,
     sessionsPlanned: plan.sessionsPlanned,
     dayIndex: dayIndexNow,
+    eligibleFromDayIndex: eligibleFrom,
   });
 
   const doneDays = new Set<number>();
@@ -203,7 +217,10 @@ export function toWeekCurrentDto(input: {
   const minutesDoneByDay = Array.from({ length: 7 }, () => 0);
 
   for (const task of tasks) {
-    minutesPlannedByDay[task.dayIndex] += task.minutes;
+    // Don't show planned minutes on pre-join days
+    if (task.dayIndex >= eligibleFrom) {
+      minutesPlannedByDay[task.dayIndex] += task.minutes;
+    }
     if (task.status === WeeklyTaskStatus.Done) {
       doneDays.add(task.dayIndex);
       minutesDoneByDay[task.dayIndex] +=
@@ -211,11 +228,12 @@ export function toWeekCurrentDto(input: {
     }
   }
 
-  const remaining = tasks.filter(
-    (t) =>
-      t.status !== WeeklyTaskStatus.Done &&
-      t.status !== WeeklyTaskStatus.Skipped,
-  );
+  const remaining = tasks.filter((t) => {
+    const live = taskLiveStatus(t, dayIndexNow, eligibleFrom);
+    return (
+      live !== WeeklyTaskStatus.Done && live !== WeeklyTaskStatus.Skipped
+    );
+  });
   const estimateMinutes = remaining.reduce((sum, t) => sum + t.minutes, 0);
 
   const streakDays = DAY_LABELS.map((label, i) => ({
@@ -224,14 +242,21 @@ export function toWeekCurrentDto(input: {
   }));
 
   const days = DAY_LABELS.map((label, i) => {
+    if (i < eligibleFrom) {
+      return {
+        label,
+        full: DAY_FULL[i],
+        dayIndex: i,
+        status: 'inactive' as WeekCurrentDto['days'][number]['status'],
+        minutesPlanned: 0,
+        minutesDone: minutesDoneByDay[i],
+      };
+    }
     let status: WeekCurrentDto['days'][number]['status'] = doneDays.has(i)
       ? 'completed'
       : 'empty';
     if (doneDays.has(i)) status = 'done';
     if (status === 'empty' && i === dayIndexNow) status = 'current';
-    if (status === 'current') {
-      /* keep both aliases for FE */
-    }
     const uiStatus =
       status === 'completed'
         ? 'done'
@@ -258,7 +283,12 @@ export function toWeekCurrentDto(input: {
       progressStatus,
     });
 
-  const todayMission = pickTodayMission(tasks, dayIndexNow, sealed);
+  const todayMission = pickTodayMission(
+    tasks,
+    dayIndexNow,
+    sealed,
+    eligibleFrom,
+  );
 
   return {
     status: plan.status,
@@ -304,6 +334,7 @@ export function toWeekCurrentDto(input: {
     },
     days,
     tasks: [...tasks]
+      .filter((t) => t.dayIndex >= eligibleFrom)
       .sort((a, b) => a.dayIndex - b.dayIndex || a.sortOrder - b.sortOrder)
       .map((t) => ({
         id: t.id,
@@ -313,7 +344,7 @@ export function toWeekCurrentDto(input: {
         track: t.track,
         minutes: t.minutes,
         xp: t.xpReward,
-        status: taskLiveStatus(t, dayIndexNow),
+        status: taskLiveStatus(t, dayIndexNow, eligibleFrom),
         href:
           t.href ?? (t.lessonId ? `/learn/${t.lessonId}` : undefined),
         lessonId: t.lessonId,

@@ -2,7 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { GamificationModule } from '../gamification/gamification.module';
 import { UserInventoryItem } from '../gamification/entities/user-inventory-item.entity';
-import { UserBadge } from '../lessons/entities/user-badge.entity';
+import { UserBadge } from '../badges/entities/user-badge.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { Profile } from '../profiles/entities/profile.entity';
 import { ProfilesModule } from '../profiles/profiles.module';

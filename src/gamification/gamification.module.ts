@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BadgesModule } from '../badges/badges.module';
 import { LeaguesModule } from '../leagues/leagues.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { Profile } from '../profiles/entities/profile.entity';
@@ -12,6 +13,7 @@ import { StreakDay } from './entities/streak-day.entity';
 import { StreakState } from './entities/streak-state.entity';
 import { UserInventoryItem } from './entities/user-inventory-item.entity';
 import { Wallet } from './entities/wallet.entity';
+import { CurrencyExchangeService } from './currency-exchange.service';
 import { GamificationService } from './gamification.service';
 import { InventoryController } from './inventory.controller';
 import { InventoryService } from './inventory.service';
@@ -41,6 +43,7 @@ import { RewardsController, WalletController } from './wallet.controller';
     forwardRef(() => NotificationsModule),
     forwardRef(() => RanksModule),
     forwardRef(() => ReferralsModule),
+    forwardRef(() => BadgesModule),
   ],
   controllers: [
     WalletController,
@@ -58,6 +61,7 @@ import { RewardsController, WalletController } from './wallet.controller';
     InventoryService,
     StreakService,
     StoreCatalogSeedService,
+    CurrencyExchangeService,
   ],
   exports: [
     GamificationService,
@@ -66,6 +70,7 @@ import { RewardsController, WalletController } from './wallet.controller';
     RewardCalculatorService,
     StreakService,
     StoreService,
+    CurrencyExchangeService,
   ],
 })
 export class GamificationModule {}
