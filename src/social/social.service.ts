@@ -1,12 +1,19 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, IsNull, Repository } from 'typeorm';
+import { DataSource, In, IsNull, MoreThanOrEqual, Repository } from 'typeorm';
+import { BADGE_CORE_TOTAL, UserBadgeStatus } from '../badges/badge.constants';
+import { UserBadge } from '../badges/entities/user-badge.entity';
+import { BattleResult } from '../battles/entities/battle-result.entity';
 import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
 import { UserLeagueState } from '../leagues/entities/user-league-state.entity';
 import { NotificationType } from '../notifications/entities/notification.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Profile } from '../profiles/entities/profile.entity';
+import {
+  LessonProgress,
+  LessonProgressStatus,
+} from '../roadmaps/entities/lesson-progress.entity';
 import { User } from '../users/entities/user.entity';
 import { Follow } from './entities/follow.entity';
 import {
@@ -814,12 +821,14 @@ export class SocialService {
       );
     }
 
-    const [cards, counters, followingThem, theyFollow] = await Promise.all([
-      this.mapUserCards([targetUserId]),
-      this.ensureCounters(targetUserId),
-      this.isFollowing(viewerId, targetUserId),
-      this.isFollowing(targetUserId, viewerId),
-    ]);
+    const [cards, counters, followingThem, theyFollow, stats] =
+      await Promise.all([
+        this.mapUserCards([targetUserId]),
+        this.ensureCounters(targetUserId),
+        this.isFollowing(viewerId, targetUserId),
+        this.isFollowing(targetUserId, viewerId),
+        this.profileActivityStats(targetUserId, privacy, isSelf),
+      ]);
     const card = cards[0];
     const online = await this.presence.isOnline(targetUserId);
 
@@ -845,6 +854,7 @@ export class SocialService {
         followers: counters.followersCount,
         following: counters.followingCount,
       },
+      stats,
       privacy: {
         showWeeklyXp: privacy.showWeeklyXp,
         showStreak: privacy.showStreak,
@@ -857,6 +867,57 @@ export class SocialService {
       canBattle: isFriend,
       canStudy: isFriend,
       relationshipVersion: `${isFriend}:${followingThem}:${theyFollow}`,
+    };
+  }
+
+  /** Passport activity chips — respect privacy flags for non-self viewers. */
+  private async profileActivityStats(
+    userId: string,
+    privacy: SocialPrivacySettings,
+    isSelf: boolean,
+  ): Promise<{
+    lessonsThisWeek: number;
+    battlesWon: number;
+    badgesEarned: number;
+    badgesTotal: number;
+  }> {
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const showStudy = isSelf || privacy.showStudyActivity;
+    const showBattles = isSelf || privacy.showBattleHistory;
+
+    const progressRepo = this.dataSource.getRepository(LessonProgress);
+    const resultsRepo = this.dataSource.getRepository(BattleResult);
+    const badgesRepo = this.dataSource.getRepository(UserBadge);
+
+    const [lessonsThisWeek, battlesWon, badgesEarned] = await Promise.all([
+      showStudy
+        ? progressRepo.count({
+            where: {
+              userId,
+              status: LessonProgressStatus.Completed,
+              completedAt: MoreThanOrEqual(weekAgo),
+            },
+          })
+        : Promise.resolve(0),
+      showBattles
+        ? resultsRepo.count({
+            where: {
+              userId,
+              result: 'win',
+              createdAt: MoreThanOrEqual(weekAgo),
+            },
+          })
+        : Promise.resolve(0),
+      badgesRepo.count({
+        where: { userId, status: UserBadgeStatus.Earned },
+      }),
+    ]);
+
+    return {
+      lessonsThisWeek,
+      battlesWon,
+      badgesEarned,
+      badgesTotal: BADGE_CORE_TOTAL,
     };
   }
 
