@@ -125,11 +125,18 @@ export function normalizeDraftAnswers(
     if (step.selection === 'multi') {
       if (isStringArray(raw[key])) {
         base[key] = filterKnown(raw[key], allowed);
+      } else if (typeof raw[key] === 'string' && allowed.includes(raw[key])) {
+        // Clients sometimes store single-select shape; keep the pick.
+        base[key] = [raw[key]];
       } else {
         base[key] = [];
       }
     } else if (typeof raw[key] === 'string' && allowed.includes(raw[key])) {
       base[key] = raw[key];
+    } else if (isStringArray(raw[key]) && raw[key].length === 1) {
+      // Multi UI write into a single-select step — take first known value.
+      const only = raw[key][0]!;
+      base[key] = allowed.includes(only) ? only : '';
     } else {
       base[key] = '';
     }

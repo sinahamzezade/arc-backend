@@ -17,6 +17,10 @@ export function asStringArray(
   key: string,
 ): string[] {
   const value = answers[key];
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === 'string');
 }

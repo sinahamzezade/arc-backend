@@ -12,7 +12,7 @@ import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
 import { ContentQueryService } from '../content-pool/content-query.service';
 import { TimingService } from '../course-timing/timing.service';
-import { Goal } from '../goals/entities/goal.entity';
+import { Goal, GoalStatus } from '../goals/entities/goal.entity';
 import { Lesson, LessonStatus } from './entities/lesson.entity';
 import { Milestone } from './entities/milestone.entity';
 import { Roadmap, RoadmapStatus } from './entities/roadmap.entity';
@@ -81,9 +81,11 @@ export class RoadmapsService {
     goalId: string,
     userId: string,
   ): Promise<RoadmapJobResult> {
+    const goal = await this.ensureGoalReadyForGenerate(goalId, userId);
+
     const job = await this.jobsRepo.save(
       this.jobsRepo.create({
-        goalId,
+        goalId: goal.id,
         userId,
         status: RoadmapJobStatus.Queued,
         roadmapId: null,
@@ -105,16 +107,28 @@ export class RoadmapsService {
       where: { userId },
       order: { createdAt: 'DESC' },
     });
-    if (!latest?.goalId) {
+
+    const activeGoal = await this.goalsRepo.findOne({
+      where: { userId, status: GoalStatus.Active },
+      order: { updatedAt: 'DESC' },
+    });
+    const goalId = activeGoal?.id ?? latest?.goalId;
+    if (!goalId) {
       throw new AppException(
         AuthErrorCode.GOAL_NOT_FOUND,
         'No roadmap job to retry — finish the questionnaire first',
         HttpStatus.NOT_FOUND,
       );
     }
+
+    // Heal roles + fail fast if catalog has no recipe (don't return fake queued).
+    await this.ensureGoalReadyForGenerate(goalId, userId);
+
     if (
-      latest.status === RoadmapJobStatus.Queued ||
-      latest.status === RoadmapJobStatus.Processing
+      latest &&
+      latest.goalId === goalId &&
+      (latest.status === RoadmapJobStatus.Queued ||
+        latest.status === RoadmapJobStatus.Processing)
     ) {
       return {
         status:
@@ -125,7 +139,53 @@ export class RoadmapsService {
         roadmapId: latest.roadmapId,
       };
     }
-    return this.enqueueGenerate(latest.goalId, userId);
+    return this.enqueueGenerate(goalId, userId);
+  }
+
+  /** Persist healed target_roles; throw if no catalog recipe. */
+  private async ensureGoalReadyForGenerate(
+    goalId: string,
+    userId: string,
+  ): Promise<Goal> {
+    const goal = await this.goalsRepo.findOne({ where: { id: goalId } });
+    if (!goal || goal.userId !== userId) {
+      throw new AppException(
+        AuthErrorCode.GOAL_NOT_FOUND,
+        'Goal not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const roles = this.snapshot.resolveTargetRoles(goal);
+    if (!roles.length) {
+      throw new AppException(
+        AuthErrorCode.CONTENT_ROLE_RECIPE_MISSING,
+        'No target role on goal — change goal, then rebuild',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const col = (goal.targetRoles ?? []).filter(Boolean);
+    if (col.join('\0') !== roles.join('\0')) {
+      goal.targetRoles = roles;
+      await this.goalsRepo.save(goal);
+      this.logger.warn(
+        `Healed empty target_roles on goal=${goal.id} → ${roles.join(',')}`,
+      );
+    }
+
+    try {
+      await this.snapshot.assertHasRecipe(goal);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new AppException(
+        AuthErrorCode.CONTENT_ROLE_RECIPE_MISSING,
+        message,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    return goal;
   }
 
   async getActiveRoadmap(userId: string): Promise<Roadmap | null> {

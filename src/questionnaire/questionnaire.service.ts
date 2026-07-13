@@ -74,14 +74,6 @@ export class QuestionnaireService {
 
       let row = await responseRepo.findOne({ where: { userId } });
 
-      if (row?.status === QuestionnaireResponseStatus.Submitted) {
-        throw new AppException(
-          AuthErrorCode.QUESTIONNAIRE_ALREADY_SUBMITTED,
-          'Questionnaire already submitted — cannot update draft',
-          HttpStatus.CONFLICT,
-        );
-      }
-
       if (!row) {
         row = responseRepo.create({
           userId,
@@ -92,9 +84,13 @@ export class QuestionnaireService {
           submittedAt: null,
         });
       } else {
+        // Allow edits after submit (Change goal / rebuild path). Keep goalId so
+        // POST /submit can upsert goal + enqueueGenerate on the same response.
         row.answers = answers;
         row.schemaVersion = schemaVersion;
-        row.status = QuestionnaireResponseStatus.Draft;
+        if (row.status !== QuestionnaireResponseStatus.Submitted) {
+          row.status = QuestionnaireResponseStatus.Draft;
+        }
       }
 
       const saved = await responseRepo.save(row);
@@ -122,17 +118,25 @@ export class QuestionnaireService {
     const schemaVersion = schema.schemaVersion;
 
     const existing = await this.responsesRepo.findOne({ where: { userId } });
-    if (
-      existing?.status === QuestionnaireResponseStatus.Submitted &&
-      existing.goalId
-    ) {
-      // Allow goal refresh when user re-submits (e.g. after unsupported role).
+    if (existing?.status === QuestionnaireResponseStatus.Submitted) {
+      // Re-submit after Change goal — upsert roles + enqueue a fresh job.
       const goal = await this.dataSource.transaction(async (manager) => {
         const updated = await this.upsertGoal(manager, userId, answers);
         existing.answers = answers;
         existing.schemaVersion = schemaVersion;
         existing.goalId = updated.id;
+        existing.submittedAt = new Date();
         await manager.getRepository(QuestionnaireResponse).save(existing);
+
+        const profile = await manager.getRepository(Profile).findOne({
+          where: { userId },
+        });
+        if (profile) {
+          profile.questionnaireStatus = QuestionnaireStatus.Completed;
+          profile.questionnaireCompletedAt =
+            profile.questionnaireCompletedAt ?? new Date();
+          await manager.getRepository(Profile).save(profile);
+        }
         return updated;
       });
       const roadmap = await this.roadmapsService.enqueueGenerate(
@@ -220,20 +224,29 @@ export class QuestionnaireService {
     const goalOther = asOptionalString(answers, 'goalOther');
     const schedule = asSchedule(answers, 'schedule');
 
+    const targetRoles = [
+      ...goal,
+      ...(goalOther
+        ? [
+            goalOther
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-+|-+$/g, '')
+              .slice(0, 64) || goalOther,
+          ]
+        : []),
+    ];
+    if (!targetRoles.length) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'goal is required',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     const payload: Partial<Goal> = {
       userId,
-      targetRoles: [
-        ...goal,
-        ...(goalOther
-          ? [
-              goalOther
-                .toLowerCase()
-                .replace(/[^a-z0-9]+/g, '-')
-                .replace(/^-+|-+$/g, '')
-                .slice(0, 64) || goalOther,
-            ]
-          : []),
-      ],
+      targetRoles,
       motivation: withOther(
         asStringArray(answers, 'motivation'),
         asOptionalString(answers, 'motivationOther'),

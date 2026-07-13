@@ -55,7 +55,7 @@ export class RoadmapSnapshotService {
       user_id: goal.userId,
       goal_id: goal.id,
       goal_revision: this.goalRevision(goal),
-      target_roles: (goal.targetRoles ?? []).filter(Boolean),
+      target_roles: this.resolveTargetRoles(goal),
       motivation: goal.motivation?.values ?? [],
       current_profession: goal.currentProfession,
       known_skills: (goal.skills?.values ?? []).filter((s) => s !== 'none'),
@@ -72,11 +72,59 @@ export class RoadmapSnapshotService {
     };
   }
 
-  async buildSnapshot(goal: Goal): Promise<ContentSnapshotDto> {
-    const roles = (goal.targetRoles ?? []).filter(Boolean);
+  /**
+   * Prefer column; heal from rawAnswers when target_roles was wiped
+   * (e.g. goal stored as string under multi-select normalize).
+   */
+  resolveTargetRoles(goal: Goal): string[] {
+    const fromCol = (goal.targetRoles ?? []).filter(Boolean);
+    if (fromCol.length) return fromCol;
+
+    const raw = goal.rawAnswers ?? {};
+    const fromRaw: string[] = [];
+    const goalVal = raw.goal;
+    if (typeof goalVal === 'string' && goalVal.trim()) {
+      fromRaw.push(goalVal.trim());
+    } else if (Array.isArray(goalVal)) {
+      for (const item of goalVal) {
+        if (typeof item === 'string' && item.trim()) fromRaw.push(item.trim());
+      }
+    }
+    const other =
+      typeof raw.goalOther === 'string' ? raw.goalOther.trim() : '';
+    if (other) {
+      const slug = other
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 64);
+      if (slug) fromRaw.push(slug);
+    }
+    return [...new Set(fromRaw)];
+  }
+
+  /** Throws if roles empty or no active recipe — used before enqueue. */
+  async assertHasRecipe(goal: Goal): Promise<string[]> {
+    const roles = this.resolveTargetRoles(goal);
+    if (!roles.length) {
+      throw new Error('No target role on goal — change goal, then rebuild');
+    }
     const recipe = await this.skillGraph.findFirstRecipeForRoles(roles);
     if (!recipe) {
       throw new Error(`No role recipe for ${roles.join(', ')}`);
+    }
+    return roles;
+  }
+
+  async buildSnapshot(goal: Goal): Promise<ContentSnapshotDto> {
+    const roles = this.resolveTargetRoles(goal);
+    const recipe = await this.skillGraph.findFirstRecipeForRoles(roles);
+    if (!recipe) {
+      throw new Error(
+        roles.length
+          ? `No role recipe for ${roles.join(', ')}`
+          : 'No target role on goal — change goal, then rebuild',
+      );
     }
 
     const cacheKey = `recipe:${recipe.targetRoleSlug}:${recipe.version}`;

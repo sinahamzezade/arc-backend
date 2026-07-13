@@ -60,6 +60,112 @@ function letterId(i: number): string {
   return OPT_IDS[i] ?? `o${i}`;
 }
 
+function shuffleLabels(labels: string[]): string[] {
+  const out = [...labels];
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+const GENERIC_DISTRACTORS = [
+  'This only applies to native mobile apps, not the web.',
+  'Servers never return status codes to browsers.',
+  'Browsers store every website permanently offline by default.',
+  'Frontend code always runs on the database server.',
+  'Skip this — it is unrelated trivia.',
+];
+
+/** Knowledge-check options from takeaways (not completion acks). */
+function mcqFromCorrect(
+  correct: string,
+  otherCorrects: string[],
+): { labels: string[]; correctIndex: number } {
+  const pool = [
+    ...otherCorrects.filter((t) => t && t !== correct),
+    ...GENERIC_DISTRACTORS,
+  ];
+  const distractors: string[] = [];
+  for (const d of pool) {
+    if (distractors.length >= 3) break;
+    if (!distractors.includes(d) && d !== correct) distractors.push(d);
+  }
+  while (distractors.length < 3) {
+    distractors.push(`Unrelated option ${distractors.length + 1}`);
+  }
+  const labels = shuffleLabels([correct, ...distractors.slice(0, 3)]);
+  return { labels, correctIndex: labels.indexOf(correct) };
+}
+
+function practiceFromKnowledge(
+  prompt: string,
+  hint: string,
+  correct: string,
+  otherCorrects: string[],
+  feedbackCorrect: string,
+  feedbackIncorrect: string,
+): LessonPlayOutline['practice'] {
+  const { labels, correctIndex } = mcqFromCorrect(correct, otherCorrects);
+  return {
+    id: 'p1',
+    prompt,
+    hint,
+    options: labels.map((label, i) => ({
+      id: letterId(i),
+      label,
+      correct: i === correctIndex,
+    })),
+    feedbackCorrect,
+    feedbackIncorrect,
+  };
+}
+
+function quizFromTakeaways(
+  takeaways: string[],
+  title: string,
+  objective: string,
+): LessonPlayOutline['quiz'] {
+  const takes = takeaways.map((t) => t.trim()).filter(Boolean);
+  if (!takes.length) {
+    return [
+      {
+        id: 'q1',
+        prompt: `What is “${title}” mainly about?`,
+        options: shuffleLabels([
+          objective.slice(0, 140) || title,
+          'An unrelated career track',
+          'How to ignore the lesson objective',
+          'Random HTML trivia',
+        ]).map((label, i) => ({ id: letterId(i), label })),
+        correctOptionId: 'a', // will fix below
+        explanation: objective || `This stop is about “${title}”.`,
+      },
+    ].map((q) => {
+      const correctLabel = objective.slice(0, 140) || title;
+      const idx = q.options.findIndex((o) => o.label === correctLabel);
+      return {
+        ...q,
+        correctOptionId: letterId(idx >= 0 ? idx : 0),
+      };
+    });
+  }
+
+  return takes.map((correct, i) => {
+    const { labels, correctIndex } = mcqFromCorrect(
+      correct,
+      takes.filter((_, j) => j !== i),
+    );
+    return {
+      id: `q${i + 1}`,
+      prompt: `Which statement matches “${title}”?`,
+      options: labels.map((label, oi) => ({ id: letterId(oi), label })),
+      correctOptionId: letterId(correctIndex),
+      explanation: correct,
+    };
+  });
+}
+
 function stubPractice(prompt: string, hint: string): LessonPlayOutline['practice'] {
   return {
     id: 'p1',
@@ -89,6 +195,19 @@ function stubQuiz(objective: string): LessonPlayOutline['quiz'] {
       explanation: 'Stay focused on the lesson objective.',
     },
   ];
+}
+
+/** True when practice is the old completion-ack stub (not a knowledge check). */
+export function isCompletionAckPractice(
+  practice: LessonPlayOutline['practice'] | undefined,
+): boolean {
+  if (!practice?.options?.length) return false;
+  const labels = practice.options.map((o) => o.label);
+  return (
+    labels.includes('I completed this step') ||
+    labels.includes('Come back later') ||
+    labels.includes('Skip — I already know this')
+  );
 }
 
 function fromReading(c: InAppReading, title: string): LessonPlayOutline {
@@ -133,6 +252,19 @@ function fromReading(c: InAppReading, title: string): LessonPlayOutline {
     });
   }
 
+  const takes = (c.keyTakeaways ?? []).map((t) => t.trim()).filter(Boolean);
+  const quiz = quizFromTakeaways(takes, title, c.objective);
+  const firstCorrect =
+    takes[0] ?? (c.objective.slice(0, 140) || `Core idea of “${title}”`);
+  const practice = practiceFromKnowledge(
+    `Which statement matches what you just learned about “${title}”?`,
+    takes[1] ?? takes[0] ?? 'Skim the key takeaways, then pick the true statement.',
+    firstCorrect,
+    takes.slice(1),
+    'Nice — that takeaway sticks.',
+    'Re-check the key takeaways, then try again.',
+  );
+
   return {
     objective: c.objective,
     arloPrompt: `Stuck on “${title}”? Ask me to break it down.`,
@@ -142,11 +274,8 @@ function fromReading(c: InAppReading, title: string): LessonPlayOutline {
       'Quiz me on the key idea',
     ],
     content: pages,
-    practice: stubPractice(
-      `Ready to lock in “${title}”?`,
-      c.keyTakeaways?.[0] ?? 'Skim the sections once more, then continue.',
-    ),
-    quiz: stubQuiz(c.objective),
+    practice,
+    quiz: quiz.length ? quiz : stubQuiz(c.objective),
     reward: {
       gems: 2,
       coins: 10,
@@ -167,6 +296,26 @@ function fromQuiz(c: InAppQuiz, title: string): LessonPlayOutline {
     explanation: q.explanation ?? 'Check the lesson notes and try again.',
   }));
 
+  const questions = quiz.length ? quiz : stubQuiz(c.objective);
+  const head = questions[0]!;
+  const correctLabel =
+    head.options.find((o) => o.id === head.correctOptionId)?.label ??
+    head.options[0]!.label;
+
+  const practice: LessonPlayOutline['practice'] = {
+    id: 'p1',
+    prompt: head.prompt,
+    hint: 'Eliminate the nonsense options first.',
+    options: head.options.map((o) => ({
+      id: o.id,
+      label: o.label,
+      correct: o.id === head.correctOptionId,
+    })),
+    feedbackCorrect: head.explanation || 'Correct.',
+    feedbackIncorrect: head.explanation || 'Try again — re-read the options.',
+  };
+
+  const rest = questions.slice(1);
   return {
     objective: c.objective,
     arloPrompt: `Need a hint on “${title}”? Ask away.`,
@@ -188,11 +337,22 @@ function fromQuiz(c: InAppQuiz, title: string): LessonPlayOutline {
         ],
       },
     ],
-    practice: stubPractice(
-      'Warm-up: are you ready for the quiz?',
-      'Skim the objective, then answer each question.',
-    ),
-    quiz: quiz.length ? quiz : stubQuiz(c.objective),
+    practice,
+    quiz: rest.length
+      ? rest
+      : [
+          {
+            id: 'q1',
+            prompt: `Quick recap — what is “${title}” about?`,
+            options: [
+              { id: 'a', label: correctLabel.slice(0, 120) },
+              { id: 'b', label: 'Skip learning entirely' },
+              { id: 'c', label: 'Memorize unrelated trivia' },
+            ],
+            correctOptionId: 'a',
+            explanation: c.objective,
+          },
+        ],
     reward: {
       gems: 3,
       coins: 12,

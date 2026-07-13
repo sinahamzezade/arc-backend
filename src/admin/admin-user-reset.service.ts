@@ -79,9 +79,34 @@ export class AdminUserResetService {
         [userId],
       );
 
-      // Roadmap generation + tree (phases/milestones/lessons cascade)
+      // Roadmap generation + tree (phases/milestones/lessons cascade via FK)
       await manager.query(
         `DELETE FROM roadmap_generation_jobs WHERE user_id = $1`,
+        [userId],
+      );
+      // Explicit child wipe — some envs lack ON DELETE CASCADE on all FKs
+      await manager.query(
+        `DELETE FROM lessons
+         WHERE milestone_id IN (
+           SELECT m.id FROM milestones m
+           INNER JOIN roadmap_phases p ON p.id = m.phase_id
+           INNER JOIN roadmaps r ON r.id = p.roadmap_id
+           WHERE r.user_id = $1
+         )`,
+        [userId],
+      );
+      await manager.query(
+        `DELETE FROM milestones
+         WHERE phase_id IN (
+           SELECT p.id FROM roadmap_phases p
+           INNER JOIN roadmaps r ON r.id = p.roadmap_id
+           WHERE r.user_id = $1
+         )`,
+        [userId],
+      );
+      await manager.query(
+        `DELETE FROM roadmap_phases
+         WHERE roadmap_id IN (SELECT id FROM roadmaps WHERE user_id = $1)`,
         [userId],
       );
       await manager.query(`DELETE FROM roadmaps WHERE user_id = $1`, [userId]);

@@ -10,9 +10,10 @@ import { RoleRecipe } from './entities/role-recipe.entity';
 import { SkillNode } from './entities/skill-node.entity';
 import { TechStack } from './entities/tech-stack.entity';
 import { CATALOG_SEED } from './seeds/catalog.seed';
-import { inappContentToPlayOutline } from './seeds/inapp-content.mapper';
+import { inappContentToPlayOutline, isCompletionAckPractice } from './seeds/inapp-content.mapper';
 import { outlineForTemplateSeed } from '../lessons/play-outline.factory';
 import { isPlayOutline } from '../lessons/lesson-play.types';
+import { Lesson } from '../roadmaps/entities/lesson.entity';
 
 function resolveSeedOutline(lessonSeed: {
   slug: string;
@@ -171,6 +172,7 @@ export class SkillGraphService implements OnModuleInit {
     );
     await this.upsertMissingCatalog(CATALOG_SEED);
     await this.backfillEmptyOutlines();
+    await this.refreshCompletionAckOutlines();
     await this.backfillCareerRoles();
   }
 
@@ -581,6 +583,73 @@ export class SkillGraphService implements OnModuleInit {
     if (updated > 0) {
       this.logger.log(
         `Backfilled content_outline on ${updated} lesson templates`,
+      );
+    }
+  }
+
+  /**
+   * Replace old "I completed this step / Come back later" practice stubs
+   * with knowledge checks from the catalog seed (templates + live lessons).
+   */
+  private async refreshCompletionAckOutlines() {
+    const bySlug = new Map<
+      string,
+      ReturnType<typeof resolveSeedOutline>
+    >();
+    for (const stack of CATALOG_SEED.stacks) {
+      for (const skill of stack.skills) {
+        for (const lesson of skill.lessons) {
+          bySlug.set(lesson.slug, resolveSeedOutline(lesson));
+        }
+      }
+    }
+
+    let templatesUpdated = 0;
+    const templates = await this.lessonsRepo.find();
+    for (const template of templates) {
+      const outline = isPlayOutline(template.contentOutline)
+        ? template.contentOutline
+        : null;
+      if (!outline || !isCompletionAckPractice(outline.practice)) continue;
+      const fresh = bySlug.get(template.slug);
+      if (!fresh || !isPlayOutline(fresh)) continue;
+      if (isCompletionAckPractice(fresh.practice)) continue;
+      template.contentOutline = fresh as unknown as Record<string, unknown>;
+      await this.lessonsRepo.save(template);
+      templatesUpdated += 1;
+    }
+
+    let lessonsUpdated = 0;
+    const lessonRepo = this.dataSource.getRepository(Lesson);
+    const templatesById = new Map(templates.map((t) => [t.id, t]));
+    const lessons = await lessonRepo.find();
+    for (const lesson of lessons) {
+      if (!isPlayOutline(lesson.playContent)) continue;
+      if (!isCompletionAckPractice(lesson.playContent.practice)) continue;
+
+      let outline: ReturnType<typeof resolveSeedOutline> | null = null;
+      const tpl = lesson.lessonTemplateId
+        ? templatesById.get(lesson.lessonTemplateId)
+        : null;
+      if (tpl && isPlayOutline(tpl.contentOutline)) {
+        outline = tpl.contentOutline;
+      }
+      if (
+        (!outline || isCompletionAckPractice(outline.practice)) &&
+        tpl?.slug
+      ) {
+        const fromSeed = bySlug.get(tpl.slug);
+        if (fromSeed && isPlayOutline(fromSeed)) outline = fromSeed;
+      }
+      if (!outline || isCompletionAckPractice(outline.practice)) continue;
+      lesson.playContent = outline as unknown as Record<string, unknown>;
+      await lessonRepo.save(lesson);
+      lessonsUpdated += 1;
+    }
+
+    if (templatesUpdated || lessonsUpdated) {
+      this.logger.log(
+        `Refreshed completion-ack practice: ${templatesUpdated} templates, ${lessonsUpdated} lessons`,
       );
     }
   }
