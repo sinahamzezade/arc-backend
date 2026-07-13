@@ -50,6 +50,9 @@ async function bootstrap() {
     ? join(__dirname, 'admin', 'views')
     : join(process.cwd(), 'src', 'admin', 'views');
 
+  // Railway / reverse proxies terminate TLS; needed for Secure session cookies.
+  app.set('trust proxy', 1);
+
   app.setGlobalPrefix('api/v1', {
     exclude: [
       { path: 'r/(.*)', method: RequestMethod.ALL },

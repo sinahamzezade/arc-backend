@@ -1864,7 +1864,21 @@ export class AdminController {
 
     req.session.adminUserId = result.user.id;
     req.session.adminEmail = result.user.email;
-    return res.redirect('/admin');
+    return await new Promise<void>((resolve) => {
+      req.session.save((err) => {
+        if (err) {
+          res.status(500).render('login', {
+            title: 'Admin login',
+            error: 'Could not start session. Try again.',
+            email: dto.email,
+          });
+          resolve();
+          return;
+        }
+        res.redirect('/admin');
+        resolve();
+      });
+    });
   }
 
   @Post('logout')
