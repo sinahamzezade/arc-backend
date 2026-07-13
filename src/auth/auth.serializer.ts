@@ -2,11 +2,15 @@ import { Profile } from '../profiles/entities/profile.entity';
 import { User } from '../users/entities/user.entity';
 
 export function toUserDto(user: User) {
+  const hasPassword = Boolean(user.passwordHash);
+  const changedAt = user.passwordLastChangedAt ?? (hasPassword ? user.createdAt : null);
   return {
     id: user.id,
     email: user.email,
     emailVerified: Boolean(user.emailVerifiedAt),
     createdAt: user.createdAt?.toISOString?.() ?? undefined,
+    hasPassword,
+    passwordLastChangedAt: changedAt?.toISOString?.() ?? null,
   };
 }
 

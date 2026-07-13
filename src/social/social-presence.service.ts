@@ -17,9 +17,16 @@ export class SocialPresenceService implements OnModuleDestroy {
     const url = process.env.REDIS_URL?.trim();
     if (url) {
       try {
-        this.redis = new Redis(url, { maxRetriesPerRequest: 1, lazyConnect: true });
+        this.redis = new Redis(url, {
+          maxRetriesPerRequest: 1,
+          lazyConnect: true,
+        });
+        this.redis.on('error', (err) => {
+          this.logger.warn(`Presence Redis error: ${err.message}`);
+        });
         void this.redis.connect().catch(() => {
           this.logger.warn('Presence Redis connect failed — using memory');
+          void this.redis?.disconnect();
           this.redis = null;
         });
       } catch {

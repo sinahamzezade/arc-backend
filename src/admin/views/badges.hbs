@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body>
+    <div class="shell">
+      {{> shell-sidebar}}
+      <main class="main">
+        <div class="page-head">
+          <h1>Badges</h1>
+          <p class="sub">{{count}} definition{{#unless countSingular}}s{{/unless}}</p>
+        </div>
+        <div class="panel">
+          {{#if hasRows}}
+            <div class="table-wrap">
+              <table class="data">
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th>Code</th>
+                    <th>Name</th>
+                    <th>Category</th>
+                    <th>Rarity</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {{#each rows}}
+                    <tr>
+                      <td>
+                        {{#if iconThumbUrl}}
+                          <img src="{{iconThumbUrl}}" alt="" width="32" height="32" style="width:32px;height:32px;object-fit:cover;border-radius:8px;border:1px solid #d5ddd7" />
+                        {{else}}
+                          <span class="muted">—</span>
+                        {{/if}}
+                      </td>
+                      <td class="mono"><a class="link" href="/admin/badges/{{id}}">{{code}}</a></td>
+                      <td>{{name}}</td>
+                      <td class="mono">{{category}}</td>
+                      <td>{{rarity}}</td>
+                      <td>
+                        {{#if isActiveStatus}}
+                          <span class="badge badge-ok">{{status}}</span>
+                        {{else}}
+                          <span class="badge badge-off">{{status}}</span>
+                        {{/if}}
+                      </td>
+                    </tr>
+                  {{/each}}
+                </tbody>
+              </table>
+            </div>
+          {{else}}
+            <div class="empty">No badges yet.</div>
+          {{/if}}
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

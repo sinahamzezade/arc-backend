@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body>
+    <div class="shell">
+      {{> shell-sidebar}}
+      <main class="main">
+        <div class="page-head">
+          <h1>Skill graph</h1>
+          <p class="sub">{{count}} tech stack{{#unless countSingular}}s{{/unless}} · learning catalog from seed / DB</p>
+        </div>
+        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
+        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+
+        <h2 class="section-title">Import JSON</h2>
+        <div class="panel" style="margin-bottom:18px">
+          <form method="post" action="/admin/skill-graph/import" enctype="multipart/form-data">
+            <div class="form-grid">
+              <div style="grid-column:1/-1">
+                <label for="file">Catalog file (`*-learning-data.json`)</label>
+                <input id="file" name="file" type="file" accept="application/json,.json" required />
+                <p class="muted" style="margin:8px 0 0;font-size:0.82rem">
+                  Same shape as seed packs: <span class="mono">stacks[]</span>, optional
+                  <span class="mono">resources[]</span> + <span class="mono">recipes[]</span>.
+                  Lesson <span class="mono">content</span> mapped into play outlines.
+                </p>
+              </div>
+              <div class="check-row">
+                <input id="overwrite" name="overwrite" type="checkbox" value="1" checked />
+                <label for="overwrite">Overwrite existing rows (match by slug)</label>
+              </div>
+            </div>
+            <div class="form-actions">
+              {{> ui-button label="Import catalog" icon="fa-solid fa-file-import" }}
+            </div>
+          </form>
+        </div>
+
+        <h2 class="section-title">Add stack</h2>
+        <div class="panel" style="margin-bottom:18px">
+          <form method="post" action="/admin/skill-graph/stacks">
+            <div class="form-grid">
+              <div>
+                <label for="name">Name</label>
+                <input id="name" name="name" type="text" placeholder="Web Foundations" required />
+              </div>
+              <div>
+                <label for="slug">Slug (optional)</label>
+                <input id="slug" name="slug" type="text" placeholder="web-foundations" />
+              </div>
+              <div>
+                <label for="category">Category</label>
+                <input id="category" name="category" type="text" value="frontend" />
+              </div>
+              <div style="grid-column:1/-1">
+                <label for="description">Description</label>
+                <textarea id="description" name="description"></textarea>
+              </div>
+            </div>
+            <div class="form-actions">
+              {{> ui-button label="Create stack" icon="fa-solid fa-plus" }}
+            </div>
+          </form>
+        </div>
+
+        <h2 class="section-title">Stacks</h2>
+        <div class="panel">
+          {{#if hasRows}}
+            <div class="table-wrap">
+              <table class="data">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Slug</th>
+                    <th>Category</th>
+                    <th>Skills</th>
+                    <th>Status</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {{#each rows}}
+                    <tr>
+                      <td><a class="link" href="/admin/skill-graph/stacks/{{id}}">{{name}}</a></td>
+                      <td class="mono">{{slug}}</td>
+                      <td>{{category}}</td>
+                      <td class="mono">{{skillCount}}</td>
+                      <td>
+                        {{#if isActive}}
+                          <span class="badge badge-ok">Active</span>
+                        {{else}}
+                          <span class="badge badge-off">Off</span>
+                        {{/if}}
+                      </td>
+                      <td>
+                        <form method="post" action="/admin/skill-graph/stacks/{{id}}/delete" style="margin:0" onsubmit="return confirm('Delete stack {{name}} and all skills/lessons?');">
+                          {{> ui-button label="Delete" variant="danger" size="sm" icon="fa-solid fa-trash" }}
+                        </form>
+                      </td>
+                    </tr>
+                  {{/each}}
+                </tbody>
+              </table>
+            </div>
+          {{else}}
+            <div class="empty">No tech stacks yet. Seed on boot or create one above.</div>
+          {{/if}}
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

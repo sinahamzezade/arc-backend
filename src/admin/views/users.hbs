@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body>
+    <div class="shell">
+      {{> shell-sidebar}}
+      <main class="main">
+        <div class="page-head">
+          <h1>Users</h1>
+          <p class="sub">{{userCount}} account{{#unless userCountSingular}}s{{/unless}}</p>
+        </div>
+        <div class="panel">
+          {{#if hasUsers}}
+            <div class="table-wrap">
+              <table class="data">
+                <thead>
+                  <tr>
+                    <th>Email</th>
+                    <th>Display name</th>
+                    <th>Provider</th>
+                    <th>Status</th>
+                    <th>Role</th>
+                    <th>Created</th>
+                    <th>Last login</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {{#each users}}
+                    <tr>
+                      <td>
+                        <a class="link" href="/admin/users/{{id}}">{{email}}</a>
+                      </td>
+                      <td>{{#if displayName}}{{displayName}}{{else}}—{{/if}}</td>
+                      <td class="mono">{{authProvider}}</td>
+                      <td>
+                        {{#if isActive}}
+                          <span class="badge badge-ok">Active</span>
+                        {{else}}
+                          <span class="badge badge-off">Suspended</span>
+                        {{/if}}
+                      </td>
+                      <td>
+                        {{#if isAdmin}}
+                          <span class="badge badge-admin">Admin</span>
+                        {{else}}
+                          <span class="badge badge-off">User</span>
+                        {{/if}}
+                      </td>
+                      <td class="mono">{{createdAt}}</td>
+                      <td class="mono">{{#if lastLoginAt}}{{lastLoginAt}}{{else}}—{{/if}}</td>
+                    </tr>
+                  {{/each}}
+                </tbody>
+              </table>
+            </div>
+          {{else}}
+            <div class="empty">No users yet.</div>
+          {{/if}}
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

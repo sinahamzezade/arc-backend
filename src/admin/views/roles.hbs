@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body>
+    <div class="shell">
+      {{> shell-sidebar}}
+      <main class="main">
+        <div class="page-head">
+          <h1>Roles</h1>
+          <p class="sub">{{count}} career role{{#unless countSingular}}s{{/unless}} · drive questionnaire goal step</p>
+        </div>
+        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
+        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+
+        <h2 class="section-title">Add role</h2>
+        <div class="panel" style="margin-bottom:18px">
+          <form method="post" action="/admin/roles">
+            <div class="form-grid">
+              <div>
+                <label for="title">Title</label>
+                <input id="title" name="title" type="text" placeholder="Data Engineer" required />
+              </div>
+              <div>
+                <label for="slug">Slug (optional)</label>
+                <input id="slug" name="slug" type="text" placeholder="data-engineer" />
+              </div>
+              <div>
+                <label for="category">Category</label>
+                <input id="category" name="category" type="text" value="career" />
+              </div>
+              <div>
+                {{> ui-icon-select}}
+              </div>
+              <div style="grid-column:1/-1">
+                <label for="description">Description</label>
+                <textarea id="description" name="description"></textarea>
+              </div>
+              <div class="check-row">
+                <input id="addToQuestionnaire" name="addToQuestionnaire" type="checkbox" value="1" checked />
+                <label for="addToQuestionnaire">Add to questionnaire goal step</label>
+              </div>
+            </div>
+            <div class="form-actions">
+              {{> ui-button label="Create role" icon="fa-solid fa-plus" }}
+            </div>
+          </form>
+        </div>
+
+        <div class="form-actions" style="padding-left:0;margin-bottom:12px">
+          <form method="post" action="/admin/roles/sync" style="margin:0">
+            {{> ui-button
+              label="Sync active roles → questionnaire"
+              variant="secondary"
+              icon="fa-solid fa-arrows-rotate"
+            }}
+          </form>
+        </div>
+
+        <div class="panel">
+          {{#if hasRows}}
+            <div class="table-wrap">
+              <table class="data">
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Slug</th>
+                    <th>Category</th>
+                    <th>Status</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {{#each rows}}
+                    <tr>
+                      <td>{{title}}</td>
+                      <td class="mono">{{slug}}</td>
+                      <td>{{category}}</td>
+                      <td>
+                        {{#if isActive}}
+                          <span class="badge badge-ok">Active</span>
+                        {{else}}
+                          <span class="badge badge-off">Off</span>
+                        {{/if}}
+                      </td>
+                      <td>
+                        {{#if isActive}}
+                          <form method="post" action="/admin/roles/{{id}}/deactivate" style="margin:0">
+                            {{> ui-button label="Deactivate" variant="secondary" size="sm" }}
+                          </form>
+                        {{else}}
+                          <form method="post" action="/admin/roles/{{id}}/activate" style="margin:0">
+                            {{> ui-button label="Activate" variant="secondary" size="sm" }}
+                          </form>
+                        {{/if}}
+                      </td>
+                    </tr>
+                  {{/each}}
+                </tbody>
+              </table>
+            </div>
+          {{else}}
+            <div class="empty">No career roles yet. Create one or sync from skill-graph seed.</div>
+          {{/if}}
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body>
+    <div class="shell">
+      {{> shell-sidebar}}
+      <main class="main">
+        <p class="crumb">
+          <a class="link" href="/admin/questionnaire/{{defId}}">Questionnaire</a>
+          /
+          <a class="link" href="/admin/questionnaire/{{defId}}/steps/{{stepId}}">{{stepFieldKey}}</a>
+          / {{row.value}}
+        </p>
+        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
+        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+        <div class="page-head">
+          <h1>{{row.label}}</h1>
+          <p class="sub">Edit option · <span class="mono">{{row.value}}</span></p>
+        </div>
+        <div class="panel">
+          <form method="post" action="/admin/questionnaire/{{defId}}/steps/{{stepId}}/options/{{row.id}}">
+            <div class="form-grid">
+              <div>
+                <label for="label">Label</label>
+                <input id="label" name="label" type="text" value="{{row.label}}" required />
+              </div>
+              <div>
+                <label for="value">Value / slug</label>
+                <input id="value" name="value" type="text" value="{{row.value}}" required />
+              </div>
+              <div>
+                {{> ui-icon-select}}
+              </div>
+              <div>
+                <label for="sortOrder">Sort order</label>
+                <input id="sortOrder" name="sortOrder" type="number" value="{{row.sortOrder}}" required />
+              </div>
+            </div>
+            <div class="form-actions">
+              {{> ui-button label="Save option" }}
+              {{> ui-button label="Back" href=backHref variant="secondary" }}
+            </div>
+          </form>
+        </div>
+        <div style="margin-top:16px">
+          <form method="post" action="/admin/questionnaire/{{defId}}/steps/{{stepId}}/options/{{row.id}}/delete" onsubmit="return confirm('Delete this option?');">
+            {{> ui-button label="Delete option" variant="danger" }}
+          </form>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

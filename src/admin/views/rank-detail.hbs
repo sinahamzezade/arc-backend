@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body>
+    <div class="shell">
+      {{> shell-sidebar}}
+      <main class="main">
+        <p class="crumb"><a class="link" href="/admin/ranks">Ranks</a> / {{row.slug}}</p>
+        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
+        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+        <div class="page-head">
+          <h1>{{row.title}}</h1>
+          <p class="sub">Level {{row.level}} · {{row.slug}}</p>
+        </div>
+        <div class="panel">
+          <form method="post" action="/admin/ranks/{{row.id}}">
+            <div class="form-grid">
+              <div>
+                <label for="title">Title</label>
+                <input id="title" name="title" type="text" value="{{row.title}}" required />
+              </div>
+              <div>
+                <label for="xpThreshold">XP threshold</label>
+                <input id="xpThreshold" name="xpThreshold" type="number" min="0" value="{{row.xpThreshold}}" required />
+              </div>
+              <div>
+                <label for="minimumActiveDays">Min active days</label>
+                <input id="minimumActiveDays" name="minimumActiveDays" type="number" min="0" value="{{row.minimumActiveDays}}" required />
+              </div>
+              <div>
+                <label for="displayOrder">Display order</label>
+                <input id="displayOrder" name="displayOrder" type="number" value="{{row.displayOrder}}" required />
+              </div>
+              <div>
+                <label for="iconAssetKey">Icon asset key</label>
+                <input id="iconAssetKey" name="iconAssetKey" type="text" value="{{row.iconAssetKey}}" />
+              </div>
+              <div class="check-row">
+                <input id="isActive" name="isActive" type="checkbox" value="1" {{#if row.isActive}}checked{{/if}} />
+                <label for="isActive">Active</label>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit">Save rank</button>
+            </div>
+          </form>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

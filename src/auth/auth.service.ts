@@ -19,6 +19,7 @@ import { toAuthUserDto, toProfileDto, toUserDto } from './auth.serializer';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import {
   AuthChallenge,
   AuthChallengePurpose,
@@ -88,6 +89,7 @@ export class AuthService {
           userRepo.create({
             email,
             passwordHash,
+            passwordLastChangedAt: new Date(),
             authProvider: AuthProvider.EMAIL,
             emailVerifiedAt: null,
             isActive: true,
@@ -337,6 +339,61 @@ export class AuthService {
     await this.tokenService.revokeAllForUser(user.id);
 
     return { ok: true };
+  }
+
+  async changePassword(userId: string, dto: ChangePasswordDto) {
+    if (dto.password !== dto.confirmPassword) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'Passwords do not match',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (!isPasswordStrong(dto.password)) {
+      throw new AppException(
+        AuthErrorCode.PASSWORD_TOO_WEAK,
+        passwordStrengthMessage(),
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const user = await this.usersService.findById(userId);
+    if (!user?.isActive) {
+      throw new AppException(
+        AuthErrorCode.UNAUTHORIZED,
+        'Unauthorized',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+
+    if (!user.passwordHash) {
+      throw new AppException(
+        AuthErrorCode.PASSWORD_NOT_SET,
+        'This account has no password',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const valid = await this.passwordService.verify(
+      user.passwordHash,
+      dto.currentPassword,
+    );
+    if (!valid) {
+      throw new AppException(
+        AuthErrorCode.CURRENT_PASSWORD_INVALID,
+        'Current password is incorrect',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+
+    const passwordHash = await this.passwordService.hash(dto.password);
+    await this.usersService.updatePassword(user.id, passwordHash);
+
+    return {
+      ok: true,
+      passwordLastChangedAt: new Date().toISOString(),
+    };
   }
 
   async loginWithGoogle(idToken: string, meta?: RequestMeta) {

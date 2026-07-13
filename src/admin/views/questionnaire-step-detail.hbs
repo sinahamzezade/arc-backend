@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body>
+    <div class="shell">
+      {{> shell-sidebar}}
+      <main class="main">
+        <p class="crumb">
+          <a class="link" href="/admin/questionnaire">Questionnaire</a>
+          /
+          <a class="link" href="/admin/questionnaire/{{defId}}">v{{step.stepNumber}}</a>
+          / {{step.fieldKey}}
+        </p>
+        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
+        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+        <div class="page-head">
+          <h1>{{step.title}}</h1>
+          <p class="sub">Edit step · <span class="mono">{{step.fieldKey}}</span></p>
+        </div>
+
+        <div class="panel">
+          <form method="post" action="/admin/questionnaire/{{defId}}/steps/{{step.id}}">
+            <div class="form-grid">
+              <div>
+                <label for="fieldKey">Field key</label>
+                <input id="fieldKey" name="fieldKey" type="text" value="{{step.fieldKey}}" required />
+              </div>
+              <div>
+                <label for="stepNumber">Step #</label>
+                <input id="stepNumber" name="stepNumber" type="number" min="1" value="{{step.stepNumber}}" required />
+              </div>
+              <div>
+                <label for="title">Title</label>
+                <input id="title" name="title" type="text" value="{{step.title}}" required />
+              </div>
+              <div>
+                <label for="subtitle">Subtitle</label>
+                <input id="subtitle" name="subtitle" type="text" value="{{step.subtitle}}" />
+              </div>
+              <div>
+                <label for="selection">Selection</label>
+                <select id="selection" name="selection">
+                  <option value="multi" {{#if step.selectionMulti}}selected{{/if}}>multi</option>
+                  <option value="single" {{#if step.selectionSingle}}selected{{/if}}>single</option>
+                </select>
+              </div>
+              <div>
+                <label for="uiKind">UI kind</label>
+                <select id="uiKind" name="uiKind">
+                  <option value="options" {{#if step.isOptions}}selected{{/if}}>options</option>
+                  <option value="schedule" {{#if step.isSchedule}}selected{{/if}}>schedule</option>
+                </select>
+              </div>
+              <div>
+                <label for="reviewLabel">Review label</label>
+                <input id="reviewLabel" name="reviewLabel" type="text" value="{{step.reviewLabel}}" />
+              </div>
+              <div>
+                <label for="reviewIcon">Review icon</label>
+                <input id="reviewIcon" name="reviewIcon" type="text" value="{{step.reviewIcon}}" />
+              </div>
+              <div>
+                <label><input type="checkbox" name="allowOther" value="1" {{#if step.allowOther}}checked{{/if}} /> Allow other</label>
+              </div>
+            </div>
+
+            {{#if step.isSchedule}}
+              <div class="form-grid" style="margin-top:12px">
+                <div>
+                  <label for="scheduleDays">Schedule days (comma-separated)</label>
+                  <input id="scheduleDays" name="scheduleDays" type="text" value="{{step.scheduleDays}}" />
+                </div>
+                <div style="grid-column:1/-1">
+                  <label for="scheduleTimesJson">Schedule times (JSON array)</label>
+                  <textarea id="scheduleTimesJson" name="scheduleTimesJson" rows="6" style="width:100%;font-family:ui-monospace,monospace;font-size:12px">{{step.scheduleTimesJson}}</textarea>
+                </div>
+              </div>
+            {{else}}
+              <input type="hidden" name="scheduleDays" value="{{step.scheduleDays}}" />
+              <input type="hidden" name="scheduleTimesJson" value="{{step.scheduleTimesJson}}" />
+            {{/if}}
+
+            <div class="form-actions">
+              {{> ui-button label="Save step" }}
+              {{> ui-button label="Back" href=backHref variant="secondary" }}
+            </div>
+          </form>
+        </div>
+
+        {{#if step.isOptions}}
+          <div class="panel" style="margin-top:16px">
+            <h2 style="margin:0 0 12px;font-size:1rem">Options</h2>
+            {{#if hasOptions}}
+              <div class="table-wrap">
+                <table class="data">
+                  <thead>
+                    <tr>
+                      <th>Sort</th>
+                      <th>Value</th>
+                      <th>Label</th>
+                      <th>Icon</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {{#each options}}
+                      <tr>
+                        <td class="mono">{{sortOrder}}</td>
+                        <td class="mono">{{value}}</td>
+                        <td>{{label}}</td>
+                        <td class="mono">{{icon}}</td>
+                        <td>
+                          <a class="link" href="/admin/questionnaire/{{../defId}}/steps/{{../step.id}}/options/{{id}}">Edit</a>
+                        </td>
+                      </tr>
+                    {{/each}}
+                  </tbody>
+                </table>
+              </div>
+            {{else}}
+              <div class="empty">No options yet.</div>
+            {{/if}}
+
+            <h3 style="margin:20px 0 12px;font-size:0.95rem">Add option</h3>
+            <form method="post" action="/admin/questionnaire/{{defId}}/steps/{{step.id}}/options">
+              <div class="form-grid">
+                <div>
+                  <label for="label">Label</label>
+                  <input id="label" name="label" type="text" required />
+                </div>
+                <div>
+                  <label for="value">Value / slug</label>
+                  <input id="value" name="value" type="text" placeholder="auto from label" />
+                </div>
+                <div>
+                  <label for="icon">Icon</label>
+                  <select id="icon" name="icon">
+                    <option value="">— none —</option>
+                    {{#each optionIcons}}
+                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
+                </div>
+                <div>
+                  <label for="sortOrder">Sort order</label>
+                  <input id="sortOrder" name="sortOrder" type="number" />
+                </div>
+              </div>
+              <div class="form-actions">
+                {{> ui-button label="Add option" }}
+              </div>
+            </form>
+          </div>
+        {{/if}}
+
+        <div style="margin-top:16px">
+          <form method="post" action="/admin/questionnaire/{{defId}}/steps/{{step.id}}/delete" onsubmit="return confirm('Delete this step and all options?');">
+            {{> ui-button label="Delete step" variant="danger" }}
+          </form>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

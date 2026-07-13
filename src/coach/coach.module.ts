@@ -1,4 +1,5 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
+import { RoadmapsModule } from '../roadmaps/roadmaps.module';
 import { CoachService } from './coach.service';
 
 /**
@@ -6,6 +7,7 @@ import { CoachService } from './coach.service';
  * Does not mutate Skill Graph catalog rows.
  */
 @Module({
+  imports: [forwardRef(() => RoadmapsModule)],
   providers: [CoachService],
   exports: [CoachService],
 })

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body>
+    <div class="shell">
+      {{> shell-sidebar}}
+      <main class="main">
+        <div class="page-head">
+          <h1>Questionnaire roles</h1>
+          <p class="sub">
+            {{count}} goal option{{#unless countSingular}}s{{/unless}} on Q1 ·
+            <a class="link" href="/admin/questionnaire">versions</a>
+            ·
+            <a class="link" href="/admin/roles">career catalog</a>
+          </p>
+        </div>
+        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
+        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+
+        <h2 class="section-title">Add role</h2>
+        <div class="panel" style="margin-bottom:18px">
+          <form method="post" action="/admin/questionnaire/roles">
+            <div class="form-grid">
+              <div>
+                <label for="label">Label</label>
+                <input id="label" name="label" type="text" placeholder="Data Engineer" required />
+              </div>
+              <div>
+                <label for="value">Value / slug (optional)</label>
+                <input id="value" name="value" type="text" placeholder="data-engineer" />
+              </div>
+              <div>
+                {{> ui-icon-select}}
+              </div>
+              <div>
+                <label for="sortOrder">Sort order (optional)</label>
+                <input id="sortOrder" name="sortOrder" type="number" placeholder="auto" />
+              </div>
+            </div>
+            <div class="form-actions">
+              {{> ui-button label="Create questionnaire role" icon="fa-solid fa-plus" }}
+            </div>
+          </form>
+        </div>
+
+        <h2 class="section-title">Goal step options</h2>
+        <div class="panel">
+          {{#if hasRows}}
+            <div class="table-wrap">
+              <table class="data">
+                <thead>
+                  <tr>
+                    <th>Order</th>
+                    <th>Label</th>
+                    <th>Value</th>
+                    <th>Icon</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {{#each rows}}
+                    <tr>
+                      <td class="mono">{{sortOrder}}</td>
+                      <td><a class="link" href="/admin/questionnaire/roles/{{id}}">{{label}}</a></td>
+                      <td class="mono">{{value}}</td>
+                      <td class="mono">{{#if icon}}{{icon}}{{else}}—{{/if}}</td>
+                      <td>
+                        <form method="post" action="/admin/questionnaire/roles/{{id}}/delete" style="margin:0" onsubmit="return confirm('Delete this questionnaire role?');">
+                          {{> ui-button label="Delete" variant="danger" size="sm" }}
+                        </form>
+                      </td>
+                    </tr>
+                  {{/each}}
+                </tbody>
+              </table>
+            </div>
+          {{else}}
+            <div class="empty">No goal options on active questionnaire.</div>
+          {{/if}}
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

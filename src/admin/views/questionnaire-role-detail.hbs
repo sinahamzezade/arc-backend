@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body>
+    <div class="shell">
+      {{> shell-sidebar}}
+      <main class="main">
+        <p class="crumb">
+          <a class="link" href="/admin/questionnaire/roles">Questionnaire roles</a>
+          / {{row.value}}
+        </p>
+        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
+        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+        <div class="page-head">
+          <h1>{{row.label}}</h1>
+          <p class="sub">Edit goal-step option · shows on questionnaire step 1</p>
+        </div>
+        <div class="panel">
+          <form method="post" action="/admin/questionnaire/roles/{{row.id}}">
+            <div class="form-grid">
+              <div>
+                <label for="label">Label</label>
+                <input id="label" name="label" type="text" value="{{row.label}}" required />
+              </div>
+              <div>
+                <label for="value">Value / slug</label>
+                <input id="value" name="value" type="text" value="{{row.value}}" required />
+              </div>
+              <div>
+                {{> ui-icon-select}}
+              </div>
+              <div>
+                <label for="sortOrder">Sort order</label>
+                <input id="sortOrder" name="sortOrder" type="number" value="{{row.sortOrder}}" required />
+              </div>
+            </div>
+            <div class="form-actions">
+              {{> ui-button label="Save role" }}
+              {{> ui-button label="Back" href="/admin/questionnaire/roles" variant="secondary" }}
+            </div>
+          </form>
+        </div>
+        <div style="margin-top:16px">
+          <form method="post" action="/admin/questionnaire/roles/{{row.id}}/delete" onsubmit="return confirm('Delete this questionnaire role?');">
+            {{> ui-button label="Delete role" variant="danger" }}
+          </form>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

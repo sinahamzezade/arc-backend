@@ -33,6 +33,13 @@ export class User {
   @Column({ name: 'password_hash', type: 'varchar', nullable: true })
   passwordHash: string | null;
 
+  @Column({
+    name: 'password_last_changed_at',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  passwordLastChangedAt: Date | null;
+
   @Column({ name: 'email_verified_at', type: 'timestamptz', nullable: true })
   emailVerifiedAt: Date | null;
 

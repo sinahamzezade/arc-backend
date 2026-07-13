@@ -23,9 +23,30 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ROADMAP_GENERATOR_PROMPT_VERSION: ${ROADMAP_GENERATOR_PROMPT_VERSION:-roadmap_generator_v1}
       OPENAI_ROADMAP_MODEL: ${OPENAI_ROADMAP_MODEL:-gpt-4o-mini}
+      REDIS_URL: redis://redis:6379
+      ROADMAP_ENGINE_URL: http://roadmap-engine:8080
+      ROADMAP_ENGINE_VERSION: '2'
+      ROADMAP_ENGINE_MODE: python
+      ROADMAP_GENERATION_TIMEOUT_MS: ${ROADMAP_GENERATION_TIMEOUT_MS:-15000}
+      ROADMAP_GENERATION_MAX_RETRIES: ${ROADMAP_GENERATION_MAX_RETRIES:-3}
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
+      roadmap-engine:
+        condition: service_started
+
+  roadmap-engine:
+    build:
+      context: ../roadmap-engine
+      dockerfile: Dockerfile
+    environment:
+      ROADMAP_ENGINE_VERSION: '2'
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
 
   db:
     image: postgres:16

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body>
+    <div class="shell">
+      {{> shell-sidebar}}
+      <main class="main">
+        <p class="crumb"><a class="link" href="/admin/badges">Badges</a> / {{row.code}}</p>
+        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
+        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+        <div class="page-head">
+          <h1>{{row.name}}</h1>
+          <p class="sub">{{row.code}} · v{{row.version}}</p>
+        </div>
+
+        <h2 class="section-title">Badge image</h2>
+        <div class="panel" style="margin-bottom: 18px">
+          <div class="form-grid" style="align-items: start">
+            <div>
+              <label>Preview</label>
+              {{#if iconPreviewUrl}}
+                <img
+                  src="{{iconPreviewUrl}}"
+                  alt="{{row.name}}"
+                  width="96"
+                  height="96"
+                  style="display:block;width:96px;height:96px;object-fit:cover;border-radius:1rem;border:1px solid #d5ddd7;background:#eef3ef"
+                />
+              {{else}}
+                <div
+                  style="width:96px;height:96px;border-radius:1rem;border:1px dashed #d5ddd7;background:#eef3ef;display:flex;align-items:center;justify-content:center;color:#5b7c6e;font-size:0.75rem;text-align:center;padding:8px"
+                >
+                  {{#if row.iconAssetKey}}Key: {{row.iconAssetKey}}{{else}}No image{{/if}}
+                </div>
+              {{/if}}
+            </div>
+            <div style="grid-column: span 2">
+              <form
+                method="post"
+                action="/admin/badges/{{row.id}}/icon"
+                enctype="multipart/form-data"
+              >
+                <label for="icon">Upload image</label>
+                <input
+                  id="icon"
+                  name="icon"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+                  required
+                />
+                <p class="muted" style="margin:0 0 12px;font-size:0.8rem">
+                  PNG, JPEG, WebP, GIF, or SVG · max 2MB. Replaces current upload.
+                </p>
+                <div class="form-actions" style="padding-left:0">
+                  <button type="submit">Upload image</button>
+                </div>
+              </form>
+              {{#if hasUpload}}
+                <form method="post" action="/admin/badges/{{row.id}}/icon/clear" style="margin-top:8px">
+                  <button type="submit" class="secondary">Remove uploaded image</button>
+                </form>
+              {{/if}}
+            </div>
+          </div>
+        </div>
+
+        <h2 class="section-title">Details</h2>
+        <div class="panel">
+          <form method="post" action="/admin/badges/{{row.id}}">
+            <div class="form-grid">
+              <div>
+                <label for="name">Name</label>
+                <input id="name" name="name" type="text" value="{{row.name}}" required />
+              </div>
+              <div>
+                <label for="category">Category</label>
+                <select id="category" name="category">
+                  {{#each categories}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div>
+                <label for="rarity">Rarity</label>
+                <select id="rarity" name="rarity">
+                  {{#each rarities}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div>
+                <label for="status">Status</label>
+                <select id="status" name="status">
+                  {{#each statuses}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div>
+                <label for="sortOrder">Sort order</label>
+                <input id="sortOrder" name="sortOrder" type="number" value="{{row.sortOrder}}" />
+              </div>
+              <div>
+                <label for="iconAssetKey">Icon asset key</label>
+                <input id="iconAssetKey" name="iconAssetKey" type="text" value="{{row.iconAssetKey}}" />
+                <p class="muted" style="margin:-8px 0 14px;font-size:0.75rem">
+                  Bundled key (e.g. first-step) or upload path. Upload sets this automatically.
+                </p>
+              </div>
+              <div style="grid-column: 1 / -1">
+                <label for="description">Description</label>
+                <textarea id="description" name="description">{{row.description}}</textarea>
+              </div>
+              <div class="check-row">
+                <input id="isHidden" name="isHidden" type="checkbox" value="1" {{#if row.isHidden}}checked{{/if}} />
+                <label for="isHidden">Hidden from catalog</label>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit">Save badge</button>
+            </div>
+          </form>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

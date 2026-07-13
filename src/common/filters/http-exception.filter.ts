@@ -6,7 +6,8 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { Response } from 'express';
+import type { Response } from 'express';
+import { AdminRedirectException } from '../exceptions/admin-redirect.exception';
 import { AuthErrorCode } from '../errors/auth-error.codes';
 
 @Catch()
@@ -16,6 +17,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
+
+    if (exception instanceof AdminRedirectException) {
+      return response.redirect(exception.url);
+    }
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus();

@@ -36,11 +36,14 @@ export class LeagueLiveScoresService implements OnModuleInit, OnModuleDestroy {
         enableReadyCheck: true,
         lazyConnect: true,
       });
+      this.redis.on('error', (err) => {
+        this.logger.warn(`League Redis error: ${err.message}`);
+      });
       void this.redis.connect().then(
         () => this.logger.log('League live scores: Redis connected'),
         (err: Error) => {
           this.logger.warn(`Redis connect failed, using memory: ${err.message}`);
-          void this.redis?.quit();
+          void this.redis?.disconnect();
           this.redis = null;
         },
       );

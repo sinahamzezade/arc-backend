@@ -1,55 +1,58 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
-import { ContentPersonalizationService } from '../content-pool/content-personalization.service';
 import { ContentQueryService } from '../content-pool/content-query.service';
 import { TimingService } from '../course-timing/timing.service';
 import { Goal } from '../goals/entities/goal.entity';
-import { LessonTemplate } from '../skill-graph/entities/lesson-template.entity';
-import { isPlayOutline } from '../lessons/lesson-play.types';
-import {
-  LoadedSkillNode,
-  RecipeSubgraph,
-  SkillGraphService,
-} from '../skill-graph/skill-graph.service';
-import { Lesson, LessonStatus } from './entities/lesson.entity';
-import { Milestone } from './entities/milestone.entity';
-import { Roadmap, RoadmapStatus } from './entities/roadmap.entity';
-import { RoadmapPhase } from './entities/roadmap-phase.entity';
-import { ROADMAP_GENERATOR_PROMPT_VERSION } from './roadmap-ai.prompt';
-import { RoadmapAiService } from './roadmap-ai.service';
-import type {
-  PlannedLesson,
-  PlannedMilestone,
-  PlannedPhase,
-} from './roadmap-plan.types';
-import {
-  budgetMinutes,
-  confidenceMeets,
-  decodeTimelineWeeks,
-  decodeWeeklyHours,
-} from './token-decoders';
+import { Roadmap } from './entities/roadmap.entity';
+import { RoadmapAnalyticsService } from './roadmap-analytics.service';
+import { RoadmapEngineClient } from './roadmap-engine.client';
+import { RoadmapLegacyAssembler } from './roadmap-legacy.assembler';
+import { RoadmapPersistenceService } from './roadmap-persistence.service';
+import { RoadmapSnapshotService } from './roadmap-snapshot.service';
 
-const MAX_LESSONS = 80;
-
+/**
+ * Orchestrates roadmap generation: snapshot → Python engine → persist.
+ * Falls back to legacy Nest assembler when ROADMAP_ENGINE_MODE=legacy.
+ */
 @Injectable()
 export class RoadmapGeneratorService {
   private readonly logger = new Logger(RoadmapGeneratorService.name);
+  private readonly mode: 'python' | 'legacy';
 
   constructor(
-    private readonly skillGraph: SkillGraphService,
-    private readonly personalization: ContentPersonalizationService,
-    private readonly contentQuery: ContentQueryService,
-    private readonly timing: TimingService,
-    private readonly dataSource: DataSource,
-    private readonly roadmapAi: RoadmapAiService,
+    private readonly config: ConfigService,
     @InjectRepository(Goal)
     private readonly goalsRepo: Repository<Goal>,
-  ) {}
+    private readonly snapshot: RoadmapSnapshotService,
+    private readonly engine: RoadmapEngineClient,
+    private readonly persistence: RoadmapPersistenceService,
+    private readonly analytics: RoadmapAnalyticsService,
+    private readonly contentQuery: ContentQueryService,
+    private readonly timing: TimingService,
+    private readonly legacy: RoadmapLegacyAssembler,
+  ) {
+    const configured = (config.get<string>('ROADMAP_ENGINE_MODE') ?? 'python')
+      .trim()
+      .toLowerCase();
+    this.mode = configured === 'legacy' ? 'legacy' : 'python';
+  }
 
   async assemble(goalId: string, userId: string): Promise<Roadmap> {
+    if (this.mode === 'legacy') {
+      this.logger.log(`Assembling via legacy Nest planner goal=${goalId}`);
+      return this.legacy.assemble(goalId, userId);
+    }
+    return this.assembleViaEngine(goalId, userId);
+  }
+
+  private async assembleViaEngine(
+    goalId: string,
+    userId: string,
+  ): Promise<Roadmap> {
     const goal = await this.goalsRepo.findOne({ where: { id: goalId } });
     if (!goal || goal.userId !== userId) {
       throw new AppException(
@@ -59,121 +62,82 @@ export class RoadmapGeneratorService {
       );
     }
 
-    const roles = (goal.targetRoles ?? []).filter(Boolean);
-    if (!roles.length) {
-      throw new AppException(
-        AuthErrorCode.CONTENT_ROLE_RECIPE_MISSING,
-        'Goal has no target role',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
+    const revision = this.snapshot.goalRevision(goal);
+    const seed = this.snapshot.seedFor(userId, revision);
 
-    const recipe = await this.skillGraph.findFirstRecipeForRoles(roles);
-    if (!recipe) {
-      throw new AppException(
-        AuthErrorCode.CONTENT_ROLE_RECIPE_MISSING,
-        `No role recipe for ${roles.join(', ')}`,
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    const personalization = await this.personalization.getPersonalizationCandidates(
-      goalId,
-    );
-    if (personalization.feasibility === 'required_budget_exceeded') {
-      this.logger.warn(
-        `CONTENT_REQUIRED_BUDGET_EXCEEDED goal=${goalId} required=${personalization.requiredMinutes}m budget=${personalization.budgetMinutes}m`,
-      );
-    }
-
-    const subgraph = await this.skillGraph.loadSubgraphForRecipe(recipe);    const hours = decodeWeeklyHours(goal.weeklyHours);
-    const weeks = decodeTimelineWeeks(
-      goal.targetDeadline,
-      recipe.defaultTimelineWeeks,
-    );
-    const budget = budgetMinutes(hours, weeks);
-    const knownSkills = (goal.skills?.values ?? []).filter((s) => s !== 'none');
-    const styles = goal.learningStyles?.values ?? [];
-    const skippedSkillNodeIds: string[] = [];
-
-    let phases = this.buildPhases(
-      subgraph,
-      goal.confidence,
-      knownSkills,
-      styles,
-      skippedSkillNodeIds,
-    );
-
-    if (!phases.length) {
-      throw new AppException(
-        AuthErrorCode.CATALOG_EMPTY,
-        'Skill graph returned no phases for recipe',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    phases = this.sizeToBudget(phases, budget, goal.confidence);
-
-    const allowedResourceIds = [
-      ...new Set(
-        phases
-          .flatMap((p) => p.milestones)
-          .flatMap((m) => m.lessons)
-          .map((l) => l.resourceId)
-          .filter((id): id is string => Boolean(id)),
-      ),
-    ];
-
-    const promptVersion = this.roadmapAi.getPromptVersion();
-    let pathTitle = `${recipe.title} Path`;
-    let aiUsed = false;
-    let aiModel: string | undefined;
-    let aiSkippedReason: string | undefined;
-
-    if (this.roadmapAi.isEnabled()) {
-      const aiResult = await this.roadmapAi.enrich({
-        goal,
-        recipeTitle: recipe.title,
-        phases,
-        allowedResourceIds,
+    let contentSnapshot;
+    try {
+      contentSnapshot = await this.snapshot.buildSnapshot(goal);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.analytics.roadmapGenerationFailed({
+        goalRevision: revision,
+        code: AuthErrorCode.ROADMAP_ROLE_NOT_FOUND,
+        stage: 'snapshot',
       });
-      if (aiResult.enrich !== null) {
-        const applied = this.roadmapAi.applyEnrich(phases, aiResult.enrich);
-        phases = applied.phases;
-        if (applied.pathTitle) pathTitle = applied.pathTitle;
-        aiUsed = true;
-        aiModel = aiResult.model;
-      } else {
-        aiSkippedReason = aiResult.reason;
-      }
-    } else {
-      aiSkippedReason = 'OPENAI_API_KEY unset';
+      throw new AppException(
+        AuthErrorCode.CONTENT_ROLE_RECIPE_MISSING,
+        message,
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
-    const roadmap = await this.persist(
-      goal,
-      pathTitle,
-      recipe.title,
-      recipe.targetRoleSlug,
-      weeks,
-      hours,
-      phases,
-      {
-        schemaVersion: 1,
-        recipeId: recipe.id,
-        decodedHours: hours,
-        decodedWeeks: weeks,
-        skippedSkillNodeIds,
-        promptVersion,
-        budgetMinutes: budget,
-        aiUsed,
-        ...(aiModel ? { aiModel } : {}),
-        ...(aiSkippedReason ? { aiSkippedReason } : {}),
-      },
-    );
+    const profile = this.snapshot.toProfile(goal);
+    let response;
+    try {
+      response = await this.engine.plan(profile, contentSnapshot, seed);
+    } catch (err) {
+      this.analytics.roadmapGenerationFailed({
+        goalRevision: revision,
+        code: AuthErrorCode.ROADMAP_GENERATION_FAILED,
+        stage: 'engine_call',
+      });
+      throw new AppException(
+        AuthErrorCode.ROADMAP_GENERATION_FAILED,
+        err instanceof Error ? err.message : 'Engine call failed',
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+
+    if (!response.ok || !response.plan) {
+      const code =
+        response.error_code ?? AuthErrorCode.ROADMAP_GENERATION_FAILED;
+      if (code === 'ROADMAP_DEADLINE_UNREALISTIC') {
+        this.analytics.roadmapFeasibilityReturned({
+          goalRevision: revision,
+          earliestRealisticDate:
+            response.feasibility?.earliest_realistic_date ?? null,
+        });
+      }
+      this.analytics.roadmapGenerationFailed({
+        goalRevision: revision,
+        code,
+        stage: 'plan',
+      });
+      throw new AppException(
+        this.mapErrorCode(code),
+        response.error_message ?? 'Roadmap generation failed',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const plan = response.plan;
+    const roadmap = await this.persistence.persistPlan(goal, plan, {
+      schemaVersion: 2,
+      goalRevision: revision,
+      mode: 'python',
+    });
+
+    this.analytics.roadmapGenerated({
+      roadmapId: roadmap.id,
+      goalRevision: revision,
+      engineVersion: plan.engine_version,
+      estimatedWeeks: plan.estimated_weeks,
+      phaseCount: plan.phases.filter((p) => p.week_type === 'learning').length,
+    });
 
     this.logger.log(
-      `Assembled roadmap ${roadmap.id} for goal ${goalId} (${phases.length} phases, aiUsed=${aiUsed})`,
+      `Assembled roadmap ${roadmap.id} via python engine (seed=${plan.seed})`,
     );
 
     try {
@@ -198,317 +162,17 @@ export class RoadmapGeneratorService {
     return roadmap;
   }
 
-  private buildPhases(
-    subgraph: RecipeSubgraph,
-    confidence: string | null,
-    knownSkills: string[],
-    styles: string[],
-    skippedSkillNodeIds: string[],
-  ): PlannedPhase[] {
-    const phases: PlannedPhase[] = [];
-    let orderIndex = 0;
-
-    for (const planPhase of subgraph.recipe.stackPlan.phases) {
-      if (
-        !planPhase.required &&
-        !confidenceMeets(confidence, planPhase.include_if_confidence_gte)
-      ) {
-        continue;
-      }
-
-      const stackSlug = planPhase.tech_stack_slugs[0] ?? null;
-      const stack = stackSlug
-        ? subgraph.stacksBySlug.get(stackSlug)
-        : undefined;
-
-      const milestones: PlannedMilestone[] = [];
-      const seenSkillIds = new Set<string>();
-
-      for (const slug of planPhase.tech_stack_slugs) {
-        const skills = this.topoSort(
-          subgraph.skillsByStackSlug.get(slug) ?? [],
-        );
-        for (const skill of skills) {
-          if (seenSkillIds.has(skill.id)) continue;
-          seenSkillIds.add(skill.id);
-
-          const tagHit = skill.tags.some((t) => knownSkills.includes(t));
-          if (tagHit) {
-            skippedSkillNodeIds.push(skill.id);
-            const practice =
-              skill.lessonTemplates.find((l) => l.lessonType === 'practice') ??
-              skill.lessonTemplates[0];
-            if (!practice) continue;
-            milestones.push({
-              skill,
-              title: `${skill.title} (refresh)`,
-              type: 'skill',
-              compress: true,
-              lessons: [
-                this.planLesson(
-                  practice,
-                  styles,
-                  subgraph,
-                  LessonStatus.Locked,
-                ),
-              ],
-            });
-            continue;
-          }
-
-          const lessons = this.pickLessons(skill.lessonTemplates, styles).map(
-            (t) => this.planLesson(t, styles, subgraph, LessonStatus.Locked),
-          );
-          if (!lessons.length) continue;
-          milestones.push({
-            skill,
-            title: skill.title,
-            type: 'skill',
-            compress: false,
-            lessons,
-          });
-        }
-      }
-
-      if (!milestones.length) continue;
-
-      phases.push({
-        key: planPhase.key,
-        title: planPhase.title,
-        techStackId: stack?.id ?? null,
-        techStackSlug: stackSlug,
-        orderIndex: orderIndex++,
-        locked: orderIndex > 1,
-        milestones,
-      });
-    }
-
-    if (phases[0]) {
-      phases[0].locked = false;
-      const firstLesson = phases[0].milestones[0]?.lessons[0];
-      if (firstLesson) firstLesson.status = LessonStatus.Available;
-    }
-
-    return phases;
-  }
-
-  private pickLessons(
-    templates: LessonTemplate[],
-    styles: string[],
-  ): LessonTemplate[] {
-    const sorted = [...templates].sort((a, b) => {
-      const aHit = a.learningStyleTags.some((t) => styles.includes(t)) ? 1 : 0;
-      const bHit = b.learningStyleTags.some((t) => styles.includes(t)) ? 1 : 0;
-      if (bHit !== aHit) return bHit - aHit;
-      return a.orderHint - b.orderHint;
-    });
-
-    const picked: LessonTemplate[] = [];
-    const practice = sorted.find((t) => t.lessonType === 'practice');
-    for (const t of sorted) {
-      if (picked.length >= 4) break;
-      picked.push(t);
-    }
-    if (practice && !picked.some((p) => p.id === practice.id)) {
-      picked[picked.length - 1] = practice;
-    }
-    return picked.sort((a, b) => a.orderHint - b.orderHint);
-  }
-
-  private planLesson(
-    template: LessonTemplate,
-    _styles: string[],
-    subgraph: RecipeSubgraph,
-    status: LessonStatus,
-  ): PlannedLesson {
-    void _styles;
-    const resourceId =
-      template.defaultResourceId &&
-      subgraph.resourcesById.has(template.defaultResourceId)
-        ? template.defaultResourceId
-        : null;
-    return {
-      template,
-      title: template.title,
-      missionName: template.missionNameTemplate,
-      resourceId,
-      status,
+  private mapErrorCode(code: string): AuthErrorCode {
+    const map: Record<string, AuthErrorCode> = {
+      ROADMAP_ROLE_NOT_FOUND: AuthErrorCode.ROADMAP_ROLE_NOT_FOUND,
+      ROADMAP_GRAPH_INVALID: AuthErrorCode.ROADMAP_GRAPH_INVALID,
+      ROADMAP_PREREQUISITE_FAILED: AuthErrorCode.ROADMAP_PREREQUISITE_FAILED,
+      ROADMAP_CONTENT_NOT_FOUND: AuthErrorCode.ROADMAP_CONTENT_NOT_FOUND,
+      ROADMAP_DEADLINE_UNREALISTIC: AuthErrorCode.ROADMAP_DEADLINE_UNREALISTIC,
+      ROADMAP_GENERATION_FAILED: AuthErrorCode.ROADMAP_GENERATION_FAILED,
+      ROADMAP_ENGINE_VERSION_CONFLICT:
+        AuthErrorCode.ROADMAP_ENGINE_VERSION_CONFLICT,
     };
-  }
-
-  private sizeToBudget(
-    phases: PlannedPhase[],
-    budget: number,
-    confidence: string | null,
-  ): PlannedPhase[] {
-    let total = this.sumMinutes(phases);
-    let result = [...phases];
-
-    while (total > budget && result.length > 1) {
-      result = result.slice(0, -1);
-      total = this.sumMinutes(result);
-    }
-
-    while (this.countLessons(result) > MAX_LESSONS && result.length > 1) {
-      result = result.slice(0, -1);
-    }
-
-    void confidence;
-
-    return result.map((p, i) => ({
-      ...p,
-      orderIndex: i,
-      locked: i > 0,
-      milestones: p.milestones.map((m, mi) => ({
-        ...m,
-        lessons: m.lessons.map((l, li) => ({
-          ...l,
-          status:
-            i === 0 && mi === 0 && li === 0
-              ? LessonStatus.Available
-              : LessonStatus.Locked,
-        })),
-      })),
-    }));
-  }
-
-  private sumMinutes(phases: PlannedPhase[]): number {
-    return phases.reduce(
-      (sum, p) =>
-        sum +
-        p.milestones.reduce(
-          (ms, m) =>
-            ms +
-            m.lessons.reduce((ls, l) => ls + l.template.estimatedMinutes, 0),
-          0,
-        ),
-      0,
-    );
-  }
-
-  private countLessons(phases: PlannedPhase[]): number {
-    return phases.reduce(
-      (n, p) => n + p.milestones.reduce((m, ms) => m + ms.lessons.length, 0),
-      0,
-    );
-  }
-
-  private topoSort(skills: LoadedSkillNode[]): LoadedSkillNode[] {
-    const byId = new Map(skills.map((s) => [s.id, s]));
-    const visited = new Set<string>();
-    const result: LoadedSkillNode[] = [];
-
-    const visit = (skill: LoadedSkillNode) => {
-      if (visited.has(skill.id)) return;
-      visited.add(skill.id);
-      for (const preId of skill.prerequisiteSkillIds ?? []) {
-        const pre = byId.get(preId);
-        if (pre) visit(pre);
-      }
-      result.push(skill);
-    };
-
-    const ordered = [...skills].sort((a, b) => a.orderHint - b.orderHint);
-    for (const skill of ordered) visit(skill);
-    return result;
-  }
-
-  private async persist(
-    goal: Goal,
-    pathTitle: string,
-    recipeTitle: string,
-    primaryRole: string,
-    weeks: number,
-    hours: number,
-    phases: PlannedPhase[],
-    meta: Record<string, unknown>,
-  ): Promise<Roadmap> {
-    return this.dataSource.transaction(async (manager) => {
-      await manager.update(
-        Roadmap,
-        { goalId: goal.id, status: RoadmapStatus.Ready },
-        { status: RoadmapStatus.Archived },
-      );
-
-      const roadmap = await manager.save(
-        manager.create(Roadmap, {
-          userId: goal.userId,
-          goalId: goal.id,
-          title: pathTitle,
-          description: `Personalized path for ${recipeTitle}`,
-          primaryRoleSlug: primaryRole,
-          timelineWeeks: weeks,
-          weeklyHoursTarget: String(hours),
-          status: RoadmapStatus.Ready,
-          progressPercent: '0',
-          generatedByPromptVersion:
-            (meta.promptVersion as string) || ROADMAP_GENERATOR_PROMPT_VERSION,
-          generationMeta: meta,
-        }),
-      );
-
-      let firstPhaseId: string | null = null;
-
-      for (const planned of phases) {
-        const phase = await manager.save(
-          manager.create(RoadmapPhase, {
-            roadmapId: roadmap.id,
-            techStackId: planned.techStackId,
-            techStackSlug: planned.techStackSlug,
-            title: planned.title,
-            orderIndex: planned.orderIndex,
-            locked: planned.locked,
-          }),
-        );
-        if (firstPhaseId === null) firstPhaseId = phase.id;
-
-        for (let mi = 0; mi < planned.milestones.length; mi++) {
-          const pm = planned.milestones[mi];
-          const milestone = await manager.save(
-            manager.create(Milestone, {
-              phaseId: phase.id,
-              skillNodeId: pm.skill.id,
-              title: pm.title,
-              type: pm.type,
-              orderIndex: mi,
-              xpReward: pm.compress ? 25 : 50,
-            }),
-          );
-
-          for (let li = 0; li < pm.lessons.length; li++) {
-            const pl = pm.lessons[li];
-            const outline = isPlayOutline(pl.template.contentOutline)
-              ? pl.template.contentOutline
-              : null;
-            await manager.save(
-              manager.create(Lesson, {
-                milestoneId: milestone.id,
-                lessonTemplateId: pl.template.id,
-                title: pl.title,
-                missionName: pl.missionName,
-                lessonType: pl.template.lessonType,
-                estimatedMinutes: pl.template.estimatedMinutes,
-                difficulty: pl.template.difficulty,
-                xpReward: pl.template.xpReward,
-                orderIndex: li,
-                resourceId: pl.resourceId,
-                status: pl.status,
-                playContent: outline,
-                sourceVersionId: pl.template.publishedVersionId ?? null,
-                rewardClassSnapshot: pl.template.rewardClass ?? 'standard',
-                materializedWindow: null,
-                objective:
-                  outline && typeof outline === 'object' && 'objective' in outline
-                    ? String((outline as { objective: string }).objective)
-                    : null,
-              }),
-            );
-          }
-        }
-      }
-
-      roadmap.currentPhaseId = firstPhaseId;
-      return manager.save(roadmap);
-    });
+    return map[code] ?? AuthErrorCode.ROADMAP_GENERATION_FAILED;
   }
 }

@@ -32,6 +32,7 @@ export class UsersService {
     const user = this.usersRepo.create({
       email: normalizeEmail(data.email),
       passwordHash: data.passwordHash,
+      passwordLastChangedAt: new Date(),
       authProvider: AuthProvider.EMAIL,
       emailVerifiedAt: null,
       isActive: true,
@@ -48,11 +49,40 @@ export class UsersService {
   }
 
   async updatePassword(userId: string, passwordHash: string): Promise<void> {
-    await this.usersRepo.update(userId, { passwordHash });
+    await this.usersRepo.update(userId, {
+      passwordHash,
+      passwordLastChangedAt: new Date(),
+    });
   }
 
   async touchLastLogin(userId: string): Promise<void> {
     await this.usersRepo.update(userId, { lastLoginAt: new Date() });
+  }
+
+  async listForAdmin(): Promise<User[]> {
+    return this.usersRepo.find({
+      relations: { profile: true },
+      order: { createdAt: 'DESC' },
+      withDeleted: false,
+    });
+  }
+
+  async countAll(): Promise<number> {
+    return this.usersRepo.count();
+  }
+
+  async setActive(userId: string, isActive: boolean): Promise<User | null> {
+    const user = await this.findById(userId);
+    if (!user) return null;
+    user.isActive = isActive;
+    return this.usersRepo.save(user);
+  }
+
+  async softDelete(userId: string): Promise<boolean> {
+    const user = await this.findById(userId);
+    if (!user) return false;
+    await this.usersRepo.softRemove(user);
+    return true;
   }
 
   mergeAuthProvider(

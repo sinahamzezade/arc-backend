@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body>
+    <div class="shell">
+      {{> shell-sidebar}}
+      <main class="main">
+        <div class="page-head">
+          <h1>Questionnaire</h1>
+          <p class="sub">
+            {{count}} definition version{{#unless countSingular}}s{{/unless}}
+            ·
+            <a class="link" href="/admin/questionnaire/roles">manage Q1 roles</a>
+          </p>
+        </div>
+        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
+        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+
+        <div class="panel" style="margin-bottom:16px">
+          <h2 style="margin:0 0 12px;font-size:1rem">New version</h2>
+          <form method="post" action="/admin/questionnaire">
+            <div class="form-grid">
+              <div>
+                <label for="mode">Create as</label>
+                <select id="mode" name="mode">
+                  <option value="clone" selected>Clone (copy steps + options)</option>
+                  <option value="blank">Blank (empty steps)</option>
+                </select>
+              </div>
+              <div>
+                <label for="sourceId">Clone from</label>
+                <select id="sourceId" name="sourceId">
+                  <option value="">Active version (default)</option>
+                  {{#each rows}}
+                    <option value="{{id}}" {{#if selected}}selected{{/if}}>v{{version}}{{#if isActive}} · active{{/if}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div>
+                <label>
+                  <input type="checkbox" name="activate" value="1" />
+                  Activate immediately
+                </label>
+              </div>
+            </div>
+            <div class="form-actions">
+              {{> ui-button label="Create questionnaire" }}
+            </div>
+          </form>
+        </div>
+
+        <div class="panel">
+          {{#if hasRows}}
+            <div class="table-wrap">
+              <table class="data">
+                <thead>
+                  <tr>
+                    <th>Version</th>
+                    <th>Steps</th>
+                    <th>AI enriched</th>
+                    <th>Status</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {{#each rows}}
+                    <tr>
+                      <td class="mono"><a class="link" href="/admin/questionnaire/{{id}}">v{{version}}</a></td>
+                      <td class="mono">{{stepCount}}</td>
+                      <td class="mono">{{#if aiEnrichedAt}}{{aiEnrichedAt}}{{else}}—{{/if}}</td>
+                      <td>
+                        {{#if isActive}}
+                          <span class="badge badge-ok">Active</span>
+                        {{else}}
+                          <span class="badge badge-off">Inactive</span>
+                        {{/if}}
+                      </td>
+                      <td>
+                        {{#unless isActive}}
+                          <form method="post" action="/admin/questionnaire/{{id}}/activate" style="margin:0">
+                            <button type="submit" class="secondary" style="padding:7px 12px">Activate</button>
+                          </form>
+                        {{/unless}}
+                      </td>
+                    </tr>
+                  {{/each}}
+                </tbody>
+              </table>
+            </div>
+          {{else}}
+            <div class="empty">No questionnaire definitions yet.</div>
+          {{/if}}
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

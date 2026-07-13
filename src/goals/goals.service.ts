@@ -5,7 +5,15 @@ import {
   Goal,
   GoalStatus,
 } from './entities/goal.entity';
-import type { QuestionnaireAnswers } from '../questionnaire/types/answers';
+import type {
+  QuestionnaireAnswers,
+} from '../questionnaire/types/answers';
+import {
+  asOptionalString,
+  asSchedule,
+  asString,
+  asStringArray,
+} from '../questionnaire/types/answers';
 import { withOther } from '../questionnaire/questionnaire.validation';
 
 @Injectable()
@@ -31,26 +39,37 @@ export class GoalsService {
     answers: QuestionnaireAnswers,
   ): Promise<Goal> {
     const existing = await this.findActiveByUserId(userId);
+    const schedule = asSchedule(answers, 'schedule');
     const payload: Partial<Goal> = {
       userId,
-      targetRoles: answers.goal,
-      motivation: withOther(answers.motivation, answers.motivationOther),
-      currentProfession: answers.currentJob || null,
-      currentProfessionOther: answers.currentJobOther ?? null,
-      skills: withOther(answers.skills, answers.skillsOther),
-      weeklyHours: answers.studyHours || null,
-      availability: {
-        days: answers.schedule.days,
-        times: answers.schedule.times,
-      },
-      targetDeadline: answers.deadline || null,
-      learningStyles: withOther(
-        answers.learningStyle,
-        answers.learningStyleOther,
+      targetRoles: asStringArray(answers, 'goal'),
+      motivation: withOther(
+        asStringArray(answers, 'motivation'),
+        asOptionalString(answers, 'motivationOther'),
       ),
-      confidence: answers.confidence || null,
-      quitReasons: withOther(answers.quitReasons, answers.quitReasonsOther),
-      rawAnswers: answers as unknown as Record<string, unknown>,
+      currentProfession: asString(answers, 'currentJob') || null,
+      currentProfessionOther:
+        asOptionalString(answers, 'currentJobOther') ?? null,
+      skills: withOther(
+        asStringArray(answers, 'skills'),
+        asOptionalString(answers, 'skillsOther'),
+      ),
+      weeklyHours: asString(answers, 'studyHours') || null,
+      availability: {
+        days: schedule.days,
+        times: schedule.times,
+      },
+      targetDeadline: asString(answers, 'deadline') || null,
+      learningStyles: withOther(
+        asStringArray(answers, 'learningStyle'),
+        asOptionalString(answers, 'learningStyleOther'),
+      ),
+      confidence: asString(answers, 'confidence') || null,
+      quitReasons: withOther(
+        asStringArray(answers, 'quitReasons'),
+        asOptionalString(answers, 'quitReasonsOther'),
+      ),
+      rawAnswers: answers as Record<string, unknown>,
       status: GoalStatus.Active,
     };
 

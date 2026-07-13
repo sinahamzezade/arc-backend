@@ -1,0 +1,69 @@
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    Arc Admin
+    <span>ops console</span>
+  </div>
+  <nav class="sidebar-nav" aria-label="Admin">
+    <a href="/admin" class="{{#if navDashboard}}active{{/if}}">
+      <i class="fa-solid fa-border-all" aria-hidden="true"></i>
+      Dashboard
+    </a>
+    <a href="/admin/users" class="{{#if navUsers}}active{{/if}}">
+      <i class="fa-solid fa-users" aria-hidden="true"></i>
+      Users
+    </a>
+    <a href="/admin/ranks" class="{{#if navRanks}}active{{/if}}">
+      <i class="fa-solid fa-medal" aria-hidden="true"></i>
+      Ranks
+    </a>
+    <a href="/admin/store" class="{{#if navStore}}active{{/if}}">
+      <i class="fa-solid fa-bag-shopping" aria-hidden="true"></i>
+      Store
+    </a>
+    <a href="/admin/badges" class="{{#if navBadges}}active{{/if}}">
+      <i class="fa-solid fa-certificate" aria-hidden="true"></i>
+      Badges
+    </a>
+    <a href="/admin/wheel" class="{{#if navWheel}}active{{/if}}">
+      <i class="fa-solid fa-dharmachakra" aria-hidden="true"></i>
+      Lucky Wheel
+    </a>
+    <a href="/admin/skill-graph" class="{{#if navSkillGraph}}active{{/if}}">
+      <i class="fa-solid fa-diagram-project" aria-hidden="true"></i>
+      Skill graph
+    </a>
+    <a href="/admin/courses" class="{{#if navCourses}}active{{/if}}">
+      <i class="fa-solid fa-book-open" aria-hidden="true"></i>
+      Courses
+    </a>
+    <a href="/admin/datasets" class="{{#if navDatasets}}active{{/if}}">
+      <i class="fa-solid fa-database" aria-hidden="true"></i>
+      Datasets
+    </a>
+    <a href="/admin/roles" class="{{#if navRoles}}active{{/if}}">
+      <i class="fa-solid fa-user-tag" aria-hidden="true"></i>
+      Career roles
+    </a>
+    <a href="/admin/questionnaire/roles" class="{{#if navQuestionnaireRoles}}active{{/if}}">
+      <i class="fa-solid fa-bullseye" aria-hidden="true"></i>
+      Q roles
+    </a>
+    <a href="/admin/questionnaire" class="{{#if navQuestionnaire}}active{{/if}}">
+      <i class="fa-solid fa-list-check" aria-hidden="true"></i>
+      Questionnaire
+    </a>
+    <a href="/admin/roadmap-engine" class="{{#if navRoadmapEngine}}active{{/if}}">
+      <i class="fa-solid fa-route" aria-hidden="true"></i>
+      Roadmap Engine
+    </a>
+  </nav>
+  <div class="sidebar-foot">
+    <span class="email">{{email}}</span>
+    <form method="post" action="/admin/logout">
+      <button type="submit">
+        <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+        Log out
+      </button>
+    </form>
+  </div>
+</aside>

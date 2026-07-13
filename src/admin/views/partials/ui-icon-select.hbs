@@ -1,0 +1,66 @@
+{{!--
+  Lucide icon picker (searchable select).
+  Expects: icons[] with { value, label, selected }
+  Optional: selectId (default icon), name (default icon)
+--}}
+<div class="icon-picker" data-icon-picker>
+  <label for="{{#if selectId}}{{selectId}}{{else}}icon{{/if}}">Icon</label>
+  <input
+    type="search"
+    class="icon-filter"
+    placeholder="Filter Lucide icons…"
+    autocomplete="off"
+    data-icon-filter
+    aria-label="Filter Lucide icons"
+  />
+  <select
+    id="{{#if selectId}}{{selectId}}{{else}}icon{{/if}}"
+    name="{{#if name}}{{name}}{{else}}icon{{/if}}"
+    data-icon-select
+    required
+  >
+    {{#each icons}}
+      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+    {{/each}}
+  </select>
+  <p class="muted" style="margin:-6px 0 14px;font-size:0.72rem">
+    All lucide-react icons · type to filter
+  </p>
+</div>
+<script>
+  (function () {
+    var roots = document.querySelectorAll('[data-icon-picker]');
+    roots.forEach(function (root) {
+      if (root.getAttribute('data-bound') === '1') return;
+      root.setAttribute('data-bound', '1');
+      var filter = root.querySelector('[data-icon-filter]');
+      var select = root.querySelector('[data-icon-select]');
+      if (!filter || !select) return;
+      var all = Array.prototype.map.call(select.options, function (opt) {
+        return { value: opt.value, label: opt.textContent, selected: opt.selected };
+      });
+      function render(q) {
+        var query = (q || '').trim().toLowerCase();
+        var current = select.value;
+        select.innerHTML = '';
+        var matchCount = 0;
+        all.forEach(function (item) {
+          if (query && item.label.toLowerCase().indexOf(query) === -1) return;
+          matchCount += 1;
+          var opt = document.createElement('option');
+          opt.value = item.value;
+          opt.textContent = item.label;
+          if (item.value === current) opt.selected = true;
+          select.appendChild(opt);
+        });
+        if (!select.value && select.options.length) {
+          select.options[0].selected = true;
+        }
+        filter.setAttribute('aria-description', matchCount + ' icons');
+      }
+      filter.addEventListener('input', function () {
+        render(filter.value);
+      });
+    });
+  })();
+</script>

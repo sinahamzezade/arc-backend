@@ -49,7 +49,7 @@ export class BadgeDefinition {
   @Column({ type: 'varchar', length: 24 })
   rarity: BadgeRarity;
 
-  @Column({ name: 'icon_asset_key', type: 'varchar', length: 80, nullable: true })
+  @Column({ name: 'icon_asset_key', type: 'varchar', length: 255, nullable: true })
   iconAssetKey: string | null;
 
   @Column({ name: 'is_hidden', type: 'boolean', default: false })

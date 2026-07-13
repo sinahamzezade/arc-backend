@@ -24,6 +24,7 @@ describe('token-decoders', () => {
   });
 
   it('computes budget minutes', () => {
-    expect(budgetMinutes(6.5, 24)).toBe(Math.round(6.5 * 24 * 60));
+    expect(budgetMinutes(6.5, 24)).toBe(Math.round(6.5 * 24 * 60 * 0.85));
+    expect(budgetMinutes(6.5, 24, 1)).toBe(Math.round(6.5 * 24 * 60));
   });
 });

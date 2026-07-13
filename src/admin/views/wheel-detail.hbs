@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body>
+    <div class="shell">
+      {{> shell-sidebar}}
+      <main class="main">
+        <p class="crumb"><a class="link" href="/admin/wheel">Lucky Wheel</a> / {{campaign.slug}}</p>
+        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
+        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+        <div class="page-head">
+          <h1>{{campaign.slug}}</h1>
+          <p class="sub">Campaign settings + segment rules</p>
+        </div>
+        <div class="panel">
+          <form method="post" action="/admin/wheel/{{campaign.id}}">
+            <div class="form-grid">
+              <div>
+                <label for="status">Status</label>
+                <select id="status" name="status">
+                  {{#each statuses}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div>
+                <label for="maxFreeSpinsPerDay">Free spins / day</label>
+                <input id="maxFreeSpinsPerDay" name="maxFreeSpinsPerDay" type="number" min="0" value="{{campaign.maxFreeSpinsPerDay}}" />
+              </div>
+              <div>
+                <label for="maxPaidRespinsPerDay">Paid respins / day</label>
+                <input id="maxPaidRespinsPerDay" name="maxPaidRespinsPerDay" type="number" min="0" value="{{campaign.maxPaidRespinsPerDay}}" />
+              </div>
+              <div>
+                <label for="respinGemPrice">Respin gem price</label>
+                <input id="respinGemPrice" name="respinGemPrice" type="number" min="0" value="{{campaign.respinGemPrice}}" />
+              </div>
+              <div>
+                <label for="segmentCount">Segment count</label>
+                <input id="segmentCount" name="segmentCount" type="number" min="1" value="{{campaign.segmentCount}}" />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit">Save campaign</button>
+            </div>
+          </form>
+        </div>
+
+        <h2 class="section-title">Segments</h2>
+        <div class="panel">
+          {{#if hasSegments}}
+            <div class="table-wrap">
+              <table class="data">
+                <thead>
+                  <tr>
+                    <th>Key</th>
+                    <th>Type</th>
+                    <th>Weight</th>
+                    <th>Order</th>
+                    <th>Active</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {{#each segments}}
+                    <tr>
+                      <td class="mono">{{rewardKey}}</td>
+                      <td class="mono">{{rewardType}}</td>
+                      <td colspan="4">
+                        <form method="post" action="/admin/wheel/segments/{{id}}" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0">
+                          <input name="weight" type="text" value="{{weight}}" style="width:88px;margin:0" />
+                          <input name="sortOrder" type="number" value="{{sortOrder}}" style="width:72px;margin:0" />
+                          <label class="check-row" style="margin:0">
+                            <input name="isActive" type="checkbox" value="1" {{#if isActive}}checked{{/if}} />
+                            On
+                          </label>
+                          <button type="submit" class="secondary" style="padding:8px 12px">Update</button>
+                        </form>
+                      </td>
+                    </tr>
+                  {{/each}}
+                </tbody>
+              </table>
+            </div>
+          {{else}}
+            <div class="empty">No segment rules.</div>
+          {{/if}}
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

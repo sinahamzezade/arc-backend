@@ -11,12 +11,13 @@ export const QUESTIONNAIRE_SEED: QuestionnaireSchemaDto = {
       stepNumber: 1,
       title: 'What do you want to become?',
       subtitle:
-        "You can choose one or more. We'll build your roadmap from here.",
+        'Pick one or more paths. You can also add your own role — we’ll shape the roadmap around it.',
       selection: 'multi',
+      allowOther: true,
       uiKind: 'options',
       reviewLabel: 'Goal',
       reviewIcon: 'target',
-      // Only roles with active role_recipes in the learning catalog.
+      // Roles with learning recipes work end-to-end; others still capture intent.
       options: [
         {
           value: 'front-end-developer',
@@ -25,9 +26,45 @@ export const QUESTIONNAIRE_SEED: QuestionnaireSchemaDto = {
           iconClassName: 'bg-arc-green-100 text-arc-green-600',
         },
         {
+          value: 'back-end-developer',
+          label: 'Back End Developer',
+          icon: 'server',
+          iconClassName: 'bg-arc-purple-100 text-arc-purple-600',
+        },
+        {
+          value: 'full-stack-developer',
+          label: 'Full Stack Developer',
+          icon: 'zap',
+          iconClassName: 'bg-arc-green-100 text-arc-green-600',
+        },
+        {
+          value: 'mobile-developer',
+          label: 'Mobile Developer',
+          icon: 'rocket',
+          iconClassName: 'bg-arc-purple-100 text-arc-purple-600',
+        },
+        {
+          value: 'data-analyst',
+          label: 'Data Analyst',
+          icon: 'bar-chart',
+          iconClassName: 'bg-arc-green-100 text-arc-green-600',
+        },
+        {
           value: 'marketing-specialist',
           label: 'Marketing Specialist',
           icon: 'megaphone',
+          iconClassName: 'bg-arc-purple-100 text-arc-purple-600',
+        },
+        {
+          value: 'product-manager',
+          label: 'Product Manager',
+          icon: 'briefcase',
+          iconClassName: 'bg-[#f3effc] text-arc-purple-500',
+        },
+        {
+          value: 'ux-designer',
+          label: 'UX Designer',
+          icon: 'sparkles',
           iconClassName: 'bg-arc-purple-100 text-arc-purple-600',
         },
       ],

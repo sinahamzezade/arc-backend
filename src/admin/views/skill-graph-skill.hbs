@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body>
+    <div class="shell">
+      {{> shell-sidebar}}
+      <main class="main">
+        <p class="crumb">
+          <a class="link" href="/admin/skill-graph">Skill graph</a> /
+          <a class="link" href="/admin/skill-graph/stacks/{{stack.id}}">{{stack.slug}}</a> /
+          {{skill.slug}}
+        </p>
+        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
+        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+        <div class="page-head">
+          <h1>{{skill.title}}</h1>
+          <p class="sub">{{skill.slug}} · {{stack.name}}</p>
+        </div>
+
+        <div class="panel" style="margin-bottom:18px">
+          <form method="post" action="/admin/skill-graph/skills/{{skill.id}}">
+            <div class="form-grid">
+              <div>
+                <label for="title">Title</label>
+                <input id="title" name="title" type="text" value="{{skill.title}}" required />
+              </div>
+              <div>
+                <label for="orderHint">Order</label>
+                <input id="orderHint" name="orderHint" type="number" value="{{skill.orderHint}}" />
+              </div>
+              <div>
+                <label for="estimatedHours">Hours</label>
+                <input id="estimatedHours" name="estimatedHours" type="number" step="0.5" value="{{skill.estimatedHoursNum}}" />
+              </div>
+              <div>
+                <label for="tags">Tags (comma)</label>
+                <input id="tags" name="tags" type="text" value="{{skill.tagsCsv}}" />
+              </div>
+              <div style="grid-column:1/-1">
+                <label for="description">Description</label>
+                <textarea id="description" name="description">{{skill.description}}</textarea>
+              </div>
+              {{#if hasPrereqOptions}}
+              <div style="grid-column:1/-1">
+                <label>Prerequisites</label>
+                <div style="display:flex;flex-wrap:wrap;gap:10px 16px;padding:4px 0 8px">
+                  {{#each prereqOptions}}
+                    <label class="check-row" style="margin:0">
+                      <input type="checkbox" name="prereqIds" value="{{id}}" {{#if selected}}checked{{/if}} />
+                      <span>{{title}} <span class="mono muted">({{slug}})</span></span>
+                    </label>
+                  {{/each}}
+                </div>
+              </div>
+              {{/if}}
+              <div class="check-row">
+                <input id="isActive" name="isActive" type="checkbox" value="1" {{#if skill.isActive}}checked{{/if}} />
+                <label for="isActive">Active</label>
+              </div>
+            </div>
+            <div class="form-actions">
+              {{> ui-button label="Save skill" icon="fa-solid fa-floppy-disk" }}
+            </div>
+          </form>
+          <div class="form-actions" style="padding-top:0">
+            <form method="post" action="/admin/skill-graph/skills/{{skill.id}}/delete" style="margin:0" onsubmit="return confirm('Delete this skill and its lessons?');">
+              {{> ui-button label="Delete skill" variant="danger" icon="fa-solid fa-trash" }}
+            </form>
+          </div>
+        </div>
+
+        <h2 class="section-title">Add lesson</h2>
+        <div class="panel" style="margin-bottom:18px">
+          <form method="post" action="/admin/skill-graph/skills/{{skill.id}}/lessons">
+            <div class="form-grid">
+              <div>
+                <label for="lessonTitle">Title</label>
+                <input id="lessonTitle" name="title" type="text" placeholder="HTTP basics" required />
+              </div>
+              <div>
+                <label for="lessonSlug">Slug (optional)</label>
+                <input id="lessonSlug" name="slug" type="text" placeholder="http-basics" />
+              </div>
+              <div>
+                <label for="lessonType">Type</label>
+                <select id="lessonType" name="lessonType">
+                  {{#each lessonTypes}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div>
+                <label for="estimatedMinutes">Minutes</label>
+                <input id="estimatedMinutes" name="estimatedMinutes" type="number" value="20" />
+              </div>
+              <div>
+                <label for="xpReward">XP</label>
+                <input id="xpReward" name="xpReward" type="number" value="20" />
+              </div>
+              <div>
+                <label for="lessonOrder">Order</label>
+                <input id="lessonOrder" name="orderHint" type="number" value="0" />
+              </div>
+              <div>
+                <label for="missionNameTemplate">Mission name</label>
+                <input id="missionNameTemplate" name="missionNameTemplate" type="text" />
+              </div>
+              <div>
+                <label for="learningStyleTags">Style tags (comma)</label>
+                <input id="learningStyleTags" name="learningStyleTags" type="text" placeholder="reading, visual" />
+              </div>
+            </div>
+            <div class="form-actions">
+              {{> ui-button label="Create lesson" icon="fa-solid fa-plus" }}
+            </div>
+          </form>
+        </div>
+
+        <h2 class="section-title">Lessons</h2>
+        <div class="panel">
+          {{#if hasLessons}}
+            <div class="table-wrap">
+              <table class="data">
+                <thead>
+                  <tr>
+                    <th>Order</th>
+                    <th>Title</th>
+                    <th>Slug</th>
+                    <th>Type</th>
+                    <th>Min</th>
+                    <th>XP</th>
+                    <th>Status</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {{#each lessons}}
+                    <tr>
+                      <td class="mono">{{orderHint}}</td>
+                      <td><a class="link" href="/admin/skill-graph/lessons/{{id}}">{{title}}</a></td>
+                      <td class="mono">{{slug}}</td>
+                      <td class="mono">{{lessonType}}</td>
+                      <td class="mono">{{estimatedMinutes}}</td>
+                      <td class="mono">{{xpReward}}</td>
+                      <td>
+                        {{#if isActive}}
+                          <span class="badge badge-ok">Active</span>
+                        {{else}}
+                          <span class="badge badge-off">Off</span>
+                        {{/if}}
+                      </td>
+                      <td>
+                        <form method="post" action="/admin/skill-graph/lessons/{{id}}/delete" style="margin:0" onsubmit="return confirm('Delete lesson {{title}}?');">
+                          {{> ui-button label="Delete" variant="danger" size="sm" }}
+                        </form>
+                      </td>
+                    </tr>
+                  {{/each}}
+                </tbody>
+              </table>
+            </div>
+          {{else}}
+            <div class="empty">No lessons on this skill.</div>
+          {{/if}}
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

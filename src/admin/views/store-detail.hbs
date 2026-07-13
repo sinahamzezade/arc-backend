@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body>
+    <div class="shell">
+      {{> shell-sidebar}}
+      <main class="main">
+        <p class="crumb"><a class="link" href="/admin/store">Store</a> / {{row.sku}}</p>
+        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
+        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+        <div class="page-head">
+          <h1>{{row.title}}</h1>
+          <p class="sub">{{row.sku}}</p>
+        </div>
+        <div class="panel">
+          <form method="post" action="/admin/store/{{row.id}}">
+            <div class="form-grid">
+              <div>
+                <label for="title">Title</label>
+                <input id="title" name="title" type="text" value="{{row.title}}" required />
+              </div>
+              <div>
+                <label for="price">Price</label>
+                <input id="price" name="price" type="number" min="0" value="{{row.price}}" required />
+              </div>
+              <div>
+                <label for="currency">Currency</label>
+                <select id="currency" name="currency">
+                  {{#each currencies}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div>
+                <label for="itemType">Item type</label>
+                <select id="itemType" name="itemType">
+                  {{#each itemTypes}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div>
+                <label for="rarity">Rarity</label>
+                <input id="rarity" name="rarity" type="text" value="{{row.rarity}}" />
+              </div>
+              <div>
+                <label for="purchaseLimit">Purchase limit</label>
+                <input id="purchaseLimit" name="purchaseLimit" type="number" min="0" value="{{row.purchaseLimit}}" />
+              </div>
+              <div style="grid-column: 1 / -1">
+                <label for="description">Description</label>
+                <textarea id="description" name="description">{{row.description}}</textarea>
+              </div>
+              <div class="check-row">
+                <input id="isActive" name="isActive" type="checkbox" value="1" {{#if row.isActive}}checked{{/if}} />
+                <label for="isActive">Active</label>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit">Save item</button>
+            </div>
+          </form>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

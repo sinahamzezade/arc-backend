@@ -4,6 +4,7 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
+import { AdminModule } from './admin/admin.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { CoachModule } from './coach/coach.module';
 import { ContentPoolModule } from './content-pool/content-pool.module';
@@ -52,6 +53,7 @@ import { BadgesModule } from './badges/badges.module';
     UsersModule,
     ProfilesModule,
     AuthModule,
+    AdminModule,
     GoalsModule,
     SkillGraphModule,
     ContentPoolModule,

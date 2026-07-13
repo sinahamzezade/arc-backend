@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body>
+    <div class="shell">
+      {{> shell-sidebar}}
+      <main class="main">
+        <p class="crumb">
+          <a class="link" href="/admin/skill-graph">Skill graph</a> /
+          <a class="link" href="/admin/skill-graph/stacks/{{stack.id}}">{{stack.slug}}</a> /
+          <a class="link" href="/admin/skill-graph/skills/{{skill.id}}">{{skill.slug}}</a> /
+          {{lesson.slug}}
+        </p>
+        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
+        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+        <div class="page-head">
+          <h1>{{lesson.title}}</h1>
+          <p class="sub">{{lesson.slug}} · {{lesson.lessonType}}</p>
+        </div>
+
+        <div class="panel">
+          <form method="post" action="/admin/skill-graph/lessons/{{lesson.id}}">
+            <div class="form-grid">
+              <div>
+                <label for="title">Title</label>
+                <input id="title" name="title" type="text" value="{{lesson.title}}" required />
+              </div>
+              <div>
+                <label for="lessonType">Type</label>
+                <select id="lessonType" name="lessonType">
+                  {{#each lessonTypes}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div>
+                <label for="estimatedMinutes">Minutes</label>
+                <input id="estimatedMinutes" name="estimatedMinutes" type="number" value="{{lesson.estimatedMinutes}}" />
+              </div>
+              <div>
+                <label for="xpReward">XP</label>
+                <input id="xpReward" name="xpReward" type="number" value="{{lesson.xpReward}}" />
+              </div>
+              <div>
+                <label for="orderHint">Order</label>
+                <input id="orderHint" name="orderHint" type="number" value="{{lesson.orderHint}}" />
+              </div>
+              <div>
+                <label for="missionNameTemplate">Mission name</label>
+                <input id="missionNameTemplate" name="missionNameTemplate" type="text" value="{{lesson.missionNameTemplate}}" />
+              </div>
+              <div>
+                <label for="learningStyleTags">Style tags (comma)</label>
+                <input id="learningStyleTags" name="learningStyleTags" type="text" value="{{lesson.learningStyleTagsCsv}}" />
+              </div>
+              <div class="check-row">
+                <input id="isActive" name="isActive" type="checkbox" value="1" {{#if lesson.isActive}}checked{{/if}} />
+                <label for="isActive">Active</label>
+              </div>
+              <div style="grid-column:1/-1">
+                <label for="contentOutlineJson">Content outline (JSON)</label>
+                <textarea id="contentOutlineJson" name="contentOutlineJson" style="min-height:320px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.82rem">{{lesson.contentOutlineJson}}</textarea>
+              </div>
+            </div>
+            <div class="form-actions">
+              {{> ui-button label="Save lesson" icon="fa-solid fa-floppy-disk" }}
+            </div>
+          </form>
+          <div class="form-actions" style="padding-top:0">
+            <form method="post" action="/admin/skill-graph/lessons/{{lesson.id}}/delete" style="margin:0" onsubmit="return confirm('Delete this lesson?');">
+              {{> ui-button label="Delete lesson" variant="danger" icon="fa-solid fa-trash" }}
+            </form>
+          </div>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

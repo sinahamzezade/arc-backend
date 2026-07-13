@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body>
+    <div class="shell">
+      {{> shell-sidebar}}
+      <main class="main">
+        <p class="crumb"><a class="link" href="/admin/courses">Courses</a> / {{course.slug}}</p>
+        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
+        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+        <div class="page-head">
+          <h1>{{course.title}}</h1>
+          <p class="sub">{{course.slug}} · v{{course.version}}</p>
+        </div>
+        <div class="panel">
+          <form method="post" action="/admin/courses/{{course.id}}">
+            <div class="form-grid">
+              <div>
+                <label for="title">Title</label>
+                <input id="title" name="title" type="text" value="{{course.title}}" required />
+              </div>
+              <div>
+                <label for="status">Publication status</label>
+                <input id="status" name="status" type="text" value="{{course.status}}" />
+              </div>
+              <div style="grid-column: 1 / -1">
+                <label for="learningOutcome">Learning outcome</label>
+                <textarea id="learningOutcome" name="learningOutcome">{{course.learningOutcome}}</textarea>
+              </div>
+              <div class="check-row">
+                <input id="isActive" name="isActive" type="checkbox" value="1" {{#if course.isActive}}checked{{/if}} />
+                <label for="isActive">Active</label>
+              </div>
+              <div class="check-row">
+                <input id="isRequired" name="isRequired" type="checkbox" value="1" {{#if course.isRequired}}checked{{/if}} />
+                <label for="isRequired">Required</label>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit">Save course</button>
+            </div>
+          </form>
+        </div>
+
+        <h2 class="section-title">Add module</h2>
+        <div class="panel" style="margin-bottom:18px">
+          <form method="post" action="/admin/courses/{{course.id}}/modules">
+            <div class="form-grid">
+              <div>
+                <label for="modSlug">Slug</label>
+                <input id="modSlug" name="slug" type="text" placeholder="joins" required />
+              </div>
+              <div>
+                <label for="modTitle">Title</label>
+                <input id="modTitle" name="title" type="text" placeholder="SQL Joins" required />
+              </div>
+              <div>
+                <label for="orderHint">Order</label>
+                <input id="orderHint" name="orderHint" type="number" value="0" />
+              </div>
+              <div>
+                <label for="estimatedMinutes">Minutes</label>
+                <input id="estimatedMinutes" name="estimatedMinutes" type="number" value="0" />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit">Create module</button>
+            </div>
+          </form>
+        </div>
+
+        <h2 class="section-title">Modules</h2>
+        <div class="panel">
+          {{#if hasModules}}
+            <div class="table-wrap">
+              <table class="data">
+                <thead>
+                  <tr>
+                    <th>Order</th>
+                    <th>Slug</th>
+                    <th>Title</th>
+                    <th>Minutes</th>
+                    <th>Lessons</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {{#each modules}}
+                    <tr>
+                      <td class="mono">{{orderHint}}</td>
+                      <td class="mono">{{slug}}</td>
+                      <td>{{title}}</td>
+                      <td class="mono">{{estimatedMinutes}}</td>
+                      <td class="mono">{{lessonCount}}</td>
+                    </tr>
+                  {{/each}}
+                </tbody>
+              </table>
+            </div>
+          {{else}}
+            <div class="empty">No modules on this course.</div>
+          {{/if}}
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

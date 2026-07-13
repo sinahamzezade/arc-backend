@@ -144,7 +144,7 @@ export class LeaguesService {
         type: NotificationType.LeagueStarted,
         title: 'Weekly league started',
         body: `You're in ${cohort.tier} ${cohort.division}. Climb the board!`,
-        actionUrl: '/leagues/current',
+        actionUrl: '/leaderboard',
         payload: {
           seasonId: season.id,
           cohortId: cohort.id,
@@ -516,7 +516,7 @@ export class LeaguesService {
         zone === 'promote'
           ? `You're #${position} — hold your spot to promote.`
           : `You're #${position} — learn today to stay safe.`,
-      actionUrl: '/leagues/current',
+      actionUrl: '/leaderboard',
       payload: { position, zone },
     });
   }

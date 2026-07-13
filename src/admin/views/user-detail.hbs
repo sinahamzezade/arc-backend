@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body class="bg-mist text-moss font-sans antialiased">
+    <div class="shell min-h-screen">
+      {{> shell-sidebar}}
+      <main class="relative flex-1 min-w-0 overflow-x-hidden">
+        <div
+          class="pointer-events-none absolute -right-24 top-10 h-72 w-72 rounded-full bg-leaf/70 blur-3xl"
+          aria-hidden="true"
+        ></div>
+        <div
+          class="pointer-events-none absolute left-1/3 top-64 h-56 w-56 rounded-full bg-clay/15 blur-3xl"
+          aria-hidden="true"
+        ></div>
+
+        <div class="relative px-5 pb-20 pt-6 md:px-10 lg:px-12">
+          <p class="mb-5 text-sm text-sage">
+            <a href="/admin/users" class="transition hover:text-moss">Users</a>
+            <span class="mx-2 opacity-40">/</span>
+            <span>{{user.email}}</span>
+          </p>
+
+          {{#if flashOk}}
+            <p class="mb-5 rounded-2xl bg-leaf px-4 py-3 text-sm font-medium text-moss" role="status">
+              {{flashOk}}
+            </p>
+          {{/if}}
+          {{#if flashErr}}
+            <p class="mb-5 rounded-2xl bg-[#fde8e6] px-4 py-3 text-sm font-medium text-coral" role="alert">
+              {{flashErr}}
+            </p>
+          {{/if}}
+
+          <section class="relative mb-8 md:mb-12">
+            <div
+              class="relative overflow-hidden rounded-blob bg-gradient-to-br from-moss via-[#243f36] to-[#314f44] px-7 py-9 text-mist shadow-soft md:w-[88%] md:px-10 md:py-11"
+            >
+              <div
+                class="absolute -left-10 bottom-0 h-40 w-40 rounded-full bg-leaf/20 blur-2xl"
+                aria-hidden="true"
+              ></div>
+              <p class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-leaf/80">
+                Member profile
+              </p>
+              <h1
+                class="font-display max-w-[12ch] text-4xl font-semibold leading-[1.05] tracking-tight md:text-5xl lg:text-6xl"
+              >
+                {{#if user.displayName}}{{user.displayName}}{{else}}{{user.email}}{{/if}}
+              </h1>
+              <p class="mt-4 max-w-lg break-all text-xs text-mist/45 md:text-sm">
+                {{user.id}}
+              </p>
+              <div class="mt-6 flex flex-wrap gap-2">
+                {{#if user.isActive}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-leaf/90 px-3 py-1 text-xs font-semibold text-moss">
+                    <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                    Active
+                  </span>
+                {{else}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-mist/80">
+                    <i class="fa-solid fa-ban" aria-hidden="true"></i>
+                    Suspended
+                  </span>
+                {{/if}}
+                {{#if user.isAdmin}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-clay/90 px-3 py-1 text-xs font-semibold text-foam">
+                    <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+                    Admin
+                  </span>
+                {{else}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-mist/80">
+                    <i class="fa-solid fa-user" aria-hidden="true"></i>
+                    User
+                  </span>
+                {{/if}}
+              </div>
+            </div>
+
+            <aside
+              class="relative z-10 mt-4 rounded-blob border border-[#d5ddd7] bg-foam/95 p-5 shadow-lift backdrop-blur md:absolute md:-bottom-6 md:right-0 md:mt-0 md:w-[300px]"
+              aria-label="Account actions"
+            >
+              <div class="mb-2 flex items-center gap-2">
+                <span class="flex h-8 w-8 items-center justify-center rounded-full bg-leaf text-moss">
+                  <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                </span>
+                <h2 class="font-display text-lg font-semibold">Actions</h2>
+              </div>
+              <p class="mb-4 text-sm leading-relaxed text-sage">
+                Suspend locks sign-in. Delete soft-removes this account from active lists.
+                Reset clears questionnaire answers + roadmap so they start onboarding again.
+              </p>
+              <div class="flex flex-col gap-2">
+                <form
+                  method="post"
+                  action="/admin/users/{{user.id}}/reset-learning"
+                  onsubmit="return confirm('Reset questionnaire + roadmap for this user? They will start the questionnaire from scratch. XP/coins kept.');"
+                >
+                  <button
+                    class="flex w-full items-center justify-center gap-2 rounded-full border border-leaf bg-leaf/40 px-4 py-2.5 text-sm font-semibold text-moss transition hover:bg-leaf"
+                    type="submit"
+                  >
+                    <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+                    Reset Q + roadmap
+                  </button>
+                </form>
+              {{#unless isSelf}}
+                  {{#if user.isActive}}
+                    <form method="post" action="/admin/users/{{user.id}}/suspend">
+                      <button
+                        class="flex w-full items-center justify-center gap-2 rounded-full bg-clay px-4 py-2.5 text-sm font-semibold text-foam transition hover:brightness-105"
+                        type="submit"
+                      >
+                        <i class="fa-solid fa-pause" aria-hidden="true"></i>
+                        Suspend
+                      </button>
+                    </form>
+                  {{else}}
+                    <form method="post" action="/admin/users/{{user.id}}/unsuspend">
+                      <button
+                        class="flex w-full items-center justify-center gap-2 rounded-full bg-sage px-4 py-2.5 text-sm font-semibold text-foam transition hover:brightness-105"
+                        type="submit"
+                      >
+                        <i class="fa-solid fa-play" aria-hidden="true"></i>
+                        Unsuspend
+                      </button>
+                    </form>
+                  {{/if}}
+                  <form
+                    method="post"
+                    action="/admin/users/{{user.id}}/delete"
+                    onsubmit="return confirm('Delete this user? Soft-delete — can be restored from DB.');"
+                  >
+                    <button
+                      class="flex w-full items-center justify-center gap-2 rounded-full bg-coral px-4 py-2.5 text-sm font-semibold text-foam transition hover:brightness-105"
+                      type="submit"
+                    >
+                      <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
+                      Delete
+                    </button>
+                  </form>
+              {{else}}
+                <p class="rounded-2xl bg-mist px-3 py-3 text-sm text-sage">
+                  Own session locked — cannot suspend or delete this account here.
+                </p>
+              {{/unless}}
+              </div>
+            </aside>
+          </section>
+
+          <section class="mb-10 grid grid-cols-1 gap-3 sm:grid-cols-3 md:mb-14 md:w-[68%]">
+            <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]/sm:translate-y-1">
+              <p class="text-xs font-semibold uppercase tracking-[0.14em] text-sage">XP</p>
+              <p class="font-display mt-1 text-3xl font-semibold tabular-nums">{{user.totalXp}}</p>
+            </div>
+            <div class="rounded-blob bg-leaf p-5 shadow-lift sm:translate-y-5">
+              <p class="text-xs font-semibold uppercase tracking-[0.14em] text-sage">Coins</p>
+              <p class="font-display mt-1 text-3xl font-semibold tabular-nums">{{user.coins}}</p>
+            </div>
+            <div class="rounded-blob bg-[#f3e0d6] p-5 shadow-lift sm:translate-y-2">
+              <p class="text-xs font-semibold uppercase tracking-[0.14em] text-clay">Gems</p>
+              <p class="font-display mt-1 text-3xl font-semibold tabular-nums text-moss">{{user.gems}}</p>
+            </div>
+          </section>
+
+          <div class="grid grid-cols-1 gap-8 lg:grid-cols-12">
+            <section class="lg:col-span-7">
+              <div class="mb-3 flex items-baseline justify-between gap-3">
+                <h2 class="font-display text-2xl font-semibold">Account</h2>
+                <span class="text-xs font-medium uppercase tracking-[0.14em] text-sage">Identity</span>
+              </div>
+              <div class="overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7]">
+                <dl class="divide-y divide-[#e4ebe6]">
+                  <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
+                    <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Email</dt>
+                    <dd class="px-4 py-3 text-sm font-medium">{{user.email}}</dd>
+                  </div>
+                  <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
+                    <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Provider</dt>
+                    <dd class="px-4 py-3 text-sm tabular-nums">{{user.authProvider}}</dd>
+                  </div>
+                  <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
+                    <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Email verified</dt>
+                    <dd class="px-4 py-3 text-sm">{{#if user.emailVerifiedAt}}{{user.emailVerifiedAt}}{{else}}—{{/if}}</dd>
+                  </div>
+                  <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
+                    <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Has password</dt>
+                    <dd class="px-4 py-3 text-sm">{{#if user.hasPassword}}Yes{{else}}No{{/if}}</dd>
+                  </div>
+                  <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
+                    <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Password changed</dt>
+                    <dd class="px-4 py-3 text-sm">{{#if user.passwordLastChangedAt}}{{user.passwordLastChangedAt}}{{else}}—{{/if}}</dd>
+                  </div>
+                  <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
+                    <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Created</dt>
+                    <dd class="px-4 py-3 text-sm tabular-nums">{{user.createdAt}}</dd>
+                  </div>
+                  <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
+                    <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Updated</dt>
+                    <dd class="px-4 py-3 text-sm tabular-nums">{{#if user.updatedAt}}{{user.updatedAt}}{{else}}—{{/if}}</dd>
+                  </div>
+                  <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
+                    <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Last login</dt>
+                    <dd class="px-4 py-3 text-sm tabular-nums">{{#if user.lastLoginAt}}{{user.lastLoginAt}}{{else}}—{{/if}}</dd>
+                  </div>
+                </dl>
+              </div>
+            </section>
+
+            <section class="lg:col-span-5 lg:pt-12">
+              <div class="mb-3 flex items-baseline justify-between gap-3">
+                <h2 class="font-display text-2xl font-semibold">Profile</h2>
+                <span class="text-xs font-medium uppercase tracking-[0.14em] text-sage">Dossier</span>
+              </div>
+              <div class="overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7]">
+                {{#if user.hasProfile}}
+                  <dl class="divide-y divide-[#e4ebe6]">
+                    <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
+                      <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Display name</dt>
+                      <dd class="px-4 py-3 text-sm font-medium">{{#if user.displayName}}{{user.displayName}}{{else}}—{{/if}}</dd>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
+                      <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Username</dt>
+                      <dd class="px-4 py-3 text-sm">{{#if user.username}}{{user.username}}{{else}}—{{/if}}</dd>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
+                      <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Language</dt>
+                      <dd class="px-4 py-3 text-sm">{{#if user.language}}{{user.language}}{{else}}—{{/if}}</dd>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
+                      <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Timezone</dt>
+                      <dd class="px-4 py-3 text-sm">{{#if user.timezone}}{{user.timezone}}{{else}}—{{/if}}</dd>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
+                      <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Current role</dt>
+                      <dd class="px-4 py-3 text-sm">{{#if user.currentRole}}{{user.currentRole}}{{else}}—{{/if}}</dd>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
+                      <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Target role</dt>
+                      <dd class="px-4 py-3 text-sm">{{#if user.targetRole}}{{user.targetRole}}{{else}}—{{/if}}</dd>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
+                      <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Years exp</dt>
+                      <dd class="px-4 py-3 text-sm">{{#if user.yearsExperience}}{{user.yearsExperience}}{{else}}—{{/if}}</dd>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
+                      <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Rank</dt>
+                      <dd class="px-4 py-3 text-sm">{{#if user.currentRank}}{{user.currentRank}}{{else}}—{{/if}}</dd>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
+                      <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Weekly streak</dt>
+                      <dd class="px-4 py-3 text-sm">{{user.weeklyStreak}}</dd>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
+                      <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Questionnaire</dt>
+                      <dd class="px-4 py-3 text-sm">{{user.questionnaireStatus}}{{#if user.questionnaireCompletedAt}} · {{user.questionnaireCompletedAt}}{{/if}}</dd>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
+                      <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Onboarding</dt>
+                      <dd class="px-4 py-3 text-sm">{{#if user.onboardingCompletedAt}}{{user.onboardingCompletedAt}}{{else}}—{{/if}}</dd>
+                    </div>
+                  </dl>
+                {{else}}
+                  <div class="px-4 py-10 text-center text-sm text-sage">No profile row.</div>
+                {{/if}}
+              </div>
+            </section>
+          </div>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

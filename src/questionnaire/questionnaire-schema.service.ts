@@ -40,6 +40,7 @@ export class QuestionnaireSchemaService implements OnModuleInit {
     await this.ensureSeeded();
     await this.reloadCache();
     await this.enrichActiveDefinitionWithAi();
+    await this.ensureGoalOptionsFromSeed();
     await this.reloadCache();
   }
 
@@ -236,6 +237,71 @@ export class QuestionnaireSchemaService implements OnModuleInit {
         }
       }
     });
+  }
+
+  /**
+   * Upsert seed goal options onto the active definition without wiping AI copy.
+   * Lets catalog grow when seed roles expand between schema versions.
+   */
+  private async ensureGoalOptionsFromSeed() {
+    const goalSeed = QUESTIONNAIRE_SEED.steps.find((s) => s.id === 'goal');
+    if (!goalSeed?.options?.length) return;
+
+    const definition = await this.definitionsRepo.findOne({
+      where: { isActive: true },
+      relations: { steps: { options: true } },
+    });
+    if (!definition) return;
+
+    const goalStep = (definition.steps ?? []).find((s) => s.fieldKey === 'goal');
+    if (!goalStep) return;
+
+    if (goalSeed.allowOther && !goalStep.allowOther) {
+      goalStep.allowOther = true;
+      await this.dataSource.getRepository(QuestionnaireStep).save(goalStep);
+    }
+    if (goalSeed.subtitle) {
+      goalStep.subtitle = goalSeed.subtitle;
+      await this.dataSource.getRepository(QuestionnaireStep).save(goalStep);
+    }
+
+    const optionRepo = this.dataSource.getRepository(QuestionnaireOption);
+    const existing = new Map(
+      (goalStep.options ?? []).map((o) => [o.value, o]),
+    );
+    let maxOrder = Math.max(
+      -1,
+      ...(goalStep.options ?? []).map((o) => o.sortOrder),
+    );
+    let added = 0;
+
+    for (const seedOpt of goalSeed.options) {
+      const row = existing.get(seedOpt.value);
+      if (row) {
+        if (!row.icon && seedOpt.icon) {
+          row.icon = seedOpt.icon;
+          row.iconClassName = seedOpt.iconClassName ?? null;
+          await optionRepo.save(row);
+        }
+        continue;
+      }
+      maxOrder += 1;
+      await optionRepo.save(
+        optionRepo.create({
+          stepId: goalStep.id,
+          value: seedOpt.value,
+          label: seedOpt.label,
+          icon: seedOpt.icon ?? null,
+          iconClassName: seedOpt.iconClassName ?? null,
+          sortOrder: maxOrder,
+        }),
+      );
+      added += 1;
+    }
+
+    if (added > 0) {
+      this.logger.log(`Synced ${added} goal role option(s) from seed`);
+    }
   }
 
   private async enrichActiveDefinitionWithAi() {

@@ -536,6 +536,26 @@ export class BattlesService {
       userId,
       { status: battle.status, idempotencyKey },
     );
+
+    const otherId =
+      battle.challengerId === userId ? battle.opponentId : battle.challengerId;
+    const actor = await this.profilesRepo.findOneBy({ userId });
+    const actorName =
+      actor?.displayName || actor?.username || 'Your rival';
+    const cancelledByChallenger = battle.status === BattleStatus.Cancelled;
+    await this.notifications.create({
+      userId: otherId,
+      type: NotificationType.BattleInvite,
+      title: cancelledByChallenger ? 'Invite cancelled' : 'Invite declined',
+      body: cancelledByChallenger
+        ? `${actorName} cancelled the battle invite.`
+        : `${actorName} declined the battle invite.`,
+      actionUrl: '/battle',
+      payload: { battleId, status: battle.status },
+      dedupeKey: `battle_invite_closed:${battle.id}`,
+      channels: [NotificationChannel.InApp, NotificationChannel.Push],
+    });
+
     return this.getBattle(userId, battleId);
   }
 
@@ -605,21 +625,25 @@ export class BattlesService {
         battle.currentRound = 1;
         await manager.getRepository(Battle).save(battle);
         await this.openQuestion(manager, battle, 1);
-        await this.notifications.create({
-          userId: battle.challengerId,
-          type: NotificationType.BattleStarting,
-          title: 'Battle starting',
-          body: 'Both players ready — first question is live.',
-          actionUrl: `/battle/play/${battleId}`,
-          payload: { battleId },
-        });
-        await this.notifications.create({
-          userId: battle.opponentId,
-          type: NotificationType.BattleStarting,
-          title: 'Battle starting',
-          body: 'Both players ready — first question is live.',
-          actionUrl: `/battle/play/${battleId}`,
-          payload: { battleId },
+        const challengerId = battle.challengerId;
+        const opponentId = battle.opponentId;
+        this.afterCommit(async () => {
+          await this.notifications.create({
+            userId: challengerId,
+            type: NotificationType.BattleStarting,
+            title: 'Battle starting',
+            body: 'Both players ready — first question is live.',
+            actionUrl: `/battle/play/${battleId}`,
+            payload: { battleId },
+          });
+          await this.notifications.create({
+            userId: opponentId,
+            type: NotificationType.BattleStarting,
+            title: 'Battle starting',
+            body: 'Both players ready — first question is live.',
+            actionUrl: `/battle/play/${battleId}`,
+            payload: { battleId },
+          });
         });
       }
 
@@ -1321,33 +1345,36 @@ export class BattlesService {
       winnerId === battle.challengerId
         ? battle.opponentId
         : battle.challengerId;
-    await this.notifications.create({
-      userId: winnerId,
-      type: NotificationType.BattleResult,
-      title: 'Victory',
-      body: `${pot} Coins added to your balance.`,
-      actionUrl: `/battle/result/${battle.id}`,
-      payload: { battleId: battle.id },
-    });
-    await this.notifications.create({
-      userId: loserId,
-      type: NotificationType.BattleResult,
-      title: 'Battle ended',
-      body: 'Tough match — rematch when ready.',
-      actionUrl: `/battle/result/${battle.id}`,
-      payload: { battleId: battle.id },
-    });
-
-    await this.recordBattleQualitySamples(manager, battle.id);
-
-    await this.badges?.onDomainEvent({
-      type: OUTBOX_BATTLE_COMPLETED,
-      payload: {
+    const battleId = battle.id;
+    // Must run after commit — these services use other pool connections and
+    // deadlock when awaited while this tx still holds wallet/battle locks.
+    this.afterCommit(async () => {
+      await this.notifications.create({
         userId: winnerId,
-        won: true,
-        battleId: battle.id,
-        isWinner: true,
-      },
+        type: NotificationType.BattleResult,
+        title: 'Victory',
+        body: `${pot} Coins added to your balance.`,
+        actionUrl: `/battle/result/${battleId}`,
+        payload: { battleId },
+      });
+      await this.notifications.create({
+        userId: loserId,
+        type: NotificationType.BattleResult,
+        title: 'Battle ended',
+        body: 'Tough match — rematch when ready.',
+        actionUrl: `/battle/result/${battleId}`,
+        payload: { battleId },
+      });
+      await this.recordBattleQualitySamples(battleId);
+      await this.badges?.onDomainEvent({
+        type: OUTBOX_BATTLE_COMPLETED,
+        payload: {
+          userId: winnerId,
+          won: true,
+          battleId,
+          isWinner: true,
+        },
+      });
     });
   }
 
@@ -1371,21 +1398,36 @@ export class BattlesService {
       reason: 'draw',
     });
 
-    await this.recordBattleQualitySamples(manager, battle.id);
+    const battleId = battle.id;
+    this.afterCommit(async () => {
+      await this.recordBattleQualitySamples(battleId);
+    });
   }
 
-  private async recordBattleQualitySamples(
-    manager: DataSource['manager'],
-    battleId: string,
-  ): Promise<void> {
-    const questions = await manager.getRepository(BattleQuestion).find({
+  /**
+   * Schedule work for after the ambient TypeORM transaction commits.
+   * setImmediate runs as a macrotask after commit finishes (unlike microtasks).
+   */
+  private afterCommit(task: () => Promise<void>) {
+    setImmediate(() => {
+      void task().catch((err) =>
+        this.logger.warn(
+          `Battle after-commit side effect failed: ${
+            err instanceof Error ? err.message : err
+          }`,
+        ),
+      );
+    });
+  }
+
+  private async recordBattleQualitySamples(battleId: string): Promise<void> {
+    const questions = await this.questionsRepo.find({
       where: { battleId },
     });
     if (!questions.length) return;
 
     const byId = new Map(questions.map((q) => [q.id, q]));
-    const answers = await manager
-      .getRepository(BattleAnswer)
+    const answers = await this.answersRepo
       .createQueryBuilder('a')
       .where('a.battle_question_id IN (:...ids)', {
         ids: questions.map((q) => q.id),
@@ -1541,7 +1583,7 @@ export class BattlesService {
             },
           ],
         });
-        await this.leagues.ingestQualifiedXp({
+        const leagueIngest = {
           userId: participant.userId,
           ledgerEntryId:
             grant.entryIds[RewardCurrency.LeagueXp] ??
@@ -1550,6 +1592,10 @@ export class BattlesService {
           sourceType: LeagueScoreSourceType.Battle,
           sourceId: battle.id,
           occurredAt: new Date(),
+        };
+        // Separate pool connection — never await inside this settlement tx.
+        this.afterCommit(async () => {
+          await this.leagues.ingestQualifiedXp(leagueIngest);
         });
       }
     } catch (err) {

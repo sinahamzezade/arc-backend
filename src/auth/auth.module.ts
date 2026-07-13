@@ -48,6 +48,6 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     JwtStrategy,
     JwtAuthGuard,
   ],
-  exports: [AuthService, JwtAuthGuard],
+  exports: [AuthService, JwtAuthGuard, PasswordService],
 })
 export class AuthModule {}

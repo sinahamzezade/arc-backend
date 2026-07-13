@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body>
+    <div class="shell">
+      {{> shell-sidebar}}
+      <main class="main">
+        <div class="page-head">
+          <h1>Lucky Wheel</h1>
+          <p class="sub">{{count}} campaign{{#unless countSingular}}s{{/unless}}</p>
+        </div>
+        <div class="panel">
+          {{#if hasRows}}
+            <div class="table-wrap">
+              <table class="data">
+                <thead>
+                  <tr>
+                    <th>Slug</th>
+                    <th>Status</th>
+                    <th>Free / day</th>
+                    <th>Respin gems</th>
+                    <th>Segments</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {{#each rows}}
+                    <tr>
+                      <td><a class="link" href="/admin/wheel/{{id}}">{{slug}}</a></td>
+                      <td>
+                        {{#if isLive}}
+                          <span class="badge badge-ok">{{status}}</span>
+                        {{else}}
+                          <span class="badge badge-off">{{status}}</span>
+                        {{/if}}
+                      </td>
+                      <td class="mono">{{maxFreeSpinsPerDay}}</td>
+                      <td class="mono">{{respinGemPrice}}</td>
+                      <td class="mono">{{segmentCount}}</td>
+                    </tr>
+                  {{/each}}
+                </tbody>
+              </table>
+            </div>
+          {{else}}
+            <div class="empty">No wheel campaigns yet.</div>
+          {{/if}}
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

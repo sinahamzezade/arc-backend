@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body>
+    <div class="shell">
+      {{> shell-sidebar}}
+      <main class="main">
+        <div class="page-head">
+          <h1>Courses</h1>
+          <p class="sub">{{count}} course template{{#unless countSingular}}s{{/unless}}</p>
+        </div>
+        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
+        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+
+        <h2 class="section-title">Add course</h2>
+        <div class="panel" style="margin-bottom:18px">
+          <form method="post" action="/admin/courses">
+            <div class="form-grid">
+              <div>
+                <label for="slug">Slug</label>
+                <input id="slug" name="slug" type="text" placeholder="sql-foundations" required />
+              </div>
+              <div>
+                <label for="title">Title</label>
+                <input id="title" name="title" type="text" placeholder="SQL Foundations" required />
+              </div>
+              <div style="grid-column:1/-1">
+                <label for="learningOutcome">Learning outcome</label>
+                <textarea id="learningOutcome" name="learningOutcome" placeholder="Optional"></textarea>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit">Create course</button>
+            </div>
+          </form>
+        </div>
+
+        <h2 class="section-title">Catalog</h2>
+        <div class="panel">
+          {{#if hasRows}}
+            <div class="table-wrap">
+              <table class="data">
+                <thead>
+                  <tr>
+                    <th>Slug</th>
+                    <th>Title</th>
+                    <th>Version</th>
+                    <th>Status</th>
+                    <th>Active</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {{#each rows}}
+                    <tr>
+                      <td class="mono"><a class="link" href="/admin/courses/{{id}}">{{slug}}</a></td>
+                      <td>{{title}}</td>
+                      <td class="mono">{{version}}</td>
+                      <td class="mono">{{status}}</td>
+                      <td>
+                        {{#if isActive}}
+                          <span class="badge badge-ok">Yes</span>
+                        {{else}}
+                          <span class="badge badge-off">No</span>
+                        {{/if}}
+                      </td>
+                    </tr>
+                  {{/each}}
+                </tbody>
+              </table>
+            </div>
+          {{else}}
+            <div class="empty">No course templates yet.</div>
+          {{/if}}
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

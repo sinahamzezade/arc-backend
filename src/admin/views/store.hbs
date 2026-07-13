@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body>
+    <div class="shell">
+      {{> shell-sidebar}}
+      <main class="main">
+        <div class="page-head">
+          <h1>Store</h1>
+          <p class="sub">{{count}} item{{#unless countSingular}}s{{/unless}}</p>
+        </div>
+        <div class="panel">
+          {{#if hasRows}}
+            <div class="table-wrap">
+              <table class="data">
+                <thead>
+                  <tr>
+                    <th>SKU</th>
+                    <th>Title</th>
+                    <th>Price</th>
+                    <th>Type</th>
+                    <th>Rarity</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {{#each rows}}
+                    <tr>
+                      <td class="mono"><a class="link" href="/admin/store/{{id}}">{{sku}}</a></td>
+                      <td>{{title}}</td>
+                      <td class="mono">{{price}} {{currency}}</td>
+                      <td class="mono">{{itemType}}</td>
+                      <td>{{rarity}}</td>
+                      <td>
+                        {{#if isActive}}
+                          <span class="badge badge-ok">Active</span>
+                        {{else}}
+                          <span class="badge badge-off">Off</span>
+                        {{/if}}
+                      </td>
+                    </tr>
+                  {{/each}}
+                </tbody>
+              </table>
+            </div>
+          {{else}}
+            <div class="empty">No store items yet.</div>
+          {{/if}}
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,35 @@
+{{!--
+  Reusable admin button.
+  Params:
+    label     — button text (required)
+    type      — submit | button | reset (default: submit)
+    variant   — primary | secondary | danger | ghost (default: primary)
+    size      — md | sm (default: md)
+    icon      — Font Awesome classes, e.g. "fa-solid fa-plus"
+    href      — if set, renders <a class="btn"> instead of <button>
+    disabled  — truthy disables button
+    class     — extra CSS classes
+    name / value / formaction — optional form attrs
+--}}
+{{#if href}}
+  <a
+    href="{{href}}"
+    class="btn btn-{{#if variant}}{{variant}}{{else}}primary{{/if}}{{#if size}} btn-{{size}}{{/if}}{{#if class}} {{class}}{{/if}}"
+    {{#if disabled}}aria-disabled="true" tabindex="-1"{{/if}}
+  >
+    {{#if icon}}<i class="{{icon}}" aria-hidden="true"></i>{{/if}}
+    <span>{{label}}</span>
+  </a>
+{{else}}
+  <button
+    type="{{#if type}}{{type}}{{else}}submit{{/if}}"
+    class="btn btn-{{#if variant}}{{variant}}{{else}}primary{{/if}}{{#if size}} btn-{{size}}{{/if}}{{#if class}} {{class}}{{/if}}"
+    {{#if name}}name="{{name}}"{{/if}}
+    {{#if value}}value="{{value}}"{{/if}}
+    {{#if formaction}}formaction="{{formaction}}"{{/if}}
+    {{#if disabled}}disabled{{/if}}
+  >
+    {{#if icon}}<i class="{{icon}}" aria-hidden="true"></i>{{/if}}
+    <span>{{label}}</span>
+  </button>
+{{/if}}

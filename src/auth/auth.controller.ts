@@ -19,7 +19,10 @@ import { LoginDto } from './dto/login.dto';
 import { OAuthTokenDto } from './dto/oauth-token.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { AuthUserPayload } from '../common/decorators/current-user.decorator';
 
 const REFRESH_COOKIE = 'refresh_token';
 
@@ -121,6 +124,19 @@ export class AuthController {
   @ApiOperation({ summary: 'Reset password with resetToken' })
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
+  }
+
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Change password while authenticated' })
+  changePassword(
+    @CurrentUser() user: AuthUserPayload,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(user.userId, dto);
   }
 
   @Post('google')
