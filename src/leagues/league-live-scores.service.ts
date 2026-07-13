@@ -5,6 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import Redis from 'ioredis';
+import { resolveRedisUrl } from '../common/redis/resolve-redis-url';
 import { LIVE_MEMBER_KEY, LIVE_SCORE_KEY } from './leagues.constants';
 
 type MemberMeta = {
@@ -25,7 +26,7 @@ export class LeagueLiveScoresService implements OnModuleInit, OnModuleDestroy {
   private readonly memMembers = new Map<string, MemberMeta>();
 
   onModuleInit() {
-    const url = process.env.REDIS_URL?.trim();
+    const url = resolveRedisUrl();
     if (!url) {
       this.logger.log('League live scores: in-memory (set REDIS_URL for Redis)');
       return;

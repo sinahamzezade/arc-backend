@@ -28,8 +28,9 @@ import { RoadmapReplanBullProcessor } from './roadmap-replan.processor';
 import { RoadmapSnapshotService } from './roadmap-snapshot.service';
 import { RoadmapsService } from './roadmaps.service';
 import { RoadmapsController } from './roadmaps.controller';
+import { resolveRedisUrl } from '../common/redis/resolve-redis-url';
 
-const redisUrl = process.env.REDIS_URL?.trim();
+const redisUrl = resolveRedisUrl();
 
 const bullImports = redisUrl
   ? [

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import Redis from 'ioredis';
+import { resolveRedisUrl } from '../common/redis/resolve-redis-url';
 import { Goal } from '../goals/entities/goal.entity';
 import { SkillGraphService } from '../skill-graph/skill-graph.service';
 import type {
@@ -14,7 +15,7 @@ export class RoadmapSnapshotService {
   private redis: Redis | null = null;
 
   constructor(private readonly skillGraph: SkillGraphService) {
-    const url = process.env.REDIS_URL?.trim();
+    const url = resolveRedisUrl();
     if (url) {
       try {
         this.redis = new Redis(url, {

@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import Redis from 'ioredis';
+import { resolveRedisUrl } from '../common/redis/resolve-redis-url';
 
 const PRESENCE_TTL_SEC = 120;
 
@@ -14,7 +15,7 @@ export class SocialPresenceService implements OnModuleDestroy {
   private readonly memory = new Map<string, number>();
 
   constructor() {
-    const url = process.env.REDIS_URL?.trim();
+    const url = resolveRedisUrl();
     if (url) {
       try {
         this.redis = new Redis(url, {

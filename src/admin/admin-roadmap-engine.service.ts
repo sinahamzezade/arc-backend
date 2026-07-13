@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { resolveRedisUrl } from '../common/redis/resolve-redis-url';
 import { Goal, GoalStatus } from '../goals/entities/goal.entity';
 import { RoadmapEngineClient } from '../roadmaps/roadmap-engine.client';
 import { RoadmapSnapshotService } from '../roadmaps/roadmap-snapshot.service';
@@ -48,7 +49,7 @@ export class AdminRoadmapEngineService {
       timeoutMs: Number(
         this.config.get('ROADMAP_GENERATION_TIMEOUT_MS') ?? 15_000,
       ),
-      redisConfigured: Boolean(this.config.get<string>('REDIS_URL')?.trim()),
+      redisConfigured: Boolean(resolveRedisUrl(this.config.get<string>('REDIS_URL'))),
     };
   }
 
