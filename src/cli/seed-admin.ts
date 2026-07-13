@@ -3,9 +3,22 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminSeedService } from '../admin/admin-seed.service';
+import { AuthChallenge } from '../auth/entities/auth-challenge.entity';
+import { AuthIdentity } from '../auth/entities/auth-identity.entity';
+import { RefreshToken } from '../auth/entities/refresh-token.entity';
 import { PasswordService } from '../auth/services/password.service';
+import { typeOrmPostgresConfig } from '../common/database/typeorm-postgres.config';
 import { Profile } from '../profiles/entities/profile.entity';
 import { User } from '../users/entities/user.entity';
+
+/** All entities User relation graph needs (TypeORM metadata). */
+const SEED_ENTITIES = [
+  User,
+  Profile,
+  AuthIdentity,
+  AuthChallenge,
+  RefreshToken,
+];
 
 /**
  * Lean Nest context for ops CLI — no HTTP, no full AppModule side-effects.
@@ -15,16 +28,11 @@ import { User } from '../users/entities/user.entity';
     ConfigModule.forRoot({ isGlobal: true }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        type: 'postgres' as const,
-        host: config.get<string>('DB_HOST'),
-        port: Number(config.get('DB_PORT') ?? 5432),
-        username: config.get<string>('DB_USERNAME'),
-        password: config.get<string>('DB_PASSWORD'),
-        database: config.get<string>('DB_NAME'),
-        entities: [User, Profile],
-        synchronize: false,
-      }),
+      useFactory: (config: ConfigService) =>
+        typeOrmPostgresConfig(config, {
+          entities: SEED_ENTITIES,
+          synchronize: false,
+        }),
     }),
     TypeOrmModule.forFeature([User, Profile]),
   ],
@@ -40,7 +48,8 @@ function usage(): never {
 Env (used when flags omitted):
   ADMIN_SEED_EMAIL
   ADMIN_SEED_PASSWORD
-  DB_HOST DB_PORT DB_USERNAME DB_PASSWORD DB_NAME
+  DATABASE_URL   (Railway)  OR  DB_HOST DB_PORT DB_USERNAME DB_PASSWORD DB_NAME
+  DB_SSL=true|false  (optional; auto for Railway URLs)
 `);
   process.exit(2);
 }

@@ -6,6 +6,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { AdminModule } from './admin/admin.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
+import { typeOrmPostgresConfig } from './common/database/typeorm-postgres.config';
 import { CoachModule } from './coach/coach.module';
 import { ContentPoolModule } from './content-pool/content-pool.module';
 import { GoalsModule } from './goals/goals.module';
@@ -39,16 +40,8 @@ import { BadgesModule } from './badges/badges.module';
     ]),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        type: 'postgres' as const,
-        host: config.get<string>('DB_HOST'),
-        port: Number(config.get('DB_PORT') ?? 5432),
-        username: config.get<string>('DB_USERNAME'),
-        password: config.get<string>('DB_PASSWORD'),
-        database: config.get<string>('DB_NAME'),
-        autoLoadEntities: true,
-        synchronize: config.get<string>('DB_SYNC') !== 'false',
-      }),
+      useFactory: (config: ConfigService) =>
+        typeOrmPostgresConfig(config, { autoLoadEntities: true }),
     }),
     UsersModule,
     ProfilesModule,
