@@ -28,8 +28,7 @@ export class AdminSeedService implements OnModuleInit {
   async onModuleInit() {
     if (this.config.get<string>('ADMIN_SEED') === 'false') return;
     try {
-      await this.ensureAdmin();
-      await this.retireLegacyWeakAdmin();
+      await this.runSeed();
     } catch (err) {
       this.logger.warn(
         `Admin seed skipped: ${err instanceof Error ? err.message : err}`,
@@ -37,12 +36,25 @@ export class AdminSeedService implements OnModuleInit {
     }
   }
 
-  async ensureAdmin(): Promise<void> {
+  /** Force seed (CLI / ops). Ignores ADMIN_SEED=false. */
+  async runSeed(): Promise<{ email: string; created: boolean }> {
+    const result = await this.ensureAdmin();
+    await this.retireLegacyWeakAdmin();
+    return result;
+  }
+
+  async ensureAdmin(): Promise<{ email: string; created: boolean }> {
     const email = normalizeEmail(
       this.config.get<string>('ADMIN_SEED_EMAIL') || DEFAULT_ADMIN_EMAIL,
     );
     const password =
       this.config.get<string>('ADMIN_SEED_PASSWORD') || DEFAULT_ADMIN_PASSWORD;
+
+    if (!password || password.length < 8) {
+      throw new Error(
+        'ADMIN_SEED_PASSWORD missing or too short (min 8 chars)',
+      );
+    }
 
     let user = await this.usersRepo.findOne({ where: { email } });
     const passwordHash = await this.passwordService.hash(password);
@@ -74,7 +86,7 @@ export class AdminSeedService implements OnModuleInit {
       );
 
       this.logger.log(`Seeded admin user ${email}`);
-      return;
+      return { email, created: true };
     }
 
     user.isAdmin = true;
@@ -102,6 +114,8 @@ export class AdminSeedService implements OnModuleInit {
         }),
       );
     }
+
+    return { email, created: false };
   }
 
   /** Strip admin flag from the previous weak default seed account. */
