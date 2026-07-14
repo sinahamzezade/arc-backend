@@ -133,6 +133,7 @@ export class LessonsService {
       content: publicBody.content,
       practice: publicBody.practice,
       quiz: publicBody.quiz,
+      adaptive: publicBody.adaptive,
       rewardPreview: {
         xp: preview.xp,
         gems: preview.gems,
@@ -462,10 +463,17 @@ export class LessonsService {
   }
 
   async arloChat(userId: string, lessonId: string, message: string) {
+    if (!(await this.arlo.isFlagEnabled(userId))) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'Arlo lesson AI is disabled',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
     const { lesson, progress } = await this.requireOwnedLesson(
       userId,
       lessonId,
-      { allowLocked: false },
+      { allowLocked: true },
     );
     let pinned: string | null = null;
     if (progress?.activeAttemptId) {
