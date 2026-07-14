@@ -1,4 +1,6 @@
-import { Injectable, Optional } from '@nestjs/common';
+import { HttpStatus, Injectable, Optional } from '@nestjs/common';
+import { AppException } from '../common/errors/app.exception';
+import { AuthErrorCode } from '../common/errors/auth-error.codes';
 import { ContentQueryService } from '../content-pool/content-query.service';
 import type { LessonVersionBody } from '../content-pool/entities/lesson-version.entity';
 import { Lesson } from '../roadmaps/entities/lesson.entity';
@@ -9,13 +11,12 @@ import {
   type LessonContentPage,
   type LessonPlayOutline,
 } from './lesson-play.types';
-import { buildDefaultPlayOutline } from './play-outline.factory';
 
 export type ResolvedPlayOutline = {
   outline: LessonPlayOutline;
   contentVersionId: string;
   contentSchemaVersion: number;
-  source: 'play_content' | 'lesson_version' | 'template_outline' | 'default';
+  source: 'play_content' | 'lesson_version' | 'template_outline';
 };
 
 /** Fisher–Yates — copy so outline / callers stay untouched. */
@@ -47,15 +48,15 @@ export class LessonContentService {
     if (template && isPlayOutline(template.contentOutline)) {
       return template.contentOutline as LessonPlayOutline;
     }
-    return buildDefaultPlayOutline({
-      title: lesson.title,
-      missionName: lesson.missionName,
-      lessonType: lesson.lessonType,
-    });
+    throw new AppException(
+      AuthErrorCode.LESSON_CONTENT_NOT_READY,
+      'Lesson content is not ready',
+      HttpStatus.UNPROCESSABLE_ENTITY,
+    );
   }
 
   /**
-   * Prefer published LessonVersion body → play_content → template outline → default.
+   * Prefer published LessonVersion body → play_content → template outline.
    * Pins contentVersionId to the version used (never newest draft).
    */
   async resolveAuthoritative(
@@ -147,22 +148,35 @@ export class LessonContentService {
       };
     }
 
-    // 5) Default synth (last resort — content not ready ideally 422)
-    const outline = buildDefaultPlayOutline({
-      title: lesson.title,
-      missionName: lesson.missionName,
-      lessonType: lesson.lessonType,
-    });
-    return {
-      outline,
-      contentVersionId: lesson.id,
-      contentSchemaVersion: 1,
-      source: 'default',
-    };
+    throw new AppException(
+      AuthErrorCode.LESSON_CONTENT_NOT_READY,
+      'Lesson content is not ready',
+      HttpStatus.UNPROCESSABLE_ENTITY,
+    );
   }
 
-  /** Public play payload — no correct keys / explanations. Options shuffled so correct ≠ always first. */
+  /**
+   * Public play payload — strip grading keys, feedbackIncorrect, remediation bodies,
+   * and rewardPresentation.badgeCandidateKey (§4.1 + §16.6).
+   * Options shuffled so correct ≠ always first.
+   */
   toPublicPlayBody(outline: LessonPlayOutline) {
+    const concepts = new Set<string>();
+    if (outline.practice?.conceptTag) {
+      concepts.add(outline.practice.conceptTag);
+    }
+    for (const q of outline.quiz ?? []) {
+      if (q.conceptTag) concepts.add(q.conceptTag);
+    }
+
+    const rewardPresentation = outline.rewardPresentation
+      ? {
+          rewardClass: outline.rewardPresentation.rewardClass,
+          arloLine: outline.rewardPresentation.arloLine,
+          // badgeCandidateKey intentionally omitted
+        }
+      : undefined;
+
     return {
       objective: outline.objective,
       arloPrompt: outline.arloPrompt,
@@ -172,20 +186,30 @@ export class LessonContentService {
         id: outline.practice.id,
         prompt: outline.practice.prompt,
         hint: outline.practice.hint,
+        conceptTag: outline.practice.conceptTag,
         options: shuffleOptions(
           outline.practice.options.map((o) => ({
             id: o.id,
             label: o.label,
           })),
         ),
+        feedbackCorrect: outline.practice.feedbackCorrect,
+        // feedbackIncorrect stripped — server-only until after check
       },
-      quiz: outline.quiz.map((q) => ({
+      quiz: (outline.quiz ?? []).map((q) => ({
         id: q.id,
         prompt: q.prompt,
+        conceptTag: q.conceptTag,
         options: shuffleOptions(
           q.options.map((o) => ({ id: o.id, label: o.label })),
         ),
       })),
+      rewardPresentation,
+      adaptive: {
+        enabled: concepts.size > 0,
+        attemptBudgetPerConcept: outline.attemptBudgetPerConcept ?? 2,
+        concepts: [...concepts],
+      },
     };
   }
 
@@ -232,9 +256,9 @@ export class LessonContentService {
 
   private mapBodyToOutline(
     body: unknown,
-    lesson: Lesson,
+    _lesson: Lesson,
     template: LessonTemplate | null | undefined,
-    schemaVersion: number,
+    _schemaVersion: number,
   ): LessonPlayOutline | null {
     if (isPlayOutline(body)) return body;
 
@@ -266,19 +290,8 @@ export class LessonContentService {
           };
         }
 
-        if (content.length && content.some((c) => c.blocks.length)) {
-          const base = buildDefaultPlayOutline({
-            title: lesson.title,
-            missionName: lesson.missionName,
-            lessonType: lesson.lessonType,
-          });
-          return {
-            ...base,
-            objective:
-              typeof b.objective === 'string' ? b.objective : base.objective,
-            content,
-          };
-        }
+        // Sections alone are not a full play outline (need practice + quiz).
+        return null;
       }
     }
 

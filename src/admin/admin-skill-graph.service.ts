@@ -7,7 +7,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { ContentPublicationStatus } from '../content-pool/content-pool.constants';
 import { CareerRole } from '../content-pool/entities/career-role.entity';
-import { outlineForTemplateSeed } from '../lessons/play-outline.factory';
 import { LessonTemplate } from '../skill-graph/entities/lesson-template.entity';
 import { Resource } from '../skill-graph/entities/resource.entity';
 import { RoleRecipe } from '../skill-graph/entities/role-recipe.entity';
@@ -20,7 +19,10 @@ import type {
   SeedResource,
   SeedStack,
 } from '../skill-graph/seeds/catalog.seed';
-import { inappContentToPlayOutline } from '../skill-graph/seeds/inapp-content.mapper';
+import {
+  transformCurriculumLesson,
+  validateTransformedOutline,
+} from '../skill-graph/seeds/transform-curriculum';
 
 const LESSON_TYPES = [
   'reading',
@@ -44,21 +46,22 @@ export type CatalogImportStats = {
   recipesUpdated: number;
 };
 
-function resolveImportOutline(lessonSeed: SeedLesson) {
-  if (lessonSeed.content) {
-    return inappContentToPlayOutline({
-      title: lessonSeed.title,
-      missionNameTemplate: lessonSeed.missionNameTemplate,
-      lessonType: lessonSeed.lessonType,
-      content: lessonSeed.content,
-    });
+function resolveImportOutline(lessonSeed: SeedLesson, skillSlug: string) {
+  if (!lessonSeed.content) {
+    throw new BadRequestException(
+      `Lesson "${lessonSeed.slug}" missing content — add body in course JSON`,
+    );
   }
-  return outlineForTemplateSeed({
-    slug: lessonSeed.slug,
+  const outline = transformCurriculumLesson({
+    skillSlug,
+    lessonSlug: lessonSeed.slug,
     title: lessonSeed.title,
     missionNameTemplate: lessonSeed.missionNameTemplate,
     lessonType: lessonSeed.lessonType,
+    content: lessonSeed.content,
   });
+  validateTransformedOutline(outline);
+  return outline;
 }
 
 function slugify(raw: string): string {
@@ -398,12 +401,6 @@ export class AdminSkillGraphService {
     }
 
     const missionNameTemplate = input.missionNameTemplate?.trim() || null;
-    const contentOutline = outlineForTemplateSeed({
-      slug,
-      title,
-      missionNameTemplate,
-      lessonType,
-    });
 
     return this.lessons.save(
       this.lessons.create({
@@ -416,7 +413,8 @@ export class AdminSkillGraphService {
         xpReward: input.xpReward ?? 20,
         orderHint: input.orderHint ?? 0,
         learningStyleTags: parseCsv(input.learningStyleTags),
-        contentOutline: contentOutline as unknown as Record<string, unknown>,
+        // Author via contentOutlineJson / catalog seed — no synth fallback.
+        contentOutline: {},
         status: ContentPublicationStatus.Published,
         isActive: true,
       }),
@@ -733,7 +731,10 @@ export class AdminSkillGraphService {
 
           for (const lessonSeed of skillSeed.lessons ?? []) {
             const lessonKey = `${stackSeed.slug}:${skillSeed.slug}:${lessonSeed.slug}`;
-            const contentOutline = resolveImportOutline(lessonSeed);
+            const contentOutline = resolveImportOutline(
+              lessonSeed,
+              skillSeed.slug,
+            );
             const existingLesson = lessonByKey.get(lessonKey);
             if (!existingLesson) {
               const saved = await lessonRepo.save(

@@ -58,3 +58,4 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 # Uploaded badge icons (keep folder)
 /public/uploads/badges/*
 !/public/uploads/badges/.gitkeep
+course/.transformed-outlines.sample.json

@@ -10,35 +10,39 @@ import { RoleRecipe } from './entities/role-recipe.entity';
 import { SkillNode } from './entities/skill-node.entity';
 import { TechStack } from './entities/tech-stack.entity';
 import { CATALOG_SEED } from './seeds/catalog.seed';
+import { isCompletionAckPractice } from './seeds/inapp-content.mapper';
 import {
-  inappContentToPlayOutline,
-  isCompletionAckPractice,
-} from './seeds/inapp-content.mapper';
-import { outlineForTemplateSeed } from '../lessons/play-outline.factory';
+  transformCurriculumLesson,
+  validateTransformedOutline,
+} from './seeds/transform-curriculum';
 import { isPlayOutline } from '../lessons/lesson-play.types';
 import { Lesson } from '../roadmaps/entities/lesson.entity';
 
-function resolveSeedOutline(lessonSeed: {
-  slug: string;
-  title: string;
-  missionNameTemplate?: string;
-  lessonType: string;
-  content?: unknown;
-}) {
-  if (lessonSeed.content) {
-    return inappContentToPlayOutline({
-      title: lessonSeed.title,
-      missionNameTemplate: lessonSeed.missionNameTemplate,
-      lessonType: lessonSeed.lessonType,
-      content: lessonSeed.content as never,
-    });
+function resolveSeedOutline(
+  lessonSeed: {
+    slug: string;
+    title: string;
+    missionNameTemplate?: string;
+    lessonType: string;
+    content?: unknown;
+  },
+  skillSlug: string,
+) {
+  if (!lessonSeed.content) {
+    throw new Error(
+      `Lesson seed "${lessonSeed.slug}" missing content — add body in course JSON`,
+    );
   }
-  return outlineForTemplateSeed({
-    slug: lessonSeed.slug,
+  const outline = transformCurriculumLesson({
+    skillSlug,
+    lessonSlug: lessonSeed.slug,
     title: lessonSeed.title,
     missionNameTemplate: lessonSeed.missionNameTemplate,
     lessonType: lessonSeed.lessonType,
+    content: lessonSeed.content as never,
   });
+  validateTransformedOutline(outline);
+  return outline;
 }
 
 export type LoadedSkillNode = SkillNode & {
@@ -271,7 +275,10 @@ export class SkillGraphService implements OnModuleInit {
           skillIdByKey.set(`${stack.slug}:${skill.slug}`, skill.id);
 
           for (const lessonSeed of skillSeed.lessons) {
-            const contentOutline = resolveSeedOutline(lessonSeed);
+            const contentOutline = resolveSeedOutline(
+              lessonSeed,
+              skillSeed.slug,
+            );
             await manager.save(
               manager.create(LessonTemplate, {
                 skillNodeId: skill.id,
@@ -464,7 +471,10 @@ export class SkillGraphService implements OnModuleInit {
 
           for (const lessonSeed of skillSeed.lessons) {
             if (existingLessonSlugs.has(lessonSeed.slug)) continue;
-            const contentOutline = resolveSeedOutline(lessonSeed);
+            const contentOutline = resolveSeedOutline(
+              lessonSeed,
+              skillSeed.slug,
+            );
             await lessonRepo.save(
               lessonRepo.create({
                 skillNodeId: skillId,
@@ -570,16 +580,22 @@ export class SkillGraphService implements OnModuleInit {
   }
 
   private async backfillEmptyOutlines() {
+    const bySlug = new Map<string, ReturnType<typeof resolveSeedOutline>>();
+    for (const stack of CATALOG_SEED.stacks) {
+      for (const skill of stack.skills) {
+        for (const lesson of skill.lessons) {
+          bySlug.set(lesson.slug, resolveSeedOutline(lesson, skill.slug));
+        }
+      }
+    }
+
     const templates = await this.lessonsRepo.find();
     let updated = 0;
     for (const template of templates) {
       if (isPlayOutline(template.contentOutline)) continue;
-      template.contentOutline = outlineForTemplateSeed({
-        slug: template.slug,
-        title: template.title,
-        missionNameTemplate: template.missionNameTemplate,
-        lessonType: template.lessonType,
-      });
+      const fromSeed = bySlug.get(template.slug);
+      if (!fromSeed || !isPlayOutline(fromSeed)) continue;
+      template.contentOutline = fromSeed as unknown as Record<string, unknown>;
       await this.lessonsRepo.save(template);
       updated += 1;
     }
@@ -599,7 +615,7 @@ export class SkillGraphService implements OnModuleInit {
     for (const stack of CATALOG_SEED.stacks) {
       for (const skill of stack.skills) {
         for (const lesson of skill.lessons) {
-          bySlug.set(lesson.slug, resolveSeedOutline(lesson));
+          bySlug.set(lesson.slug, resolveSeedOutline(lesson, skill.slug));
         }
       }
     }

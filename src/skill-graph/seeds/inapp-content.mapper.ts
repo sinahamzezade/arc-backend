@@ -1,5 +1,4 @@
 import type { LessonPlayOutline } from '../../lessons/lesson-play.types';
-import { buildDefaultPlayOutline } from '../../lessons/play-outline.factory';
 
 type InAppCode = { language?: string; snippet?: string };
 
@@ -518,11 +517,9 @@ export function inappContentToPlayOutline(input: {
       : input.lessonType;
 
   if (!content || typeof content !== 'object') {
-    return buildDefaultPlayOutline({
-      title: input.title,
-      missionName: input.missionNameTemplate,
-      lessonType: input.lessonType,
-    });
+    throw new Error(
+      `Cannot map play outline for “${input.title}”: missing content in course JSON`,
+    );
   }
 
   switch (format) {
@@ -537,10 +534,8 @@ export function inappContentToPlayOutline(input: {
     case 'reflection':
       return fromReflection(content as InAppReflection, input.title);
     default:
-      return buildDefaultPlayOutline({
-        title: input.title,
-        missionName: input.missionNameTemplate,
-        lessonType: input.lessonType,
-      });
+      throw new Error(
+        `Unsupported lesson content format “${format}” for “${input.title}”`,
+      );
   }
 }
