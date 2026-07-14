@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
 import { LlmService } from '../common/llm/llm.service';
+import { findProviderForModel } from '../common/llm/llm.providers';
 import {
   Profile,
   QuestionnaireStatus,
@@ -16,6 +17,7 @@ import {
   QuestionnaireResponseStatus,
 } from './entities/questionnaire-response.entity';
 import {
+  buildDeterministicAssistantMessage,
   buildIntakeChatSystemPrompt,
   buildIntakeChatUserPrompt,
   INTAKE_CHAT_PROMPT_VERSION,
@@ -56,7 +58,7 @@ export type ChatTurnResponse = {
 @Injectable()
 export class IntakeChatService {
   private readonly logger = new Logger(IntakeChatService.name);
-  /** Cache AI-generated skill chips per goal (avoid LLM on every poll). */
+  /** Cache skill chips per goal (avoid rebuild every poll). */
   private readonly skillSuggestCache = new Map<
     string,
     { at: number; options: IntakeSuggestionOption[] }
@@ -114,7 +116,7 @@ export class IntakeChatService {
     }
     await this.responsesRepo.save(row);
 
-    return this.runTurn(userId, null, true);
+    return this.runTurn(userId, null, { isStart: true, skipLlm: true });
   }
 
   async message(
@@ -154,7 +156,10 @@ export class IntakeChatService {
       );
     }
 
-    return this.runTurn(userId, input.message!.trim().slice(0, 2000), false);
+    return this.runTurn(userId, input.message!.trim().slice(0, 400), {
+      isStart: false,
+      skipLlm: false,
+    });
   }
 
   async complete(userId: string) {
@@ -343,15 +348,24 @@ export class IntakeChatService {
     }
     await this.responsesRepo.save(row);
 
-    return this.runTurn(userId, display, false, answers);
+    // Chip/schedule already applied — skip LLM (next Q from schema title).
+    return this.runTurn(userId, display, {
+      isStart: false,
+      skipLlm: true,
+      preAnswers: answers,
+    });
   }
 
   private async runTurn(
     userId: string,
     userMessage: string | null,
-    isStart: boolean,
-    preAnswers?: QuestionnaireAnswers,
+    opts: {
+      isStart: boolean;
+      skipLlm: boolean;
+      preAnswers?: QuestionnaireAnswers;
+    },
   ): Promise<ChatTurnResponse> {
+    const { isStart, skipLlm, preAnswers } = opts;
     const schema = this.schemaService.getSchema();
     let row = await this.responsesRepo.findOne({ where: { userId } });
     if (!row) {
@@ -386,8 +400,42 @@ export class IntakeChatService {
         : await this.suggestionsFor(userId, answers),
     });
 
+    // Chip/start/done — ask from schema title, zero LLM tokens.
+    if (skipLlm || (!isStart && missingBefore.length === 0)) {
+      const assistantMessage = buildDeterministicAssistantMessage(
+        schema,
+        priorAnswers,
+        { isStart },
+      );
+      const done = missingBefore.length === 0;
+      transcript.push({ role: 'assistant', content: assistantMessage });
+      row.answers = priorAnswers;
+      row.schemaVersion = schema.schemaVersion;
+      row.chatTranscript = transcript;
+      if (row.status !== QuestionnaireResponseStatus.Submitted) {
+        row.status = QuestionnaireResponseStatus.Draft;
+      }
+      await this.responsesRepo.save(row);
+      return withSuggestions(
+        {
+          assistantMessage,
+          answers: priorAnswers,
+          transcript,
+          missingFields: missingBefore,
+          done,
+          promptVersion: INTAKE_CHAT_PROMPT_VERSION,
+          model: null,
+        },
+        priorAnswers,
+      );
+    }
+
     const clientConfigured = this.llm.isConfigured();
     let model = await this.llm.getModel('intake');
+    const provider = findProviderForModel(model);
+    this.logger.log(
+      `[intake-llm] start user=${userId} model=${model} provider=${provider?.id ?? 'unknown'} base=${provider?.baseURL ?? '?'} configured=${clientConfigured}`,
+    );
 
     if (!clientConfigured) {
       const fallback =
@@ -403,28 +451,6 @@ export class IntakeChatService {
           transcript,
           missingFields: missingBefore,
           done: false,
-          promptVersion: INTAKE_CHAT_PROMPT_VERSION,
-          model: null,
-        },
-        priorAnswers,
-      );
-    }
-
-    // If selection already filled everything, skip LLM ask
-    if (!isStart && missingBefore.length === 0) {
-      const doneMsg =
-        'Great — I have everything I need. Tap Generate roadmap when you are ready.';
-      transcript.push({ role: 'assistant', content: doneMsg });
-      row.answers = priorAnswers;
-      row.chatTranscript = transcript;
-      await this.responsesRepo.save(row);
-      return withSuggestions(
-        {
-          assistantMessage: doneMsg,
-          answers: priorAnswers,
-          transcript,
-          missingFields: [],
-          done: true,
           promptVersion: INTAKE_CHAT_PROMPT_VERSION,
           model: null,
         },
@@ -456,7 +482,7 @@ export class IntakeChatService {
       };
       const answers = normalizeDraftAnswers(mergedRaw, schema);
       const missing = listMissingFields(answers, schema);
-      const assistantMessage = parsed.assistantMessage.trim();
+      const assistantMessage = parsed.assistantMessage.trim().slice(0, 200);
 
       transcript.push({ role: 'assistant', content: assistantMessage });
       row.answers = answers;
@@ -481,8 +507,10 @@ export class IntakeChatService {
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`Intake chat LLM soft-fail: ${message}`);
-      const fallback = this.userFacingLlmError(message);
+      this.logger.warn(
+        `[intake-llm] soft-fail model=${model} provider=${findProviderForModel(model)?.id ?? '?'}: ${message}`,
+      );
+      const fallback = this.userFacingLlmError(message, model);
       transcript.push({ role: 'assistant', content: fallback });
       row.answers = priorAnswers;
       row.chatTranscript = transcript;
@@ -539,12 +567,13 @@ export class IntakeChatService {
     return base;
   }
 
-  /** Exactly 8 AI skill chips for the chosen goal — not from DB/schema catalog. */
+  /** Goal-keyed skill chips — deterministic pools (no LLM). */
   private async aiSkillSuggestions(
     userId: string,
     base: IntakeSuggestions,
     answers: QuestionnaireAnswers,
   ): Promise<IntakeSuggestions> {
+    void userId;
     const goal =
       asString(answers, 'goal').trim() || asString(answers, 'goalOther').trim();
     const sentinels: IntakeSuggestionOption[] = [
@@ -564,92 +593,17 @@ export class IntakeChatService {
       return { ...base, options: [...cached.options, ...sentinels] };
     }
 
-    const generated = await this.generateSkillSuggestionsWithAi(userId, goal);
-    let options = generated;
-    if (options.length < 8) {
-      const pad = this.fallbackSkillSuggestions(goal).filter(
-        (o) => !options.some((x) => x.value === o.value),
-      );
-      options = [...options, ...pad].slice(0, 8);
-    } else {
-      options = options.slice(0, 8);
-    }
-
+    const options = this.fallbackSkillSuggestions(goal).slice(0, 8);
     this.skillSuggestCache.set(goal, { at: Date.now(), options });
     return { ...base, options: [...options, ...sentinels] };
   }
 
-  private async generateSkillSuggestionsWithAi(
-    userId: string,
-    goal: string,
-  ): Promise<IntakeSuggestionOption[]> {
-    if (!this.llm.isConfigured()) return [];
-
-    const model = await this.llm.getModel('intake');
-    const system = [
-      'You suggest skills a learner might already have for a career goal.',
-      'Return JSON only: {"skills":[{"value":"kebab-case","label":"Short Name"},...]}',
-      'Exactly 8 skills. value = unique lowercase kebab-case slug. label = short display name.',
-      'Skills must be concrete and relevant to the goal. No none/other. Do not use a fixed catalog.',
-    ].join(' ');
-    const user = JSON.stringify({ goal, count: 8 });
-
-    try {
-      const completion = await this.llm.chatCompletion({
-        purpose: 'intake',
-        userId,
-        request: {
-          model,
-          temperature: 0.5,
-          max_tokens: 350,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: system },
-            { role: 'user', content: user },
-          ],
-        },
-      });
-      const raw = completion.choices[0]?.message?.content;
-      if (!raw) return [];
-      const parsed = JSON.parse(raw) as { skills?: unknown };
-      if (!Array.isArray(parsed.skills)) return [];
-
-      const out: IntakeSuggestionOption[] = [];
-      const seen = new Set<string>();
-      for (const item of parsed.skills) {
-        if (!item || typeof item !== 'object') continue;
-        const row = item as Record<string, unknown>;
-        const label =
-          typeof row.label === 'string'
-            ? row.label.trim().slice(0, 48)
-            : typeof row.value === 'string'
-              ? row.value.trim().slice(0, 48)
-              : '';
-        if (!label) continue;
-        let value =
-          typeof row.value === 'string' ? row.value.trim().toLowerCase() : '';
-        value = slugifySkillLabel(value || label);
-        if (!isFreeSkillToken(value) || seen.has(value)) continue;
-        if (value === 'none' || value === 'other') continue;
-        seen.add(value);
-        out.push({ value, label });
-        if (out.length >= 8) break;
-      }
-      return out;
-    } catch (err) {
-      this.logger.warn(
-        `AI skill suggest failed: ${err instanceof Error ? err.message : err}`,
-      );
-      return [];
-    }
-  }
-
-  /** Last-resort chips when LLM down — still not from DB. */
+  /** Goal → 8 skill chips. No LLM — covers seed roles + soft fallback. */
   private fallbackSkillSuggestions(goal: string): IntakeSuggestionOption[] {
     const g = goal.toLowerCase();
-    const pools: string[][] = [];
-    if (/front|react|web|ui|ux/.test(g)) {
-      pools.push([
+    let labels: string[];
+    if (/front|react|ui|ux-design|ux_designer|designer/.test(g)) {
+      labels = [
         'HTML',
         'CSS',
         'JavaScript',
@@ -658,22 +612,31 @@ export class IntakeChatService {
         'Git',
         'Responsive Design',
         'Figma',
-      ]);
-    }
-    if (/data|analy|ml|ai|python/.test(g)) {
-      pools.push([
-        'Excel',
+      ];
+    } else if (/mobile|ios|android|flutter|react-native/.test(g)) {
+      labels = [
+        'JavaScript',
+        'React Native',
+        'Swift',
+        'Kotlin',
+        'Git',
+        'REST APIs',
+        'UI Design',
+        'Debugging',
+      ];
+    } else if (/full.?stack|fullstack/.test(g)) {
+      labels = [
+        'HTML',
+        'CSS',
+        'JavaScript',
+        'React',
+        'Node.js',
         'SQL',
-        'Python',
-        'Statistics',
-        'Data Visualization',
-        'Pandas',
-        'Communication',
-        'Problem Solving',
-      ]);
-    }
-    if (/back|api|node|java|devops|cloud/.test(g)) {
-      pools.push([
+        'Git',
+        'APIs',
+      ];
+    } else if (/back|api|node|java|devops|cloud|server/.test(g)) {
+      labels = [
         'JavaScript',
         'APIs',
         'SQL',
@@ -682,19 +645,53 @@ export class IntakeChatService {
         'Docker',
         'Testing',
         'Problem Solving',
-      ]);
+      ];
+    } else if (/data|analy|ml|ai|python/.test(g)) {
+      labels = [
+        'Excel',
+        'SQL',
+        'Python',
+        'Statistics',
+        'Data Visualization',
+        'Pandas',
+        'Communication',
+        'Problem Solving',
+      ];
+    } else if (/market/.test(g)) {
+      labels = [
+        'Copywriting',
+        'SEO',
+        'Social Media',
+        'Analytics',
+        'Email Marketing',
+        'Communication',
+        'Research',
+        'Content Strategy',
+      ];
+    } else if (/product/.test(g)) {
+      labels = [
+        'Research',
+        'Communication',
+        'Prioritization',
+        'Analytics',
+        'Wireframing',
+        'Stakeholder Mgmt',
+        'Writing',
+        'Problem Solving',
+      ];
+    } else {
+      labels = [
+        'Communication',
+        'Problem Solving',
+        'Writing',
+        'Research',
+        'Time Management',
+        'Collaboration',
+        'Critical Thinking',
+        'Learning Agility',
+      ];
     }
-    const labels = pools[0] ?? [
-      'Communication',
-      'Problem Solving',
-      'Writing',
-      'Research',
-      'Time Management',
-      'Collaboration',
-      'Critical Thinking',
-      'Learning Agility',
-    ];
-    return labels.slice(0, 8).map((label) => ({
+    return labels.map((label) => ({
       value: slugifySkillLabel(label),
       label,
     }));
@@ -755,8 +752,8 @@ export class IntakeChatService {
       models?: string[];
     } = {
       model,
-      temperature: 0.4,
-      max_tokens: 450,
+      temperature: 0.3,
+      max_tokens: 180,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: system },
@@ -778,6 +775,9 @@ export class IntakeChatService {
       typeof completion.model === 'string' && completion.model
         ? completion.model
         : model;
+    this.logger.log(
+      `[intake-llm] ok model=${modelUsed} tokens=${completion.usage?.total_tokens ?? '?'}`,
+    );
     return { content, modelUsed };
   }
 
@@ -789,12 +789,15 @@ export class IntakeChatService {
     );
   }
 
-  private userFacingLlmError(message: string): string {
+  private userFacingLlmError(message: string, model?: string): string {
     if (/models' array must have 3/i.test(message)) {
       return 'AI config error (too many fallback models). Try again in a moment.';
     }
     if (this.isRateLimited(message) || /rate\/quota/i.test(message)) {
-      return 'AI free tier is rate-limited right now. Wait ~1 min and retry, use form intake, or check API credits.';
+      const who = model
+        ? `${model} (${findProviderForModel(model)?.label ?? 'provider'})`
+        : 'the current model';
+      return `AI rate-limited on ${who}. Wait a minute and retry, or switch model in Admin → Feature flags.`;
     }
     if (/400\b/.test(message)) {
       return `AI request rejected: ${message.replace(/^Error:\s*/i, '').slice(0, 160)}`;

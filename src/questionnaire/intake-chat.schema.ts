@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const IntakeChatLlmResponseSchema = z.object({
-  assistantMessage: z.string().min(1).max(2000),
+  assistantMessage: z.string().min(1).max(400),
   partialAnswers: z.record(z.unknown()).default({}),
   done: z.boolean().default(false),
 });

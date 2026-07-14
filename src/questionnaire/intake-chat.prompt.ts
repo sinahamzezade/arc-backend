@@ -1,53 +1,98 @@
-import type { QuestionnaireSchemaDto } from './schema/schema.types';
+import type {
+  QuestionnaireSchemaDto,
+  QuestionnaireStepDto,
+} from './schema/schema.types';
 import type { QuestionnaireAnswers } from './types/answers';
 import { listMissingFields } from './questionnaire.validation';
 
-export const INTAKE_CHAT_PROMPT_VERSION = 'intake_chat_v2';
+export const INTAKE_CHAT_PROMPT_VERSION = 'intake_chat_v3';
 
-/** Compact schema — only missing fields, short option lists. Cuts tokens → faster. */
+/** First root field still missing (chips show this next). */
+export function nextMissingStep(
+  schema: QuestionnaireSchemaDto,
+  answers: QuestionnaireAnswers,
+): QuestionnaireStepDto | null {
+  const missing = listMissingFields(answers, schema);
+  for (const key of missing) {
+    const root = key.split('.')[0]!.replace(/Other$/, '');
+    const step = schema.steps.find((s) => s.id === root);
+    if (step) return step;
+  }
+  return null;
+}
+
+/** Soft ack + next schema title — no LLM. */
+export function buildDeterministicAssistantMessage(
+  schema: QuestionnaireSchemaDto,
+  answers: QuestionnaireAnswers,
+  opts: { isStart?: boolean } = {},
+): string {
+  const next = nextMissingStep(schema, answers);
+  if (!next) {
+    return 'Great — I have everything I need. Tap Generate roadmap when you are ready.';
+  }
+  if (opts.isStart) {
+    return `Hi — quick goal interview. ${next.title}`;
+  }
+  return `Got it. ${next.title}`;
+}
+
+/** Drop empty draft pads so prompt stays tiny. */
+export function compactAnswersForPrompt(
+  answers: QuestionnaireAnswers,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(answers)) {
+    if (value == null) continue;
+    if (value === '') continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    if (
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      'days' in value &&
+      'times' in value
+    ) {
+      const sched = value as { days: unknown; times: unknown };
+      const days = Array.isArray(sched.days) ? sched.days : [];
+      const times = Array.isArray(sched.times) ? sched.times : [];
+      if (!days.length && !times.length) continue;
+      out[key] = { days, times };
+      continue;
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
+/** Compact schema — only the next focus field. */
 export function buildIntakeChatSystemPrompt(
   schema: QuestionnaireSchemaDto,
   answers: QuestionnaireAnswers,
 ): string {
-  const missing = new Set(listMissingFields(answers, schema));
-  const focusSteps = schema.steps.filter(
-    (step) =>
-      missing.has(step.id) ||
-      missing.has(`${step.id}.days`) ||
-      missing.has(`${step.id}.times`) ||
-      missing.has(`${step.id}Other`),
-  );
-  const steps = (focusSteps.length ? focusSteps : schema.steps.slice(0, 2)).map(
-    (step) => {
-      if (step.uiKind === 'schedule') {
-        return {
-          id: step.id,
-          title: step.title,
+  const next = nextMissingStep(schema, answers);
+  const focus = next
+    ? next.uiKind === 'schedule'
+      ? {
+          id: next.id,
           kind: 'schedule',
-          days: step.scheduleDays ?? [],
-          times: (step.scheduleTimes ?? []).map((t) => t.value),
-        };
-      }
-      return {
-        id: step.id,
-        title: step.title,
-        selection: step.selection,
-        allowOther: Boolean(step.allowOther),
-        // value only — labels burn tokens
-        options: step.options.map((o) => o.value),
-      };
-    },
-  );
+          days: next.scheduleDays ?? [],
+          times: (next.scheduleTimes ?? []).map((t) => t.value),
+        }
+      : {
+          id: next.id,
+          selection: next.selection,
+          allowOther: Boolean(next.allowOther),
+          options: next.options.map((o) => o.value),
+        }
+    : null;
 
   return [
-    'Arc goal interview coach. Ask ONE short question per turn.',
-    'Map free text → schema option VALUE tokens only. Never invent values.',
-    'Schedule → {days,times} with allowed tokens only.',
-    'allowOther: use value "other" + `${id}Other` free text.',
-    'JSON only: {"assistantMessage":string,"partialAnswers":object,"done":boolean}',
-    'partialAnswers = merge of current + new tokens this turn.',
-    'done=true only when no missing fields remain.',
-    `Missing focus fields:\n${JSON.stringify(steps)}`,
+    'Arc intake. One short question. Map text→option VALUE tokens only.',
+    'Schedule→{days,times}. allowOther→"other"+`${id}Other`.',
+    'JSON: {"assistantMessage":string,"partialAnswers":object,"done":boolean}',
+    'partialAnswers=NEW tokens only this turn. assistantMessage≤120 chars.',
+    'done=true only if field fully answered and no more missing.',
+    `focus:${JSON.stringify(focus)}`,
   ].join('\n');
 }
 
@@ -58,14 +103,16 @@ export function buildIntakeChatUserPrompt(input: {
   userMessage: string | null;
 }): string {
   return JSON.stringify({
-    answers: input.partialAnswers,
-    missing: input.missingFields,
-    // last 4 turns only
-    recent: input.transcript.slice(-4),
-    user: input.userMessage,
-    task:
-      input.userMessage === null
-        ? 'Greet in 1 sentence. Ask career goal.'
-        : 'Extract tokens from user. Ask next missing field.',
+    a: compactAnswersForPrompt(input.partialAnswers),
+    miss: input.missingFields.slice(0, 6),
+    // last 2 turns
+    recent: input.transcript.slice(-2).map((m) => ({
+      r: m.role === 'user' ? 'u' : 'a',
+      c: m.content.slice(0, 240),
+    })),
+    u: input.userMessage?.slice(0, 400) ?? null,
+    task: input.userMessage
+      ? 'Extract tokens. Ask next missing.'
+      : 'Greet 1 sentence. Ask focus field.',
   });
 }
