@@ -38,6 +38,10 @@ export class LessonRewardsService {
     attemptKind?: 'first' | 'review_7d' | 'review_later' | 'after_solution';
     weeklyOnTrack?: boolean;
     actionKind?: LessonActionKind;
+    conceptsMastered?: number;
+    conceptsTotal?: number;
+    remediationRoundsUsed?: number;
+    hasShakyConcepts?: boolean;
   }): ComputedReward {
     const { lesson, outline, quizCorrect, quizTotal, alreadyCompleted } =
       input;
@@ -57,11 +61,18 @@ export class LessonRewardsService {
     const rewardClass =
       lesson.rewardClassSnapshot ??
       lesson.lessonTemplate?.rewardClass ??
+      outline.rewardPresentation?.rewardClass ??
       undefined;
 
     const actionKind =
       input.actionKind ??
       actionKindFromLessonType(lesson.lessonType, rewardClass);
+
+    let assistance = input.assistance ?? 'none';
+    // Remediation counts as assistance (like hints) — §16.5
+    if ((input.remediationRoundsUsed ?? 0) > 0 && assistance === 'none') {
+      assistance = 'hint';
+    }
 
     const calc = this.calculator.compute({
       actionKind,
@@ -74,10 +85,14 @@ export class LessonRewardsService {
       pathPercentile: input.pathPercentile,
       quizCorrect,
       quizTotal,
-      assistance: input.assistance ?? 'none',
+      assistance,
       attemptKind: input.attemptKind ?? 'first',
       weeklyOnTrack: input.weeklyOnTrack,
       isFirstLessonEver: input.isFirstLessonEver,
+      conceptsMastered: input.conceptsMastered,
+      conceptsTotal: input.conceptsTotal,
+      remediationRoundsUsed: input.remediationRoundsUsed,
+      hasShakyConcepts: input.hasShakyConcepts,
     });
 
     let badgeId = outline.reward?.badgeId ?? undefined;
@@ -90,6 +105,12 @@ export class LessonRewardsService {
       badgeLabel = undefined;
     }
 
+    // Shaky concepts withhold perfect-run / mastery badges (not first-step)
+    if (input.hasShakyConcepts && badgeId && badgeId !== 'first-step') {
+      badgeId = undefined;
+      badgeLabel = undefined;
+    }
+
     return {
       xp: calc.xp,
       gems: calc.gems,
@@ -98,6 +119,7 @@ export class LessonRewardsService {
       badgeLabel: badgeLabel ?? undefined,
       arloLine:
         outline.reward?.arloLine ??
+        outline.rewardPresentation?.arloLine ??
         `Nice — “${lesson.title}” is on the map now.`,
       firstTime: calc.firstTime,
       calcMetadata: calc.metadata,

@@ -31,6 +31,12 @@ export type RewardCalcInput = {
   attemptKind: 'first' | 'review_7d' | 'review_later' | 'after_solution';
   weeklyOnTrack?: boolean;
   isFirstLessonEver?: boolean;
+  /** §16.5 adaptive mastery inputs */
+  conceptsMastered?: number;
+  conceptsTotal?: number;
+  remediationRoundsUsed?: number;
+  /** Any shaky concept → withhold perfect-run bonuses */
+  hasShakyConcepts?: boolean;
 };
 
 export type RewardCalcResult = {
@@ -60,6 +66,8 @@ export class RewardCalculatorService {
     const perfM = performanceMultiplier(input.quizCorrect, input.quizTotal);
     const assist = input.assistance ?? 'none';
     const assistM = ASSISTANCE_MULT[assist];
+    const hasShaky = Boolean(input.hasShakyConcepts);
+    const remediationRounds = input.remediationRoundsUsed ?? 0;
 
     let repeatM = 1;
     if (input.attemptKind === 'review_7d') repeatM = 0.1;
@@ -92,7 +100,9 @@ export class RewardCalculatorService {
     // Bonuses (first completion only for gems/coins extras)
     if (firstTime) {
       const perfect =
-        input.quizTotal > 0 && input.quizCorrect === input.quizTotal;
+        !hasShaky &&
+        input.quizTotal > 0 &&
+        input.quizCorrect === input.quizTotal;
       if (perfect) gems += 2;
 
       const firstAttemptBonus = Math.min(40, Math.round(xp * 0.1));
@@ -120,7 +130,9 @@ export class RewardCalculatorService {
 
       if (
         (kind === 'coding' || kind === 'dataset') &&
-        assist === 'none'
+        assist === 'none' &&
+        remediationRounds === 0 &&
+        !hasShaky
       ) {
         gems += 3;
       }
@@ -149,6 +161,10 @@ export class RewardCalculatorService {
         attemptKind: input.attemptKind,
         pathPercentile: input.pathPercentile ?? 40,
         ruleVersion: 'lesson-reward-v2',
+        conceptsMastered: input.conceptsMastered ?? null,
+        conceptsTotal: input.conceptsTotal ?? null,
+        remediationRoundsUsed: remediationRounds,
+        hasShakyConcepts: hasShaky,
       },
     };
   }

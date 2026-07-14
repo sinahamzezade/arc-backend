@@ -5,6 +5,7 @@ export const REWARD_RULE_VERSION = 'lesson-reward-v2';
 export const CONTENT_SCHEMA_VERSION = 1;
 
 export const OUTBOX_LESSON_COMPLETED = 'lesson.completed.v1';
+export const OUTBOX_LESSON_REMEDIATION = 'lesson.remediation.v1';
 export const OUTBOX_REWARD_GRANTED = 'reward.granted.v1';
 export const OUTBOX_GAMIFICATION_REWARD =
   'gamification.reward_granted';

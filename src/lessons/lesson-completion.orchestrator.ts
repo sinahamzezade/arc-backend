@@ -27,9 +27,11 @@ import {
   LessonAttemptStatus,
 } from './entities/lesson-attempt.entity';
 import { LessonCompletionResult } from './entities/lesson-completion-result.entity';
+import { RemediationEvent } from './entities/remediation-event.entity';
 import { LessonRewardsService } from './lesson-rewards.service';
 import { LessonUnlockService } from './lesson-unlock.service';
 import type { LessonPlayOutline } from './lesson-play.types';
+import { collectConceptTags } from '../skill-graph/seeds/transform-curriculum';
 
 export type CompleteLessonResponse = {
   lessonId: string;
@@ -148,6 +150,8 @@ export class LessonCompletionOrchestrator {
           firstCompletion: false,
           minutes: 0,
           hintUsed: false,
+          attemptId: null as string | null,
+          lessonId: lesson.id,
         };
       }
 
@@ -161,6 +165,8 @@ export class LessonCompletionOrchestrator {
           firstCompletion: false,
           minutes: 0,
           hintUsed: false,
+          attemptId: null as string | null,
+          lessonId: lesson.id,
         };
       }
 
@@ -217,6 +223,23 @@ export class LessonCompletionOrchestrator {
 
       const pathPercentile = await this.unlock.pathPercentile(manager, lesson);
       const assistance = this.rewards.mapAssistance(attempt?.assistanceUsed);
+
+      const conceptTags = collectConceptTags(outline);
+      const mastery = attempt?.conceptMastery ?? {};
+      const shakyConcepts = conceptTags.filter(
+        (tag) => mastery[tag]?.state === 'shaky',
+      );
+      const conceptsMastered = conceptTags.filter((tag) => {
+        const s = mastery[tag]?.state;
+        return s === 'mastered' || s === 'recovered';
+      }).length;
+      const conceptsTotal = conceptTags.length;
+
+      const remediationRepo = manager.getRepository(RemediationEvent);
+      const remediationRoundsUsed = attempt
+        ? await remediationRepo.count({ where: { attemptId: attempt.id } })
+        : 0;
+
       const reward = this.rewards.computeReward({
         lesson,
         outline,
@@ -227,6 +250,10 @@ export class LessonCompletionOrchestrator {
         pathPercentile,
         assistance,
         attemptKind: previouslyAwarded ? 'review_later' : 'first',
+        conceptsMastered,
+        conceptsTotal,
+        remediationRoundsUsed,
+        hasShakyConcepts: shakyConcepts.length > 0,
       });
 
       const qualifiedLeagueXp = reward.firstTime ? reward.xp : 0;
@@ -382,6 +409,10 @@ export class LessonCompletionOrchestrator {
         lessonType: lesson.lessonType,
         rewardTransactionGroupId: grant.transactionGroupId,
         qualifiedLeagueXp,
+        conceptsTotal,
+        conceptsMastered,
+        remediationRoundsUsed,
+        shakyConcepts,
       });
 
       await this.gamification.enqueueRewardGranted(manager, {
@@ -449,8 +480,18 @@ export class LessonCompletionOrchestrator {
         firstCompletion: reward.firstTime,
         minutes,
         hintUsed: Number(attempt?.assistanceUsed?.hintCount ?? 0) > 0,
+        attemptId: attempt.id,
+        lessonId: lesson.id,
       };
     });
+
+    // §16.7 remediation analytics — fire-and-forget AFTER commit
+    if (txResult.attemptId) {
+      void this.emitRemediationAnalytics(
+        txResult.attemptId,
+        txResult.lessonId,
+      ).catch(() => undefined);
+    }
 
     if (txResult.firstCompletion) {
       try {
@@ -486,5 +527,29 @@ export class LessonCompletionOrchestrator {
     void this.gamification.processPendingOutbox().catch(() => undefined);
 
     return txResult.response;
+  }
+
+  /** Emit lesson.remediation.v1 per round — never throws into completion path. */
+  private async emitRemediationAnalytics(
+    attemptId: string,
+    lessonId: string,
+  ): Promise<void> {
+    const events = await this.dataSource.getRepository(RemediationEvent).find({
+      where: { attemptId },
+      order: { round: 'ASC' },
+    });
+    for (const ev of events) {
+      try {
+        await this.gamification.enqueueLessonRemediation({
+          attemptId,
+          lessonId,
+          conceptTag: ev.conceptTag,
+          round: ev.round,
+          outcome: ev.outcome,
+        });
+      } catch {
+        /* analytics failure must not affect learner */
+      }
+    }
   }
 }

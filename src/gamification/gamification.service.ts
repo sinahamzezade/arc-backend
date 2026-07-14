@@ -15,6 +15,7 @@ import { Wallet } from './entities/wallet.entity';
 import {
   OUTBOX_GAMIFICATION_REWARD,
   OUTBOX_LESSON_COMPLETED,
+  OUTBOX_LESSON_REMEDIATION,
   OUTBOX_REWARD_GRANTED,
   OUTBOX_WEEK_SEALED,
   REWARD_RULE_VERSION,
@@ -140,6 +141,26 @@ export class GamificationService {
       type: OUTBOX_LESSON_COMPLETED,
       aggregateId: (payload.lessonId as string) ?? null,
       payload,
+    });
+  }
+
+  /**
+   * Fire-and-forget remediation analytics (§16.7).
+   * Call AFTER the completion transaction commits — failure must never roll back.
+   */
+  async enqueueLessonRemediation(payload: {
+    attemptId: string;
+    lessonId: string;
+    conceptTag: string;
+    round: number;
+    outcome: string;
+  }) {
+    await this.dataSource.transaction(async (manager) => {
+      await this.outbox.enqueue(manager, {
+        type: OUTBOX_LESSON_REMEDIATION,
+        aggregateId: payload.attemptId,
+        payload,
+      });
     });
   }
 

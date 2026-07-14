@@ -43,4 +43,28 @@ describe('RewardCalculatorService', () => {
     expect(r.gems).toBeLessThanOrEqual(75);
     expect(r.coins).toBeLessThanOrEqual(500);
   });
+
+  it('withholds perfect gem bonus when concepts are shaky', () => {
+    const perfect = calc.compute({
+      actionKind: 'quiz',
+      difficulty: 'beginner',
+      pathPercentile: 40,
+      quizCorrect: 3,
+      quizTotal: 3,
+      attemptKind: 'first',
+    });
+    const shaky = calc.compute({
+      actionKind: 'quiz',
+      difficulty: 'beginner',
+      pathPercentile: 40,
+      quizCorrect: 3,
+      quizTotal: 3,
+      attemptKind: 'first',
+      hasShakyConcepts: true,
+      remediationRoundsUsed: 2,
+    });
+    expect(perfect.gems).toBe(4);
+    expect(shaky.gems).toBe(2); // base only — no +2 perfect
+    expect(shaky.xp).toBeGreaterThan(0); // base still granted
+  });
 });
