@@ -52,6 +52,10 @@ export class QuestionnaireResponse {
   @Column({ name: 'submitted_at', type: 'timestamptz', nullable: true })
   submittedAt: Date | null;
 
+  /** Conversational intake transcript + soft signals. */
+  @Column({ name: 'chat_transcript', type: 'jsonb', nullable: true })
+  chatTranscript: Array<{ role: 'user' | 'assistant'; content: string }> | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
@@ -30,6 +31,8 @@ import {
   type QuestionnaireAnswers,
 } from './types/answers';
 
+export type IntakeMode = 'form' | 'chat';
+
 /**
  * Question Engine service — schema/draft/submit + goals upsert.
  * Hands off to Roadmap Generator via enqueueGenerate(goalId) only.
@@ -39,12 +42,66 @@ export class QuestionnaireService {
   constructor(
     @InjectRepository(QuestionnaireResponse)
     private readonly responsesRepo: Repository<QuestionnaireResponse>,
+    @InjectRepository(Profile)
+    private readonly profilesRepo: Repository<Profile>,
     private readonly schemaService: QuestionnaireSchemaService,
     private readonly roadmapsService: RoadmapsService,
     private readonly dataSource: DataSource,
+    private readonly config: ConfigService,
     @Optional()
     private readonly referrals?: ReferralsService,
   ) {}
+
+  chatEnabled(): boolean {
+    return this.config.get<string>('INTAKE_CHAT_ENABLED') !== 'false';
+  }
+
+  defaultIntakeMode(): IntakeMode {
+    const raw = (this.config.get<string>('INTAKE_DEFAULT_MODE') ?? 'form')
+      .trim()
+      .toLowerCase();
+    return raw === 'chat' ? 'chat' : 'form';
+  }
+
+  async getIntakeConfig(userId: string) {
+    const chatEnabled = this.chatEnabled();
+    const defaultMode = this.defaultIntakeMode();
+    const profile = await this.profilesRepo.findOne({ where: { userId } });
+    const userMode =
+      profile?.intakeMode === 'form' || profile?.intakeMode === 'chat'
+        ? profile.intakeMode
+        : null;
+    const effectiveMode: IntakeMode = !chatEnabled
+      ? 'form'
+      : (userMode ?? defaultMode);
+    return {
+      chatEnabled,
+      defaultMode,
+      userMode,
+      effectiveMode,
+    };
+  }
+
+  async setIntakeMode(userId: string, mode: IntakeMode) {
+    if (mode === 'chat' && !this.chatEnabled()) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'Conversational intake is disabled',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const profile = await this.profilesRepo.findOne({ where: { userId } });
+    if (!profile) {
+      throw new AppException(
+        AuthErrorCode.UNAUTHORIZED,
+        'Profile not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    profile.intakeMode = mode;
+    await this.profilesRepo.save(profile);
+    return this.getIntakeConfig(userId);
+  }
 
   getSchema() {
     const schema = this.schemaService.getSchema();
@@ -252,7 +309,8 @@ export class QuestionnaireService {
         asOptionalString(answers, 'motivationOther'),
       ),
       currentProfession: asString(answers, 'currentJob') || null,
-      currentProfessionOther: asOptionalString(answers, 'currentJobOther') ?? null,
+      currentProfessionOther:
+        asOptionalString(answers, 'currentJobOther') ?? null,
       skills: withOther(
         asStringArray(answers, 'skills'),
         asOptionalString(answers, 'skillsOther'),

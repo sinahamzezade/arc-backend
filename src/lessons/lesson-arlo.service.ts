@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import OpenAI from 'openai';
+import { LlmService } from '../common/llm/llm.service';
 import { Lesson } from '../roadmaps/entities/lesson.entity';
 import type { LessonPlayOutline } from './lesson-play.types';
 
@@ -8,13 +8,16 @@ import type { LessonPlayOutline } from './lesson-play.types';
 export class LessonArloService {
   private readonly logger = new Logger(LessonArloService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly llm: LlmService,
+  ) {}
 
   isEnabled(): boolean {
     if (this.config.get<string>('ARLO_AI_ENABLED') === 'false') {
       return false;
     }
-    return Boolean(this.config.get<string>('OPENAI_API_KEY')?.trim());
+    return this.llm.isConfigured();
   }
 
   async chat(input: {
@@ -48,13 +51,10 @@ export class LessonArloService {
     input: { lesson: Lesson; outline: LessonPlayOutline },
     message: string,
   ): Promise<string | null> {
-    const apiKey = this.config.get<string>('OPENAI_API_KEY')?.trim();
-    if (!apiKey) return null;
+    const client = this.llm.createClient();
+    if (!client) return null;
 
-    const model =
-      this.config.get<string>('OPENAI_ARLO_MODEL')?.trim() ||
-      this.config.get<string>('OPENAI_ROADMAP_MODEL')?.trim() ||
-      'gpt-4o-mini';
+    const model = this.llm.getModel('arlo');
 
     const contentSummary = input.outline.content
       .slice(0, 4)
@@ -67,7 +67,6 @@ export class LessonArloService {
       })
       .join('\n');
 
-    const client = new OpenAI({ apiKey });
     const completion = await client.chat.completions.create({
       model,
       temperature: 0.6,

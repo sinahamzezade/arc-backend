@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import OpenAI from 'openai';
+import { LlmService } from '../common/llm/llm.service';
 import {
   buildQuestionnaireAiSystemPrompt,
   buildQuestionnaireAiUserPrompt,
@@ -16,21 +16,20 @@ import type { QuestionnaireSchemaDto } from './schema/schema.types';
 export class QuestionnaireAiService {
   private readonly logger = new Logger(QuestionnaireAiService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly llm: LlmService,
+  ) {}
 
   isEnabled(): boolean {
     if (this.config.get<string>('QUESTIONNAIRE_AI_ENABLED') === 'false') {
       return false;
     }
-    return Boolean(this.config.get<string>('OPENAI_API_KEY')?.trim());
+    return this.llm.isConfigured();
   }
 
   getModel(): string {
-    return (
-      this.config.get<string>('OPENAI_QUESTIONNAIRE_MODEL')?.trim() ||
-      this.config.get<string>('OPENAI_ROADMAP_MODEL')?.trim() ||
-      'gpt-4o-mini'
-    );
+    return this.llm.getModel('questionnaire_copy');
   }
 
   getPromptVersion(): string {
@@ -41,7 +40,7 @@ export class QuestionnaireAiService {
   }
 
   /**
-   * Generate question copy via OpenAI. Soft-fail → null.
+   * Generate question copy via LLM. Soft-fail → null.
    * Ids / option values stay frozen from base schema.
    */
   async generateCopy(
@@ -51,8 +50,8 @@ export class QuestionnaireAiService {
       return null;
     }
 
-    const apiKey = this.config.get<string>('OPENAI_API_KEY')?.trim();
-    if (!apiKey) {
+    const client = this.llm.createClient();
+    if (!client) {
       return null;
     }
 
@@ -60,7 +59,6 @@ export class QuestionnaireAiService {
     const promptVersion = this.getPromptVersion();
 
     try {
-      const client = new OpenAI({ apiKey });
       const completion = await client.chat.completions.create({
         model,
         temperature: 0.7,

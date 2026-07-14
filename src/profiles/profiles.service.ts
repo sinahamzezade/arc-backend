@@ -196,15 +196,6 @@ export class ProfilesService {
     if (dto.language !== undefined) {
       profile.language = dto.language.trim() || 'en';
     }
-    if (dto.currentRole !== undefined) {
-      profile.currentRole = dto.currentRole.trim() || null;
-    }
-    if (dto.targetRole !== undefined) {
-      profile.targetRole = dto.targetRole.trim() || null;
-    }
-    if (dto.yearsExperience !== undefined) {
-      profile.yearsExperience = dto.yearsExperience;
-    }
 
     return this.profilesRepo.save(profile);
   }

@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { AdminModule } from './admin/admin.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { typeOrmPostgresConfig } from './common/database/typeorm-postgres.config';
+import { LlmModule } from './common/llm/llm.module';
 import { CoachModule } from './coach/coach.module';
 import { ContentPoolModule } from './content-pool/content-pool.module';
 import { GoalsModule } from './goals/goals.module';
@@ -43,6 +44,7 @@ import { BadgesModule } from './badges/badges.module';
       useFactory: (config: ConfigService) =>
         typeOrmPostgresConfig(config, { autoLoadEntities: true }),
     }),
+    LlmModule,
     UsersModule,
     ProfilesModule,
     AuthModule,

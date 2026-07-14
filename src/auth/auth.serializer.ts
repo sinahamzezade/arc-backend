@@ -30,14 +30,12 @@ export function toProfileDto(profile: Profile, includeRewards = false) {
     avatarUrl: profile.avatarUrl,
     timezone: profile.timezone,
     language: profile.language,
-    currentRole: profile.currentRole,
-    targetRole: profile.targetRole,
-    yearsExperience: profile.yearsExperience,
     questionnaireStatus: profile.questionnaireStatus ?? 'not_started',
     questionnaireCompletedAt:
       profile.questionnaireCompletedAt?.toISOString?.() ?? null,
     onboardingCompletedAt:
       profile.onboardingCompletedAt?.toISOString?.() ?? null,
+    intakeMode: profile.intakeMode ?? null,
   };
 
   if (!includeRewards) {

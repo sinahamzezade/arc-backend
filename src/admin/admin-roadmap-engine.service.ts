@@ -41,13 +41,13 @@ export class AdminRoadmapEngineService {
         this.config.get<string>('ROADMAP_ENGINE_URL') ?? 'http://localhost:8080'
       ).replace(/\/$/, ''),
       mode: (
-        this.config.get<string>('ROADMAP_ENGINE_MODE') ?? 'python'
+        this.config.get<string>('ROADMAP_ENGINE_MODE') ?? 'llm'
       ).toLowerCase(),
       nestExpectedVersion: Number(
         this.config.get('ROADMAP_ENGINE_VERSION') ?? 2,
       ),
       timeoutMs: Number(
-        this.config.get('ROADMAP_GENERATION_TIMEOUT_MS') ?? 15_000,
+        this.config.get('ROADMAP_GENERATION_TIMEOUT_MS') ?? 45_000,
       ),
       redisConfigured: Boolean(resolveRedisUrl(this.config.get<string>('REDIS_URL'))),
     };

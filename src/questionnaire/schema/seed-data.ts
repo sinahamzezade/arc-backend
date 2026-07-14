@@ -11,9 +11,9 @@ export const QUESTIONNAIRE_SEED: QuestionnaireSchemaDto = {
       stepNumber: 1,
       title: 'What do you want to become?',
       subtitle:
-        'Pick one or more paths. You can also add your own role — we’ll shape the roadmap around it.',
+        'Pick one or more paths from the list — roadmap follows the learning catalog.',
       selection: 'multi',
-      allowOther: true,
+      allowOther: false,
       uiKind: 'options',
       reviewLabel: 'Goal',
       reviewIcon: 'target',

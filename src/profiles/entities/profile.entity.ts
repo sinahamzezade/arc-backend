@@ -42,15 +42,6 @@ export class Profile {
   @Column({ type: 'varchar', default: 'en' })
   language: string;
 
-  @Column({ name: 'current_role', type: 'varchar', nullable: true })
-  currentRole: string | null;
-
-  @Column({ name: 'target_role', type: 'varchar', nullable: true })
-  targetRole: string | null;
-
-  @Column({ name: 'years_experience', type: 'int', nullable: true })
-  yearsExperience: number | null;
-
   @Column({ name: 'current_rank', type: 'varchar', nullable: true })
   currentRank: string | null;
 
@@ -65,6 +56,10 @@ export class Profile {
 
   @Column({ name: 'weekly_streak', type: 'int', default: 0 })
   weeklyStreak: number;
+
+  /** User intake preference: form | chat. Null = use INTAKE_DEFAULT_MODE. */
+  @Column({ name: 'intake_mode', type: 'varchar', length: 16, nullable: true })
+  intakeMode: 'form' | 'chat' | null;
 
   @Column({
     name: 'questionnaire_status',

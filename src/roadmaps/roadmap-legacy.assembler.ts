@@ -148,7 +148,7 @@ export class RoadmapLegacyAssembler {
         aiSkippedReason = aiResult.reason;
       }
     } else {
-      aiSkippedReason = 'OPENAI_API_KEY unset';
+      aiSkippedReason = 'LLM_API_KEY unset';
     }
 
     const roadmap = await this.persist(

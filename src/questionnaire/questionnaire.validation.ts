@@ -52,18 +52,28 @@ function assertAllowed(
   }
 }
 
-function assertNonEmpty(field: string, values: string[]) {
-  if (!values.length) {
-    throw new AppException(
-      AuthErrorCode.VALIDATION_ERROR,
-      `${field} requires at least one selection`,
-      HttpStatus.BAD_REQUEST,
-    );
-  }
-}
-
 function filterKnown(values: string[], allowed: readonly string[]) {
   return values.filter((v) => allowed.includes(v));
+}
+
+function isFreeSkillToken(value: string): boolean {
+  if (!value || value.length > 64) return false;
+  if (value === 'none' || value === 'other') return true;
+  return /^[a-z0-9][a-z0-9-]{0,62}$/i.test(value);
+}
+
+function sanitizeFreeSkillValues(values: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of values) {
+    const v = raw.trim();
+    if (!isFreeSkillToken(v) || seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+    if (out.length >= 12) break;
+  }
+  if (out.includes('none') && out.length > 1) return ['none'];
+  return out;
 }
 
 function optionValuesForStep(step: QuestionnaireStepDto): string[] {
@@ -123,7 +133,9 @@ export function normalizeDraftAnswers(
 
     const allowed = optionValuesForStep(step);
     if (step.selection === 'multi') {
-      if (isStringArray(raw[key])) {
+      if (key === 'skills' && isStringArray(raw[key])) {
+        base[key] = sanitizeFreeSkillValues(raw[key]);
+      } else if (isStringArray(raw[key])) {
         base[key] = filterKnown(raw[key], allowed);
       } else if (typeof raw[key] === 'string' && allowed.includes(raw[key])) {
         // Clients sometimes store single-select shape; keep the pick.
@@ -150,12 +162,19 @@ export function normalizeDraftAnswers(
   return base;
 }
 
-/** Strict validation for final submit (visible steps only). */
 export function assertCompleteAnswers(
   input: unknown,
   schema: QuestionnaireSchemaDto,
 ): QuestionnaireAnswers {
   const answers = normalizeDraftAnswers(input, schema);
+  const missing = listMissingFields(answers, schema);
+  if (missing.length) {
+    throw new AppException(
+      AuthErrorCode.VALIDATION_ERROR,
+      `Missing required fields: ${missing.join(', ')}`,
+      HttpStatus.BAD_REQUEST,
+    );
+  }
 
   for (const step of schema.steps) {
     const key = step.id;
@@ -165,9 +184,7 @@ export function assertCompleteAnswers(
       const schedule = asSchedule(answers, key);
       const daysAllowed = step.scheduleDays ?? [];
       const timesAllowed = (step.scheduleTimes ?? []).map((t) => t.value);
-      assertNonEmpty(`${key}.days`, schedule.days);
       assertAllowed(`${key}.days`, schedule.days, daysAllowed);
-      assertNonEmpty(`${key}.times`, schedule.times);
       assertAllowed(`${key}.times`, schedule.times, timesAllowed);
       continue;
     }
@@ -177,34 +194,35 @@ export function assertCompleteAnswers(
 
     if (step.selection === 'multi') {
       const values = asStringArray(answers, key);
-      if (!values.length && !(step.allowOther && other)) {
-        throw new AppException(
-          AuthErrorCode.VALIDATION_ERROR,
-          `${key} is required`,
-          HttpStatus.BAD_REQUEST,
-        );
+      if (key === 'skills') {
+        if (values.length) {
+          const bad = values.filter(
+            (v) => !sanitizeFreeSkillValues([v]).length,
+          );
+          if (bad.length) {
+            throw new AppException(
+              AuthErrorCode.VALIDATION_ERROR,
+              `Invalid skills value(s): ${bad.join(', ')}`,
+              HttpStatus.BAD_REQUEST,
+            );
+          }
+        }
+        if (values.includes('none') && values.length > 1) {
+          throw new AppException(
+            AuthErrorCode.VALIDATION_ERROR,
+            'skills cannot combine "none" with other values',
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+        continue;
       }
       if (values.length) {
         assertAllowed(key, values, allowed);
-      }
-      if (key === 'skills' && values.includes('none') && values.length > 1) {
-        throw new AppException(
-          AuthErrorCode.VALIDATION_ERROR,
-          'skills cannot combine "none" with other values',
-          HttpStatus.BAD_REQUEST,
-        );
       }
       continue;
     }
 
     const value = asString(answers, key);
-    if (!value && !(step.allowOther && other)) {
-      throw new AppException(
-        AuthErrorCode.VALIDATION_ERROR,
-        `${key} is required`,
-        HttpStatus.BAD_REQUEST,
-      );
-    }
     if (value) {
       assertAllowed(key, [value], allowed);
     }
@@ -218,6 +236,42 @@ export function assertCompleteAnswers(
   }
 
   return answers;
+}
+
+/** Visible required fields still empty after draft normalize. */
+export function listMissingFields(
+  answers: QuestionnaireAnswers,
+  schema: QuestionnaireSchemaDto,
+): string[] {
+  const missing: string[] = [];
+  for (const step of schema.steps) {
+    const key = step.id;
+    if (!isFieldVisible(schema, key, answers)) continue;
+
+    if (step.uiKind === 'schedule') {
+      const schedule = asSchedule(answers, key);
+      if (!schedule.days.length) missing.push(`${key}.days`);
+      if (!schedule.times.length) missing.push(`${key}.times`);
+      continue;
+    }
+
+    const other = asString(answers, `${key}Other`).trim();
+    if (step.selection === 'multi') {
+      const values = asStringArray(answers, key);
+      if (!values.length && !(step.allowOther && other)) {
+        missing.push(key);
+      }
+      continue;
+    }
+
+    const value = asString(answers, key);
+    if (!value && !(step.allowOther && other)) {
+      missing.push(key);
+    } else if (value === 'other' && !other) {
+      missing.push(`${key}Other`);
+    }
+  }
+  return missing;
 }
 
 export function withOther(

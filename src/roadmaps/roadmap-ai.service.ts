@@ -1,8 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import OpenAI from 'openai';
+import { LlmService } from '../common/llm/llm.service';
 import type { Goal } from '../goals/entities/goal.entity';
 import { LessonStatus } from './entities/lesson.entity';
+import type { RoadmapPlanDto } from './dto/roadmap-engine.types';
 import {
   buildRoadmapAiSystemPrompt,
   buildRoadmapAiUserPrompt,
@@ -26,20 +27,26 @@ export type RoadmapAiSkipResult = {
   reason: string;
 };
 
+export type PlanTitleEnrich = {
+  pathTitle?: string;
+  phaseTitles: Record<string, string>;
+};
+
 @Injectable()
 export class RoadmapAiService {
   private readonly logger = new Logger(RoadmapAiService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly llm: LlmService,
+  ) {}
 
   isEnabled(): boolean {
-    return Boolean(this.config.get<string>('OPENAI_API_KEY')?.trim());
+    return this.llm.isConfigured();
   }
 
   getModel(): string {
-    return (
-      this.config.get<string>('OPENAI_ROADMAP_MODEL')?.trim() || 'gpt-4o-mini'
-    );
+    return this.llm.getModel('enrich');
   }
 
   getPromptVersion(): string {
@@ -55,9 +62,9 @@ export class RoadmapAiService {
     phases: PlannedPhase[];
     allowedResourceIds: string[];
   }): Promise<RoadmapAiEnrichResult | RoadmapAiSkipResult> {
-    const apiKey = this.config.get<string>('OPENAI_API_KEY')?.trim();
-    if (!apiKey) {
-      return { enrich: null, reason: 'OPENAI_API_KEY unset' };
+    const client = this.llm.createClient();
+    if (!client) {
+      return { enrich: null, reason: 'LLM_API_KEY unset' };
     }
 
     const allow = this.buildAllowLists(input.phases, input.allowedResourceIds);
@@ -65,7 +72,6 @@ export class RoadmapAiService {
     const promptVersion = this.getPromptVersion();
 
     try {
-      const client = new OpenAI({ apiKey });
       const completion = await client.chat.completions.create({
         model,
         temperature: 0.4,
@@ -81,7 +87,7 @@ export class RoadmapAiService {
 
       const content = completion.choices[0]?.message?.content;
       if (!content) {
-        this.logger.warn('OpenAI returned empty content — soft-fail');
+        this.logger.warn('LLM enrich returned empty content — soft-fail');
         return { enrich: null, reason: 'empty_response' };
       }
 
@@ -90,9 +96,104 @@ export class RoadmapAiService {
       return { enrich, model, promptVersion };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`OpenAI enrich soft-fail: ${message}`);
+      this.logger.warn(`LLM enrich soft-fail: ${message}`);
       return { enrich: null, reason: message };
     }
+  }
+
+  /**
+   * Title-only enrich for Python engine plans — no lesson reorder / invent.
+   * Soft-fails to null when LLM unavailable or response invalid.
+   */
+  async enrichPlanTitles(input: {
+    goal: Goal;
+    recipeTitle: string;
+    plan: RoadmapPlanDto;
+  }): Promise<{ enrich: PlanTitleEnrich; model: string } | RoadmapAiSkipResult> {
+    const client = this.llm.createClient();
+    if (!client) {
+      return { enrich: null, reason: 'LLM_API_KEY unset' };
+    }
+
+    const model = this.getModel();
+    const phaseKeys = input.plan.phases.map((p) => p.key);
+    const phaseList = input.plan.phases
+      .map((p) => `- ${p.key}: ${p.title}`)
+      .join('\n');
+
+    try {
+      const completion = await client.chat.completions.create({
+        model,
+        temperature: 0.4,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: [
+              'You enrich learning roadmap titles only.',
+              'Return JSON: { "pathTitle": string, "phaseTitles": { "<phaseKey>": string } }.',
+              'Only rename; do not invent phases. Use only the given phase keys.',
+              'Keep titles concise and motivating (max 60 chars).',
+            ].join(' '),
+          },
+          {
+            role: 'user',
+            content: [
+              `Goal roles: ${(input.goal.targetRoles ?? []).join(', ')}`,
+              `Recipe: ${input.recipeTitle}`,
+              `Current path title: ${input.plan.title}`,
+              `Phases:\n${phaseList}`,
+              `Allowed phase keys: ${phaseKeys.join(', ')}`,
+            ].join('\n'),
+          },
+        ],
+      });
+
+      const content = completion.choices[0]?.message?.content;
+      if (!content) {
+        return { enrich: null, reason: 'empty_response' };
+      }
+
+      const raw = JSON.parse(content) as {
+        pathTitle?: unknown;
+        phaseTitles?: unknown;
+      };
+      const phaseTitles: Record<string, string> = {};
+      const allowed = new Set(phaseKeys);
+      if (raw.phaseTitles && typeof raw.phaseTitles === 'object') {
+        for (const [key, value] of Object.entries(
+          raw.phaseTitles as Record<string, unknown>,
+        )) {
+          if (allowed.has(key) && typeof value === 'string' && value.trim()) {
+            phaseTitles[key] = value.trim().slice(0, 80);
+          }
+        }
+      }
+      const pathTitle =
+        typeof raw.pathTitle === 'string' && raw.pathTitle.trim()
+          ? raw.pathTitle.trim().slice(0, 120)
+          : undefined;
+
+      return { enrich: { pathTitle, phaseTitles }, model };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`LLM plan title enrich soft-fail: ${message}`);
+      return { enrich: null, reason: message };
+    }
+  }
+
+  applyPlanTitleEnrich(
+    plan: RoadmapPlanDto,
+    enrich: PlanTitleEnrich,
+  ): RoadmapPlanDto {
+    return {
+      ...plan,
+      title: enrich.pathTitle?.trim() || plan.title,
+      phases: plan.phases.map((p) => ({
+        ...p,
+        title: enrich.phaseTitles[p.key]?.trim() || p.title,
+      })),
+    };
   }
 
   /** Apply validated enrich onto a cloned plan (mutates copy). */

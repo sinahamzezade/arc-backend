@@ -10,7 +10,10 @@ import { RoleRecipe } from './entities/role-recipe.entity';
 import { SkillNode } from './entities/skill-node.entity';
 import { TechStack } from './entities/tech-stack.entity';
 import { CATALOG_SEED } from './seeds/catalog.seed';
-import { inappContentToPlayOutline, isCompletionAckPractice } from './seeds/inapp-content.mapper';
+import {
+  inappContentToPlayOutline,
+  isCompletionAckPractice,
+} from './seeds/inapp-content.mapper';
 import { outlineForTemplateSeed } from '../lessons/play-outline.factory';
 import { isPlayOutline } from '../lessons/lesson-play.types';
 import { Lesson } from '../roadmaps/entities/lesson.entity';
@@ -592,10 +595,7 @@ export class SkillGraphService implements OnModuleInit {
    * with knowledge checks from the catalog seed (templates + live lessons).
    */
   private async refreshCompletionAckOutlines() {
-    const bySlug = new Map<
-      string,
-      ReturnType<typeof resolveSeedOutline>
-    >();
+    const bySlug = new Map<string, ReturnType<typeof resolveSeedOutline>>();
     for (const stack of CATALOG_SEED.stacks) {
       for (const skill of stack.skills) {
         for (const lesson of skill.lessons) {

@@ -124,7 +124,6 @@ export class AdminUserResetService {
           questionnaireStatus: QuestionnaireStatus.NotStarted,
           questionnaireCompletedAt: null,
           onboardingCompletedAt: null,
-          targetRole: null,
         },
       );
     });

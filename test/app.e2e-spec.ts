@@ -88,14 +88,10 @@ describe('Auth (e2e)', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({
         displayName: 'Soheil',
-        currentRole: 'Office worker',
-        targetRole: 'Data Analyst',
-        yearsExperience: 3,
       })
       .expect(200);
 
     expect(res.body.profile.displayName).toBe('Soheil');
-    expect(res.body.profile.currentRole).toBe('Office worker');
   });
 
   it('POST /auth/login fails safely', async () => {
