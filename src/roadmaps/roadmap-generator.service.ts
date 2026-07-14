@@ -65,14 +65,24 @@ export class RoadmapGeneratorService {
 
   async assemble(goalId: string, userId: string): Promise<Roadmap> {
     const mode = await this.resolveMode(userId);
-    this.logger.log(`assemble goal=${goalId} mode=${mode}`);
+    this.logger.log(
+      `[roadmap-gen] assemble start goal=${goalId} user=${userId} engineMode=${mode}`,
+    );
     if (mode === 'legacy') {
-      this.logger.log(`Assembling via legacy Nest planner goal=${goalId}`);
+      this.logger.log(
+        `[roadmap-gen] path=legacy (Nest assembler, no LLM planner)`,
+      );
       return this.legacy.assemble(goalId, userId);
     }
     if (mode === 'python') {
+      this.logger.log(
+        `[roadmap-gen] path=python (roadmap-engine HTTP; LLM titles optional)`,
+      );
       return this.assembleViaEngine(goalId, userId);
     }
+    this.logger.log(
+      `[roadmap-gen] path=llm (LLM planner owns phase/lesson picks)`,
+    );
     return this.assembleViaLlm(goalId, userId);
   }
 
@@ -91,12 +101,18 @@ export class RoadmapGeneratorService {
 
     const revision = this.snapshot.goalRevision(goal);
     const seed = this.snapshot.seedFor(userId, revision);
+    this.logger.log(
+      `[roadmap-gen] llm snapshot goal=${goalId} revision=${revision} seed=${seed}`,
+    );
 
     let contentSnapshot;
     try {
       contentSnapshot = await this.snapshot.buildSnapshot(goal);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `[roadmap-gen] llm snapshot failed goal=${goalId}: ${message}`,
+      );
       this.analytics.roadmapGenerationFailed({
         goalRevision: revision,
         code: AuthErrorCode.ROADMAP_ROLE_NOT_FOUND,
@@ -109,10 +125,15 @@ export class RoadmapGeneratorService {
       );
     }
 
+    this.logger.log(
+      `[roadmap-gen] llm snapshot ok recipe=${contentSnapshot.recipe.title} lessons=${contentSnapshot.lessons.length}`,
+    );
+
     const profile = this.snapshot.toProfile(goal);
 
     let planResult;
     try {
+      this.logger.log(`[roadmap-gen] llm planner call start goal=${goalId}`);
       planResult = await this.llmPlanner.plan({
         goal,
         profile,
@@ -120,6 +141,9 @@ export class RoadmapGeneratorService {
         seed,
       });
     } catch (err) {
+      this.logger.error(
+        `[roadmap-gen] llm planner hard-fail goal=${goalId}: ${err instanceof Error ? err.message : err}`,
+      );
       this.analytics.roadmapGenerationFailed({
         goalRevision: revision,
         code: AuthErrorCode.ROADMAP_GENERATION_FAILED,
@@ -131,6 +155,10 @@ export class RoadmapGeneratorService {
         HttpStatus.BAD_GATEWAY,
       );
     }
+
+    this.logger.log(
+      `[roadmap-gen] llm planner done model=${planResult.model} prompt=${planResult.promptVersion} fallback=${planResult.usedFallback} weeks=${planResult.plan.estimated_weeks} phases=${planResult.plan.phases.length}`,
+    );
 
     const roadmap = await this.persistence.persistPlan(goal, planResult.plan, {
       schemaVersion: 2,
@@ -154,7 +182,7 @@ export class RoadmapGeneratorService {
     });
 
     this.logger.log(
-      `Assembled roadmap ${roadmap.id} via LLM planner (model=${planResult.model}, fallback=${planResult.usedFallback})`,
+      `[roadmap-gen] llm persist ok roadmap=${roadmap.id} model=${planResult.model} fallback=${planResult.usedFallback}`,
     );
 
     await this.postPersist(roadmap.id);
@@ -194,11 +222,17 @@ export class RoadmapGeneratorService {
       );
     }
 
+    this.logger.log(
+      `[roadmap-gen] python engine call start goal=${goalId} revision=${revision}`,
+    );
     const profile = this.snapshot.toProfile(goal);
     let response;
     try {
       response = await this.engine.plan(profile, contentSnapshot, seed);
     } catch (err) {
+      this.logger.error(
+        `[roadmap-gen] python engine hard-fail: ${err instanceof Error ? err.message : err}`,
+      );
       this.analytics.roadmapGenerationFailed({
         goalRevision: revision,
         code: AuthErrorCode.ROADMAP_GENERATION_FAILED,

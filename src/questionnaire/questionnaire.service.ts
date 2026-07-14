@@ -82,9 +82,9 @@ export class QuestionnaireService {
       profile?.intakeMode === 'form' || profile?.intakeMode === 'chat'
         ? profile.intakeMode
         : null;
-    const effectiveMode: IntakeMode = !chatEnabled
-      ? 'form'
-      : (userMode ?? defaultMode);
+    // Admin default drives UI. Stale profile.intakeMode (from older switches)
+    // must not pin users to form after default flips to chat.
+    const effectiveMode: IntakeMode = !chatEnabled ? 'form' : defaultMode;
     return {
       chatEnabled,
       defaultMode,

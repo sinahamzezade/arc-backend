@@ -93,6 +93,9 @@ export class RoadmapsService {
       }),
     );
 
+    this.logger.log(
+      `[roadmap-gen] queued job=${job.id} goal=${goalId} user=${userId}`,
+    );
     await this.processor.enqueue(job.id);
 
     return {

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { LlmService } from '../common/llm/llm.service';
+import { findProviderForModel } from '../common/llm/llm.providers';
 import { CourseTemplate } from '../content-pool/entities/course-template.entity';
 import { ModuleTemplate } from '../content-pool/entities/module-template.entity';
 import { Goal } from '../goals/entities/goal.entity';
@@ -78,11 +79,19 @@ export class RoadmapLlmPlannerService {
     const rawAnswers =
       (input.goal.rawAnswers as Record<string, unknown> | null) ?? {};
 
+    this.logger.log(
+      `[roadmap-gen] planner prepare goal=${input.goal.id} hours=${hours} weeks=${weeks} chatTurns=${transcript.length} llmConfigured=${this.llm.isConfigured()}`,
+    );
+
     const catalog = await this.buildRelatedCatalog(
       input.snapshot,
       input.profile,
       input.seed,
     );
+    this.logger.log(
+      `[roadmap-gen] planner catalog lessons=${catalog.lessons.length} courses=${catalog.courses.length}`,
+    );
+
     const user = buildCompactUserPacket({
       profile: {
         target_roles: input.profile.target_roles,
@@ -114,7 +123,13 @@ export class RoadmapLlmPlannerService {
     if (!parsed) {
       usedFallback = true;
       parsed = this.deterministicDraft(catalog, user.skills, input.seed);
-      this.logger.warn('LLM planner soft-fail — catalog fallback draft');
+      this.logger.warn(
+        `[roadmap-gen] planner FALLBACK (no LLM draft) — deterministic catalog order`,
+      );
+    } else {
+      this.logger.log(
+        `[roadmap-gen] planner LLM OK model=${model} phases=${parsed.phases.length}`,
+      );
     }
 
     const plan = this.hydratePlan({
@@ -306,12 +321,24 @@ export class RoadmapLlmPlannerService {
     roleSlug: string;
   }): Promise<{ draft: LlmPlannerDraft; model: string } | null> {
     if (!this.llm.isConfigured()) {
-      this.logger.warn('LLM planner skipped — client not configured');
+      this.logger.warn(
+        `[roadmap-gen] LLM call skipped — no API key configured`,
+      );
       return null;
     }
-    if (!input.catalog.lessons.length) return null;
+    if (!input.catalog.lessons.length) {
+      this.logger.warn(
+        `[roadmap-gen] LLM call skipped — empty lesson catalog`,
+      );
+      return null;
+    }
 
     const model = await this.llm.getModel('enrich');
+    const provider = findProviderForModel(model);
+    this.logger.log(
+      `[roadmap-gen] LLM chat start purpose=enrich model=${model} provider=${provider?.id ?? 'unknown'} base=${provider?.baseURL ?? '?'}`,
+    );
+
     const system = buildRoadmapLlmPlannerSystemPrompt();
     const baseUser = buildRoadmapLlmPlannerUserPrompt({
       user: input.user,
@@ -332,7 +359,11 @@ export class RoadmapLlmPlannerService {
     let lastModel = model;
     for (let i = 0; i < attempts.length; i++) {
       const attempt = attempts[i]!;
+      const t0 = Date.now();
       try {
+        this.logger.log(
+          `[roadmap-gen] LLM attempt ${i + 1}/${attempts.length} model=${model} temp=${attempt.temperature}`,
+        );
         const completion = await this.llm.chatCompletion({
           purpose: 'enrich',
           userId: input.userId,
@@ -347,8 +378,16 @@ export class RoadmapLlmPlannerService {
             ],
           },
         });
+        const ms = Date.now() - t0;
         const content = completion.choices[0]?.message?.content;
-        if (!content) continue;
+        const usage = completion.usage;
+        this.logger.log(
+          `[roadmap-gen] LLM attempt ${i + 1} response ms=${ms} chars=${content?.length ?? 0} tokens=${usage?.total_tokens ?? '?'} returnedModel=${completion.model ?? model}`,
+        );
+        if (!content) {
+          this.logger.warn(`[roadmap-gen] LLM attempt ${i + 1} empty content`);
+          continue;
+        }
         lastModel =
           typeof completion.model === 'string' && completion.model
             ? completion.model
@@ -360,26 +399,27 @@ export class RoadmapLlmPlannerService {
         const flat = draft.phases.flatMap((p) => p.lesson_ids);
         if (flat.length < 4) {
           this.logger.warn(
-            `LLM draft too small (${flat.length} lessons) attempt=${i + 1}`,
+            `[roadmap-gen] LLM draft too small lessons=${flat.length} attempt=${i + 1}`,
           );
           continue;
         }
         if (this.isNearCatalogOrder(draft, input.catalog) && i === 0) {
           this.logger.warn(
-            'LLM draft near catalog order — retrying with stronger reorder hint',
+            `[roadmap-gen] LLM draft near catalog order — retry reorder hint`,
           );
           continue;
         }
         this.logger.log(
-          `LLM draft ok lessons=${flat.length} phases=${draft.phases.length} attempt=${i + 1}`,
+          `[roadmap-gen] LLM draft accepted lessons=${flat.length} phases=${draft.phases.length} attempt=${i + 1} model=${lastModel}`,
         );
         return { draft, model: lastModel };
       } catch (err) {
         this.logger.warn(
-          `LLM roadmap plan attempt ${i + 1} failed: ${err instanceof Error ? err.message : err}`,
+          `[roadmap-gen] LLM attempt ${i + 1} FAILED ms=${Date.now() - t0}: ${err instanceof Error ? err.message : err}`,
         );
       }
     }
+    this.logger.warn(`[roadmap-gen] LLM all attempts exhausted — will fallback`);
     return null;
   }
 

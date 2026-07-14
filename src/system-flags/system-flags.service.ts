@@ -2,18 +2,24 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { SystemFlag, type SystemFlagValueType } from './entities/system-flag.entity';
+import {
+  SystemFlag,
+  type SystemFlagValueType,
+} from './entities/system-flag.entity';
 import { UserFeatureFlag } from './entities/user-feature-flag.entity';
 import {
   DEFAULT_LLM_MODEL,
+  DEFAULT_LLM_PROVIDER,
   INTAKE_MODES,
   LLM_MODEL_OPTIONS,
+  LLM_PROVIDER_IDS,
   PUBLIC_SYSTEM_FLAG_KEYS,
   ROADMAP_ENGINE_MODES,
   SystemFlagKey,
   USER_OVERRIDABLE_FLAG_KEYS,
   type SystemFlagKeyName,
 } from './system-flag.keys';
+import { modelLabel } from '../common/llm/llm.providers';
 
 type FlagDef = {
   key: SystemFlagKeyName;
@@ -88,7 +94,8 @@ export class SystemFlagsService implements OnModuleInit {
         key: SystemFlagKey.INTAKE_DEFAULT_MODE,
         valueType: 'string',
         label: 'Default intake mode',
-        description: 'Default intake UI when chat is enabled: form or chat.',
+        description:
+          'Intake UI when chat is on: form or chat. Overrides any saved user preference.',
         defaultValue: this.envOr(
           'INTAKE_DEFAULT_MODE',
           'form',
@@ -132,6 +139,24 @@ export class SystemFlagsService implements OnModuleInit {
         description:
           'Allow Avatar Studio (customize chibi look) from profile and identity.',
         defaultValue: this.envBoolDefault('AVATAR_STUDIO_ENABLED', true),
+      },
+      {
+        key: SystemFlagKey.LLM_PROVIDER,
+        valueType: 'string',
+        label: 'LLM · Preferred provider',
+        description:
+          'Default catalog provider for seeds. Each selected model still routes to its own API (Groq / Cerebras / OpenRouter / …).',
+        defaultValue: this.envOr('LLM_PROVIDER', DEFAULT_LLM_PROVIDER, [
+          ...LLM_PROVIDER_IDS,
+        ]),
+      },
+      {
+        key: SystemFlagKey.LLM_INTAKE_MODEL,
+        valueType: 'string',
+        label: 'LLM · Intake chat',
+        description:
+          'Model for conversational intake / skill suggestions (purpose: intake).',
+        defaultValue: DEFAULT_LLM_MODEL,
       },
       {
         key: SystemFlagKey.LLM_ROADMAP_MODEL,
@@ -300,7 +325,8 @@ export class SystemFlagsService implements OnModuleInit {
 
   async listForUser(userId: string): Promise<UserFlagAdminRow[]> {
     await this.ensureSeeded();
-    const overridable = USER_OVERRIDABLE_FLAG_KEYS as readonly SystemFlagKeyName[];
+    const overridable =
+      USER_OVERRIDABLE_FLAG_KEYS as readonly SystemFlagKeyName[];
     const overrides = await this.userFlagsRepo.find({
       where: { userId, key: In([...overridable]) },
     });
@@ -333,9 +359,7 @@ export class SystemFlagsService implements OnModuleInit {
     userId: string,
     updates: Record<string, string>,
   ): Promise<void> {
-    const allowed = new Set(
-      USER_OVERRIDABLE_FLAG_KEYS as readonly string[],
-    );
+    const allowed = new Set(USER_OVERRIDABLE_FLAG_KEYS as readonly string[]);
     for (const [key, raw] of Object.entries(updates)) {
       if (!allowed.has(key)) continue;
       const flagKey = key as SystemFlagKeyName;
@@ -362,9 +386,7 @@ export class SystemFlagsService implements OnModuleInit {
         row.value = normalized;
       }
       await this.userFlagsRepo.save(row);
-      this.logger.log(
-        `User flag ${userId} ${flagKey}=${normalized}`,
-      );
+      this.logger.log(`User flag ${userId} ${flagKey}=${normalized}`);
     }
   }
 
@@ -376,7 +398,11 @@ export class SystemFlagsService implements OnModuleInit {
     if (key === SystemFlagKey.INTAKE_DEFAULT_MODE) {
       return [...INTAKE_MODES];
     }
+    if (key === SystemFlagKey.LLM_PROVIDER) {
+      return [...LLM_PROVIDER_IDS];
+    }
     if (
+      key === SystemFlagKey.LLM_INTAKE_MODEL ||
       key === SystemFlagKey.LLM_ROADMAP_MODEL ||
       key === SystemFlagKey.LLM_ARLO_MODEL ||
       key === SystemFlagKey.LLM_BATTLE_MODEL ||
@@ -385,6 +411,20 @@ export class SystemFlagsService implements OnModuleInit {
       return [...LLM_MODEL_OPTIONS];
     }
     return null;
+  }
+
+  /** Human label for admin selects (provider-aware). */
+  optionLabel(key: SystemFlagKeyName, value: string): string {
+    if (
+      key === SystemFlagKey.LLM_INTAKE_MODEL ||
+      key === SystemFlagKey.LLM_ROADMAP_MODEL ||
+      key === SystemFlagKey.LLM_ARLO_MODEL ||
+      key === SystemFlagKey.LLM_BATTLE_MODEL ||
+      key === SystemFlagKey.LLM_LESSON_BODY_MODEL
+    ) {
+      return modelLabel(value);
+    }
+    return value;
   }
 
   private normalizeValue(
@@ -399,9 +439,7 @@ export class SystemFlagsService implements OnModuleInit {
     const opts = this.optionsFor(key);
     const trimmed = value.trim();
     if (opts) {
-      const match = opts.find(
-        (o) => o.toLowerCase() === trimmed.toLowerCase(),
-      );
+      const match = opts.find((o) => o.toLowerCase() === trimmed.toLowerCase());
       if (!match) {
         throw new Error(`Invalid value for ${key}: ${value}`);
       }
@@ -410,11 +448,7 @@ export class SystemFlagsService implements OnModuleInit {
     return trimmed.toLowerCase();
   }
 
-  private envOr(
-    envKey: string,
-    fallback: string,
-    allowed: string[],
-  ): string {
+  private envOr(envKey: string, fallback: string, allowed: string[]): string {
     const raw = (this.config.get<string>(envKey) ?? fallback)
       .trim()
       .toLowerCase();
@@ -423,13 +457,11 @@ export class SystemFlagsService implements OnModuleInit {
 
   /** First matching env among keys that is in LLM_MODEL_OPTIONS, else fallback. */
   private envModelOr(envKeys: string[], fallback: string): string {
-    const allowed = LLM_MODEL_OPTIONS as unknown as string[];
+    const allowed = [...LLM_MODEL_OPTIONS];
     for (const envKey of envKeys) {
       const raw = this.config.get<string>(envKey)?.trim();
       if (!raw) continue;
-      const match = allowed.find(
-        (o) => o.toLowerCase() === raw.toLowerCase(),
-      );
+      const match = allowed.find((o) => o.toLowerCase() === raw.toLowerCase());
       if (match) return match;
     }
     return allowed.includes(fallback) ? fallback : DEFAULT_LLM_MODEL;

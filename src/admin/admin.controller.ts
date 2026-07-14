@@ -432,26 +432,19 @@ export class AdminController {
       return res.redirect(`/admin/users/${id}?ok=flags`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Save failed';
-      return res.redirect(
-        `/admin/users/${id}?err=${encodeURIComponent(msg)}`,
-      );
+      return res.redirect(`/admin/users/${id}?err=${encodeURIComponent(msg)}`);
     }
   }
 
   @Post('users/:id/reset-learning')
   @UseGuards(AdminSessionGuard)
-  async resetUserLearning(
-    @Param('id') id: string,
-    @Res() res: Response,
-  ) {
+  async resetUserLearning(@Param('id') id: string, @Res() res: Response) {
     try {
       await this.userReset.resetQuestionnaireAndRoadmap(id);
       return res.redirect(`/admin/users/${id}?ok=reset`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Reset failed';
-      return res.redirect(
-        `/admin/users/${id}?err=${encodeURIComponent(msg)}`,
-      );
+      return res.redirect(`/admin/users/${id}?err=${encodeURIComponent(msg)}`);
     }
   }
 
@@ -493,9 +486,7 @@ export class AdminController {
       return res.redirect(`/admin/users/${id}?ok=wallet`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Wallet update failed';
-      return res.redirect(
-        `/admin/users/${id}?err=${encodeURIComponent(msg)}`,
-      );
+      return res.redirect(`/admin/users/${id}?err=${encodeURIComponent(msg)}`);
     }
   }
 
@@ -520,9 +511,7 @@ export class AdminController {
       } else if (e instanceof Error) {
         msg = e.message;
       }
-      return res.redirect(
-        `/admin/users/${id}?err=${encodeURIComponent(msg)}`,
-      );
+      return res.redirect(`/admin/users/${id}?err=${encodeURIComponent(msg)}`);
     }
   }
 
@@ -610,10 +599,7 @@ export class AdminController {
 
   @Post('ranks')
   @UseGuards(AdminSessionGuard)
-  async rankCreate(
-    @Body() body: Record<string, string>,
-    @Res() res: Response,
-  ) {
+  async rankCreate(@Body() body: Record<string, string>, @Res() res: Response) {
     try {
       const level = num(body.level, 0);
       const row = await this.catalog.createRank({
@@ -727,9 +713,7 @@ export class AdminController {
       return res.redirect('/admin/ranks?ok=deleted');
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Delete failed';
-      return res.redirect(
-        `/admin/ranks/${id}?err=${encodeURIComponent(msg)}`,
-      );
+      return res.redirect(`/admin/ranks/${id}?err=${encodeURIComponent(msg)}`);
     }
   }
 
@@ -825,8 +809,7 @@ export class AdminController {
         description: String(body.description ?? ''),
         price: num(body.price),
         currency: (body.currency as RewardCurrency) || RewardCurrency.Coins,
-        itemType:
-          (body.itemType as StoreItemType) || StoreItemType.Consumable,
+        itemType: (body.itemType as StoreItemType) || StoreItemType.Consumable,
         rarity: String(body.rarity ?? 'common').trim(),
         purchaseLimit: optNum(body.purchaseLimit),
         isActive: checked(body.isActive ?? '1'),
@@ -925,9 +908,7 @@ export class AdminController {
       return res.redirect('/admin/store?ok=deleted');
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Delete failed';
-      return res.redirect(
-        `/admin/store/${id}?err=${encodeURIComponent(msg)}`,
-      );
+      return res.redirect(`/admin/store/${id}?err=${encodeURIComponent(msg)}`);
     }
   }
 
@@ -994,15 +975,13 @@ export class AdminController {
         code: String(body.code ?? '').trim(),
         name: String(body.name ?? '').trim(),
         description: String(body.description ?? ''),
-        category:
-          (body.category as BadgeCategory) || BadgeCategory.Learning,
+        category: (body.category as BadgeCategory) || BadgeCategory.Learning,
         rarity: (body.rarity as BadgeRarity) || BadgeRarity.Common,
         status:
           (body.status as BadgeDefinitionStatus) ||
           BadgeDefinitionStatus.Active,
         criteriaType:
-          (body.criteriaType as BadgeCriteriaType) ||
-          BadgeCriteriaType.Counter,
+          (body.criteriaType as BadgeCriteriaType) || BadgeCriteriaType.Counter,
         criteriaJson,
         rewardJson,
         sortOrder: num(body.sortOrder),
@@ -1268,16 +1247,11 @@ export class AdminController {
           startsAtInput: row.startsAt
             ? row.startsAt.toISOString().slice(0, 16)
             : '',
-          endsAtInput: row.endsAt
-            ? row.endsAt.toISOString().slice(0, 16)
-            : '',
+          endsAtInput: row.endsAt ? row.endsAt.toISOString().slice(0, 16) : '',
         },
         cadences: selectOpts(Object.values(QuestCadence), row.cadence),
         categories: selectOpts(Object.values(QuestCategory), row.category),
-        statuses: selectOpts(
-          Object.values(QuestDefinitionStatus),
-          row.status,
-        ),
+        statuses: selectOpts(Object.values(QuestDefinitionStatus), row.status),
         conditionTypes: selectOpts(
           Object.values(QuestConditionType),
           row.conditionType,
@@ -1654,10 +1628,7 @@ export class AdminController {
 
   @Post('roles')
   @UseGuards(AdminSessionGuard)
-  async roleCreate(
-    @Body() body: Record<string, string>,
-    @Res() res: Response,
-  ) {
+  async roleCreate(@Body() body: Record<string, string>, @Res() res: Response) {
     try {
       await this.rolesAdmin.createRole({
         title: String(body.title ?? ''),
@@ -1839,10 +1810,7 @@ export class AdminController {
 
   @Post('questionnaire/roles/:id/delete')
   @UseGuards(AdminSessionGuard)
-  async questionnaireRoleDelete(
-    @Param('id') id: string,
-    @Res() res: Response,
-  ) {
+  async questionnaireRoleDelete(@Param('id') id: string, @Res() res: Response) {
     try {
       await this.rolesAdmin.deleteGoalOption(id);
       return res.redirect('/admin/questionnaire/roles?ok=deleted');
@@ -1902,10 +1870,7 @@ export class AdminController {
 
   @Post('questionnaire/:id/activate')
   @UseGuards(AdminSessionGuard)
-  async questionnaireActivate(
-    @Param('id') id: string,
-    @Res() res: Response,
-  ) {
+  async questionnaireActivate(@Param('id') id: string, @Res() res: Response) {
     try {
       await this.questionnaireAdmin.activate(id);
       return res.redirect(`/admin/questionnaire/${id}?ok=activated`);
@@ -1960,7 +1925,9 @@ export class AdminController {
     try {
       const step = await this.questionnaireAdmin.getStep(stepId);
       if (step.definitionId !== defId) {
-        return res.redirect(`/admin/questionnaire/${step.definitionId}/steps/${stepId}`);
+        return res.redirect(
+          `/admin/questionnaire/${step.definitionId}/steps/${stepId}`,
+        );
       }
       const options = (step.options ?? []).map((o) => ({
         id: o.id,
@@ -2204,7 +2171,10 @@ export class AdminController {
         options: options
           ? options.map((value) => ({
               value,
-              label: value,
+              label: this.systemFlags.optionLabel(
+                row.key as (typeof SystemFlagKey)[keyof typeof SystemFlagKey],
+                value,
+              ),
               selected: value === row.value,
             }))
           : [],
@@ -2234,7 +2204,9 @@ export class AdminController {
         const raw = body[key];
         if (raw === undefined) continue;
         if (Array.isArray(raw)) {
-          updates[key] = raw.includes('true') ? 'true' : String(raw.at(-1) ?? 'false');
+          updates[key] = raw.includes('true')
+            ? 'true'
+            : String(raw.at(-1) ?? 'false');
         } else {
           updates[key] = String(raw);
         }
@@ -2251,10 +2223,7 @@ export class AdminController {
 
   @Get('roadmap-engine')
   @UseGuards(AdminSessionGuard)
-  async roadmapEnginePage(
-    @Req() req: AdminRequest,
-    @Res() res: Response,
-  ) {
+  async roadmapEnginePage(@Req() req: AdminRequest, @Res() res: Response) {
     const [health, goals, config] = await Promise.all([
       this.roadmapEngineAdmin.checkHealth(),
       this.roadmapEngineAdmin.listRecentGoals(),
@@ -2284,7 +2253,7 @@ export class AdminController {
     @Req() req: AdminRequest,
     @Res() res: Response,
   ) {
-    const goalId = (body.goalIdManual?.trim() || body.goalId?.trim() || '');
+    const goalId = body.goalIdManual?.trim() || body.goalId?.trim() || '';
     const [health, goals, config] = await Promise.all([
       this.roadmapEngineAdmin.checkHealth(),
       this.roadmapEngineAdmin.listRecentGoals(),
@@ -2310,9 +2279,10 @@ export class AdminController {
     }
 
     const result = await this.roadmapEngineAdmin.dryRunPlan(goalId);
-    const phaseTitles = (result.summary?.phaseTitles as
-      | Array<{ title: string; weekType: string; milestones: number }>
-      | undefined) ?? [];
+    const phaseTitles =
+      (result.summary?.phaseTitles as
+        | Array<{ title: string; weekType: string; milestones: number }>
+        | undefined) ?? [];
     return res.render('roadmap-engine', {
       title: 'Roadmap Engine',
       email: req.session.adminEmail ?? '',
@@ -2359,9 +2329,7 @@ export class AdminController {
     const flashMap: Record<string, string> = {
       created: 'Stack created.',
       deleted: 'Stack deleted.',
-      imported: msg
-        ? (flashQuery(msg) ?? msg)
-        : 'Catalog JSON imported.',
+      imported: msg ? (flashQuery(msg) ?? msg) : 'Catalog JSON imported.',
     };
     return {
       title: 'Skill graph',
@@ -2386,7 +2354,8 @@ export class AdminController {
   )
   async skillGraphImport(
     @UploadedFile()
-    file: { buffer: Buffer; originalname?: string; mimetype?: string } | undefined,
+    file:
+      { buffer: Buffer; originalname?: string; mimetype?: string } | undefined,
     @Body() body: Record<string, string>,
     @Res() res: Response,
   ) {
@@ -2442,7 +2411,9 @@ export class AdminController {
       return res.redirect(`/admin/skill-graph/stacks/${row.id}?ok=created`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Create failed';
-      return res.redirect(`/admin/skill-graph?tab=create&err=${encodeURIComponent(msg)}`);
+      return res.redirect(
+        `/admin/skill-graph?tab=create&err=${encodeURIComponent(msg)}`,
+      );
     }
   }
 

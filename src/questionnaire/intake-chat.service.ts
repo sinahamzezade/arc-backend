@@ -391,7 +391,7 @@ export class IntakeChatService {
 
     if (!clientConfigured) {
       const fallback =
-        'LLM is not configured. Switch to form intake, or set LLM_API_KEY / LLM_BASE_URL.';
+        'LLM is not configured. Switch to form intake, or set CEREBRAS_API_KEY / provider API key.';
       transcript.push({ role: 'assistant', content: fallback });
       row.chatTranscript = transcript;
       row.answers = priorAnswers;

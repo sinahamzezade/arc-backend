@@ -87,6 +87,10 @@ export class RoadmapJobsProcessor {
     job.attempts += 1;
     await this.jobsRepo.save(job);
 
+    this.logger.log(
+      `[roadmap-gen] processing job=${jobId} goal=${job.goalId} user=${job.userId} attempt=${job.attempts}`,
+    );
+
     try {
       const roadmap = await this.generator.assemble(job.goalId, job.userId);
       job.status = RoadmapJobStatus.Ready;
@@ -95,12 +99,18 @@ export class RoadmapJobsProcessor {
       job.errorMessage = null;
       job.finishedAt = new Date();
       await this.jobsRepo.save(job);
+      const meta = (roadmap.generationMeta ?? {}) as Record<string, unknown>;
+      this.logger.log(
+        `[roadmap-gen] ready job=${jobId} roadmap=${roadmap.id} mode=${String(meta.mode ?? '?')} model=${String(meta.aiModel ?? 'none')} fallback=${String(meta.aiUsedFallback ?? false)}`,
+      );
     } catch (err) {
       const code =
         err instanceof AppException ? err.code : 'ROADMAP_GENERATION_FAILED';
       const message =
         err instanceof Error ? err.message : 'Roadmap generation failed';
-      this.logger.error(`Job ${jobId} failed: ${message}`);
+      this.logger.error(
+        `[roadmap-gen] failed job=${jobId} code=${code}: ${message}`,
+      );
       job.status = RoadmapJobStatus.Failed;
       job.errorCode = code;
       job.errorMessage = message;
@@ -110,7 +120,6 @@ export class RoadmapJobsProcessor {
     }
   }
 }
-
 @Processor(ROADMAP_GENERATION_QUEUE, { concurrency: 2 })
 export class RoadmapGenerationBullProcessor extends WorkerHost {
   private readonly logger = new Logger(RoadmapGenerationBullProcessor.name);
