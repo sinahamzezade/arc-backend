@@ -97,6 +97,24 @@ export class LessonAttempt {
   @Column({ name: 'reward_eligible', type: 'boolean', default: true })
   rewardEligible: boolean;
 
+  /**
+   * Per-concept mastery for this attempt (§16.3).
+   * { "<conceptTag>": { "state": "shaky"|"mastered"|"attempting"|"unseen"|"recovered", "misses": n, "recoveries": n } }
+   */
+  @Column({
+    name: 'concept_mastery',
+    type: 'jsonb',
+    default: () => "'{}'",
+  })
+  conceptMastery: Record<
+    string,
+    {
+      state: 'unseen' | 'attempting' | 'shaky' | 'mastered' | 'recovered';
+      misses: number;
+      recoveries: number;
+    }
+  >;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
