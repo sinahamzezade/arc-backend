@@ -36,7 +36,6 @@ services:
       LLM_BASE_URL: "${LLM_BASE_URL:-https://api.groq.com/openai/v1}"
       LLM_INTAKE_MODEL: "${LLM_INTAKE_MODEL:-llama-3.3-70b-versatile}"
       LLM_INTAKE_FALLBACK_MODELS: "${LLM_INTAKE_FALLBACK_MODELS:-}"
-      LLM_ROADMAP_MODEL: "${LLM_ROADMAP_MODEL:-llama-3.3-70b-versatile}"
       LLM_HTTP_REFERER: "${LLM_HTTP_REFERER:-http://localhost:3000}"
       LLM_APP_TITLE: "${LLM_APP_TITLE:-Arc}"
       INTAKE_DEFAULT_MODE: "${INTAKE_DEFAULT_MODE:-form}"

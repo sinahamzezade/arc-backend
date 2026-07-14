@@ -9,6 +9,7 @@ import { QuestionnaireResponse } from '../questionnaire/entities/questionnaire-r
 import { CourseTemplate } from '../content-pool/entities/course-template.entity';
 import { ModuleTemplate } from '../content-pool/entities/module-template.entity';
 import { SkillGraphModule } from '../skill-graph/skill-graph.module';
+import { SystemFlagsModule } from '../system-flags/system-flags.module';
 import { Lesson } from './entities/lesson.entity';
 import { LessonProgress } from './entities/lesson-progress.entity';
 import { Milestone } from './entities/milestone.entity';
@@ -78,6 +79,7 @@ const bullProviders = redisUrl
     SkillGraphModule,
     ContentPoolModule,
     CourseTimingModule,
+    SystemFlagsModule,
     ...bullImports,
   ],
   controllers: [RoadmapsController],

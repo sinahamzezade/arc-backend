@@ -87,11 +87,11 @@ describe('Auth (e2e)', () => {
       .patch('/api/v1/me/profile')
       .set('Authorization', `Bearer ${accessToken}`)
       .send({
-        displayName: 'Soheil',
+        displayName: 'Alex',
       })
       .expect(200);
 
-    expect(res.body.profile.displayName).toBe('Soheil');
+    expect(res.body.profile.displayName).toBe('Alex');
   });
 
   it('POST /auth/login fails safely', async () => {

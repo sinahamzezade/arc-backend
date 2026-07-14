@@ -81,6 +81,7 @@ async function bootstrap() {
       { path: 'admin/questionnaire/(.*)', method: RequestMethod.ALL },
       { path: 'admin/roadmap-engine', method: RequestMethod.ALL },
       { path: 'admin/roadmap-engine/(.*)', method: RequestMethod.ALL },
+      { path: 'admin/feature-flags', method: RequestMethod.ALL },
       { path: 'admin/api/(.*)', method: RequestMethod.ALL },
       { path: 'admin-assets/(.*)', method: RequestMethod.ALL },
       { path: 'uploads/(.*)', method: RequestMethod.ALL },

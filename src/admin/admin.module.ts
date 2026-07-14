@@ -28,6 +28,7 @@ import { UsersModule } from '../users/users.module';
 import { AdminAnalyticsService } from './admin-analytics.service';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminBadgeIconService } from './admin-badge-icon.service';
+import { AdminRankIconService } from './admin-rank-icon.service';
 import { AdminCatalogService } from './admin-catalog.service';
 import { AdminQuestionnaireService } from './admin-questionnaire.service';
 import { AdminRolesService } from './admin-roles.service';
@@ -38,6 +39,7 @@ import { AdminController } from './admin.controller';
 import { AdminSeedService } from './admin-seed.service';
 import { AdminSessionGuard } from './guards/admin-session.guard';
 import { SkillGraphModule } from '../skill-graph/skill-graph.module';
+import { SystemFlagsModule } from '../system-flags/system-flags.module';
 
 @Module({
   imports: [
@@ -47,6 +49,7 @@ import { SkillGraphModule } from '../skill-graph/skill-graph.module';
     ContentPoolModule,
     QuestionnaireModule,
     SkillGraphModule,
+    SystemFlagsModule,
     TypeOrmModule.forFeature([
       Profile,
       User,
@@ -79,6 +82,7 @@ import { SkillGraphModule } from '../skill-graph/skill-graph.module';
     AdminCatalogService,
     AdminRoadmapEngineService,
     AdminBadgeIconService,
+    AdminRankIconService,
     AdminRolesService,
     AdminQuestionnaireService,
     AdminSkillGraphService,

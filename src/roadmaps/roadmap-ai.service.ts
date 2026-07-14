@@ -45,7 +45,7 @@ export class RoadmapAiService {
     return this.llm.isConfigured();
   }
 
-  getModel(): string {
+  async getModel(): Promise<string> {
     return this.llm.getModel('enrich');
   }
 
@@ -68,7 +68,7 @@ export class RoadmapAiService {
     }
 
     const allow = this.buildAllowLists(input.phases, input.allowedResourceIds);
-    const model = this.getModel();
+    const model = await this.getModel();
     const promptVersion = this.getPromptVersion();
 
     try {
@@ -115,7 +115,7 @@ export class RoadmapAiService {
       return { enrich: null, reason: 'LLM_API_KEY unset' };
     }
 
-    const model = this.getModel();
+    const model = await this.getModel();
     const phaseKeys = input.plan.phases.map((p) => p.key);
     const phaseList = input.plan.phases
       .map((p) => `- ${p.key}: ${p.title}`)

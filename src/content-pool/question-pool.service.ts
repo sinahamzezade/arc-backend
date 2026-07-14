@@ -1,8 +1,10 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
+import { BattleCatalogService } from './battle-catalog.service';
+import { BattleQuestionLlmService } from './battle-question-llm.service';
 import {
   BATTLE_POOL_MIN_MULTIPLIER,
   ContentPublicationStatus,
@@ -18,6 +20,8 @@ export type BattleQuestionSelectInput = {
   skillNodeId?: string;
   difficultyMix?: string[];
   count: number;
+  /** Hint for LLM stem length / pacing (defaults 30). */
+  secondsPerQuestion?: number;
   userExposureHistory?: string[];
   opponentExposureHistory?: string[];
   mode: 'live' | 'async';
@@ -49,15 +53,78 @@ export type BattleQuestionSet = {
 
 @Injectable()
 export class QuestionPoolService {
+  private readonly logger = new Logger(QuestionPoolService.name);
+
   constructor(
     @InjectRepository(QuestionTemplate)
     private readonly questionsRepo: Repository<QuestionTemplate>,
     @InjectRepository(QuestionVersion)
     private readonly versionsRepo: Repository<QuestionVersion>,
     private readonly analytics: ContentAnalyticsService,
+    private readonly battleLlm: BattleQuestionLlmService,
+    private readonly battleCatalog: BattleCatalogService,
   ) {}
 
+  /**
+   * Prefer LLM (catalog-grounded) when configured; fall back to seeded pool.
+   */
   async selectBattleSet(
+    input: BattleQuestionSelectInput,
+  ): Promise<BattleQuestionSet> {
+    const resolved = await this.resolveCatalogIds(input);
+    const withCatalog = { ...input, ...resolved };
+
+    if (this.battleLlm.isConfigured()) {
+      const llmSet = await this.battleLlm.generateBattleSet(withCatalog);
+      if (llmSet?.questions.length) {
+        this.analytics.emit('battle_question_set_created', {
+          mode: input.mode,
+          count: llmSet.questions.length,
+          subject: input.subject ?? null,
+          source: 'llm',
+        });
+        return llmSet;
+      }
+      this.logger.warn('Battle LLM empty — falling back to seeded pool');
+    }
+
+    return this.selectFromSeededPool(withCatalog);
+  }
+
+  /** Create-invite preflight: LLM configured OR seeded pool large enough. */
+  async canFulfillBattleSet(input: BattleQuestionSelectInput): Promise<boolean> {
+    if (this.battleLlm.isConfigured()) {
+      const stackSlug = await this.battleCatalog.resolveSubjectSlug(
+        input.subject ?? '',
+      );
+      if (stackSlug) return true;
+    }
+    try {
+      await this.selectFromSeededPool(input);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async resolveCatalogIds(
+    input: BattleQuestionSelectInput,
+  ): Promise<Pick<BattleQuestionSelectInput, 'subject' | 'skillNodeId'>> {
+    const stackSlug =
+      (await this.battleCatalog.resolveSubjectSlug(input.subject ?? '')) ??
+      input.subject?.trim().toLowerCase().replace(/\s+/g, '-');
+    if (!stackSlug) return {};
+    const skill =
+      input.skillNodeId
+        ? null
+        : await this.battleCatalog.resolveSkill(stackSlug, input.topic);
+    return {
+      subject: stackSlug,
+      ...(skill ? { skillNodeId: skill.id } : {}),
+    };
+  }
+
+  private async selectFromSeededPool(
     input: BattleQuestionSelectInput,
   ): Promise<BattleQuestionSet> {
     const templates = await this.loadEligibleTemplates(input);
@@ -121,6 +188,7 @@ export class QuestionPoolService {
       mode: input.mode,
       count: snapshots.length,
       subject: input.subject ?? null,
+      source: 'pool',
     });
 
     return {

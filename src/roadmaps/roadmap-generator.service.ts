@@ -15,6 +15,12 @@ import { RoadmapLlmPlannerService } from './roadmap-llm-planner.service';
 import { RoadmapPersistenceService } from './roadmap-persistence.service';
 import { RoadmapSnapshotService } from './roadmap-snapshot.service';
 import { RoadmapAiService } from './roadmap-ai.service';
+import { SystemFlagsService } from '../system-flags/system-flags.service';
+import {
+  ROADMAP_ENGINE_MODES,
+  SystemFlagKey,
+  type RoadmapEngineMode,
+} from '../system-flags/system-flag.keys';
 
 /**
  * Orchestrates roadmap generation.
@@ -24,7 +30,6 @@ import { RoadmapAiService } from './roadmap-ai.service';
 @Injectable()
 export class RoadmapGeneratorService {
   private readonly logger = new Logger(RoadmapGeneratorService.name);
-  private readonly mode: 'llm' | 'python' | 'legacy';
 
   constructor(
     private readonly config: ConfigService,
@@ -39,25 +44,33 @@ export class RoadmapGeneratorService {
     private readonly legacy: RoadmapLegacyAssembler,
     private readonly roadmapAi: RoadmapAiService,
     private readonly llmPlanner: RoadmapLlmPlannerService,
-  ) {
-    const configured = (config.get<string>('ROADMAP_ENGINE_MODE') ?? 'llm')
+    private readonly systemFlags: SystemFlagsService,
+  ) {}
+
+  private async resolveMode(userId?: string | null): Promise<RoadmapEngineMode> {
+    const configured = (
+      await this.systemFlags.getString(
+        SystemFlagKey.ROADMAP_ENGINE_MODE,
+        this.config.get<string>('ROADMAP_ENGINE_MODE') ?? 'llm',
+        userId,
+      )
+    )
       .trim()
       .toLowerCase();
-    if (configured === 'legacy') this.mode = 'legacy';
-    else if (configured === 'python') this.mode = 'python';
-    else this.mode = 'llm';
-    this.logger.log(
-      `Roadmap generator mode=${this.mode} (ROADMAP_ENGINE_MODE=${configured})`,
-    );
+    if ((ROADMAP_ENGINE_MODES as readonly string[]).includes(configured)) {
+      return configured as RoadmapEngineMode;
+    }
+    return 'llm';
   }
 
   async assemble(goalId: string, userId: string): Promise<Roadmap> {
-    this.logger.log(`assemble goal=${goalId} mode=${this.mode}`);
-    if (this.mode === 'legacy') {
+    const mode = await this.resolveMode(userId);
+    this.logger.log(`assemble goal=${goalId} mode=${mode}`);
+    if (mode === 'legacy') {
       this.logger.log(`Assembling via legacy Nest planner goal=${goalId}`);
       return this.legacy.assemble(goalId, userId);
     }
-    if (this.mode === 'python') {
+    if (mode === 'python') {
       return this.assembleViaEngine(goalId, userId);
     }
     return this.assembleViaLlm(goalId, userId);

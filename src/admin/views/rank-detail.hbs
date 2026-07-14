@@ -15,11 +15,72 @@
         {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
         <div class="page-head">
           <h1>{{row.title}}</h1>
-          <p class="sub">Level {{row.level}} · {{row.slug}}</p>
+          <p class="sub">Level {{row.level}} · {{row.slug}} · v{{row.version}}</p>
         </div>
+
+        <h2 class="section-title">Rank image</h2>
+        <div class="panel" style="margin-bottom: 18px">
+          <div class="form-grid" style="align-items: start">
+            <div>
+              <label>Preview</label>
+              {{#if iconPreviewUrl}}
+                <img
+                  src="{{iconPreviewUrl}}"
+                  alt="{{row.title}}"
+                  width="96"
+                  height="96"
+                  style="display:block;width:96px;height:96px;object-fit:cover;border-radius:1rem;border:1px solid #d5ddd7;background:#eef3ef"
+                />
+              {{else}}
+                <div
+                  style="width:96px;height:96px;border-radius:1rem;border:1px dashed #d5ddd7;background:#eef3ef;display:flex;align-items:center;justify-content:center;color:#5b7c6e;font-size:0.75rem;text-align:center;padding:8px"
+                >
+                  {{#if row.iconAssetKey}}Key: {{row.iconAssetKey}}{{else}}No image{{/if}}
+                </div>
+              {{/if}}
+            </div>
+            <div style="grid-column: span 2">
+              <form
+                method="post"
+                action="/admin/ranks/{{row.id}}/icon"
+                enctype="multipart/form-data"
+              >
+                <label for="icon">Upload image</label>
+                <input
+                  id="icon"
+                  name="icon"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+                  required
+                />
+                <p class="muted" style="margin:0 0 12px;font-size:0.8rem">
+                  PNG, JPEG, WebP, GIF, or SVG · max 2MB. Replaces current upload.
+                </p>
+                <div class="form-actions" style="padding-left:0">
+                  <button type="submit">Upload image</button>
+                </div>
+              </form>
+              {{#if hasUpload}}
+                <form method="post" action="/admin/ranks/{{row.id}}/icon/clear" style="margin-top:8px">
+                  <button type="submit" class="secondary">Remove uploaded image</button>
+                </form>
+              {{/if}}
+            </div>
+          </div>
+        </div>
+
+        <h2 class="section-title">Details</h2>
         <div class="panel">
           <form method="post" action="/admin/ranks/{{row.id}}">
             <div class="form-grid">
+              <div>
+                <label for="level">Level</label>
+                <input id="level" name="level" type="number" min="1" value="{{row.level}}" required />
+              </div>
+              <div>
+                <label for="slug">Slug</label>
+                <input id="slug" name="slug" type="text" value="{{row.slug}}" required />
+              </div>
               <div>
                 <label for="title">Title</label>
                 <input id="title" name="title" type="text" value="{{row.title}}" required />
@@ -38,7 +99,10 @@
               </div>
               <div>
                 <label for="iconAssetKey">Icon asset key</label>
-                <input id="iconAssetKey" name="iconAssetKey" type="text" value="{{row.iconAssetKey}}" />
+                <input id="iconAssetKey" name="iconAssetKey" type="text" value="{{row.iconAssetKey}}" placeholder="bundled key or /uploads/ranks/…" />
+                <p class="muted" style="margin:6px 0 0;font-size:0.75rem">
+                  Leave as upload path after image upload, or set a bundled key like <code>rank-curious-egg</code>.
+                </p>
               </div>
               <div class="check-row">
                 <input id="isActive" name="isActive" type="checkbox" value="1" {{#if row.isActive}}checked{{/if}} />
@@ -48,6 +112,20 @@
             <div class="form-actions">
               <button type="submit">Save rank</button>
             </div>
+          </form>
+        </div>
+
+        <h2 class="section-title">Danger</h2>
+        <div class="panel">
+          <p class="muted" style="margin-top:0">
+            Deletes this definition. Users still carrying this level/slug keep denormalized state until next evaluation.
+          </p>
+          <form
+            method="post"
+            action="/admin/ranks/{{row.id}}/delete"
+            onsubmit="return confirm('Delete rank {{row.title}} (level {{row.level}})?');"
+          >
+            <button type="submit" class="btn-danger">Delete rank</button>
           </form>
         </div>
       </main>

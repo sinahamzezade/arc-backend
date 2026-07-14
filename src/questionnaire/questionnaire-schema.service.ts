@@ -314,7 +314,7 @@ export class QuestionnaireSchemaService implements OnModuleInit {
       this.logger.log('Questionnaire AI copy already persisted — skip');
       return;
     }
-    if (!this.questionnaireAi.isEnabled()) {
+    if (!(await this.questionnaireAi.isEnabled())) {
       this.logger.warn('Questionnaire AI disabled — keeping seed copy');
       return;
     }

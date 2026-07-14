@@ -461,11 +461,13 @@ export class ReferralsService {
   async handlePublicRedirect(token: string, meta?: { ip?: string; ua?: string }) {
     const link = await this.linksRepo.findOne({
       where: { publicToken: token, status: ReferralLinkStatus.Active },
+      relations: { referralCode: true },
     });
     if (!link) {
       return {
         redirectTo: `${this.appBase()}/register`,
         cookieToken: null as string | null,
+        referralCode: null as string | null,
       };
     }
 
@@ -487,10 +489,16 @@ export class ReferralsService {
       await this.linksRepo.save(link);
     }
 
+    const referralCode = link.referralCode?.code ?? null;
+    const registerPath = referralCode
+      ? `/register?ref=${encodeURIComponent(referralCode)}`
+      : '/register';
+
     return {
-      redirectTo: `${this.appBase()}/register`,
+      redirectTo: `${this.appBase()}${registerPath}`,
       cookieToken: bot ? null : link.publicToken,
       cookieMaxAgeSec: REFERRAL_COOKIE_TTL_DAYS * 24 * 60 * 60,
+      referralCode,
     };
   }
 

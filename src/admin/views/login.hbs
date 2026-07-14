@@ -5,35 +5,203 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{title}} · Arc Admin</title>
     {{> layout}}
+    <style>
+      /* Beat shared layout element selectors so Tailwind owns this page */
+      .login-page input[type='email'],
+      .login-page input[type='password'] {
+        width: 100%;
+        margin: 0;
+        padding: 0.875rem 1rem 0.875rem 2.75rem;
+        border: 1px solid #c9d6ce;
+        border-radius: 9999px;
+        font: inherit;
+        font-size: 0.95rem;
+        line-height: 1.35;
+        background: #eef3ef;
+        color: #1a2e28;
+        box-sizing: border-box;
+        transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+      }
+      .login-page input[type='email']:focus,
+      .login-page input[type='password']:focus {
+        outline: none;
+        background: #fffefa;
+        border-color: #5b7c6e;
+        box-shadow: 0 0 0 3px rgba(91, 124, 110, 0.22);
+      }
+      .login-page button[type='submit'] {
+        width: auto;
+        min-width: 10.5rem;
+        border-radius: 9999px;
+        padding: 0.8rem 1.5rem;
+      }
+      @keyframes login-rise {
+        from { opacity: 0; transform: translateY(18px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes login-drift {
+        from { opacity: 0; transform: translateX(-24px) scale(0.98); }
+        to { opacity: 1; transform: translateX(0) scale(1); }
+      }
+      .login-rise { animation: login-rise 0.55s ease-out both; }
+      .login-drift { animation: login-drift 0.7s ease-out both; }
+      .login-rise-delay-1 { animation-delay: 0.08s; }
+      .login-rise-delay-2 { animation-delay: 0.16s; }
+      .login-rise-delay-3 { animation-delay: 0.24s; }
+    </style>
   </head>
-  <body>
-    <div class="wrap">
-      <div class="card">
-        <h1>Arc Admin</h1>
-        <p class="sub">Sign in with an admin account</p>
-        {{#if error}}
-          <p class="error" role="alert">{{error}}</p>
-        {{/if}}
-        <form method="post" action="/admin/login" autocomplete="on">
-          <label for="email">Email</label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            required
-            autocomplete="username"
-            value="{{email}}"
-          />
-          <label for="password">Password</label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            required
-            autocomplete="current-password"
-          />
-          <button type="submit">Sign in</button>
-        </form>
+  <body class="login-page bg-mist text-moss font-sans antialiased">
+    <div class="relative min-h-screen overflow-hidden">
+      {{!-- Atmosphere --}}
+      <div
+        class="pointer-events-none absolute -left-32 -top-40 h-[28rem] w-[28rem] rounded-full bg-leaf/80 blur-3xl"
+        aria-hidden="true"
+      ></div>
+      <div
+        class="pointer-events-none absolute -bottom-24 -right-20 h-80 w-80 rounded-full bg-clay/20 blur-3xl"
+        aria-hidden="true"
+      ></div>
+      <div
+        class="pointer-events-none absolute inset-0 opacity-[0.035]"
+        style="background-image: url('data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22n%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.9%22 numOctaves=%224%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23n)%22/%3E%3C/svg%3E');"
+        aria-hidden="true"
+      ></div>
+
+      <div class="relative grid min-h-screen grid-cols-12 gap-6 px-6 py-10 md:px-10 lg:px-14 lg:py-0">
+        {{!-- Brand plane — left, oversized, asymmetric --}}
+        <aside
+          class="login-drift col-span-12 flex flex-col justify-between pt-4 md:col-span-6 lg:col-span-7 lg:py-16"
+        >
+          <div>
+            <p class="mb-4 flex items-center gap-2 text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-sage">
+              <i class="fa-solid fa-shield-halved text-sm" aria-hidden="true"></i>
+              Operations console
+            </p>
+            <h1
+              class="font-display text-[clamp(3.25rem,9vw,6.5rem)] font-semibold leading-[0.9] tracking-tight text-moss"
+            >
+              Arc
+              <span class="block text-sage">Admin</span>
+            </h1>
+            <p class="mt-6 max-w-sm text-base leading-relaxed text-sage md:text-lg">
+              Sign in with an admin account to manage courses, users, and product config.
+            </p>
+          </div>
+          <p class="mt-10 hidden text-xs text-sage/70 lg:block">
+            Restricted access · session-secured
+          </p>
+        </aside>
+
+        {{!-- Form dock — lower-right, not centered --}}
+        <section
+          class="col-span-12 flex items-end pb-4 md:col-span-6 md:items-center lg:col-span-5 lg:col-start-8 lg:items-end lg:pb-20"
+        >
+          <div
+            class="login-rise login-rise-delay-1 w-full max-w-md translate-y-0 md:ml-auto lg:translate-x-4"
+          >
+            <div
+              class="relative overflow-hidden rounded-[2rem] border border-[#d5ddd7] bg-foam p-7 shadow-soft md:p-8"
+            >
+              <div
+                class="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-leaf/60 blur-2xl"
+                aria-hidden="true"
+              ></div>
+
+              <div class="relative">
+                <div class="mb-6 flex items-start justify-between gap-4">
+                  <div>
+                    <h2 class="font-display text-2xl font-semibold tracking-tight text-moss">
+                      Sign in
+                    </h2>
+                    <p class="mt-1 text-sm text-sage">Admin credentials required</p>
+                  </div>
+                  <span
+                    class="mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-leaf text-moss"
+                    aria-hidden="true"
+                  >
+                    <i class="fa-solid fa-lock text-sm"></i>
+                  </span>
+                </div>
+
+                {{#if error}}
+                  <p
+                    class="login-rise mb-5 flex items-start gap-2 rounded-2xl border border-coral/30 bg-[#fde8e6] px-3.5 py-3 text-sm text-coral"
+                    role="alert"
+                  >
+                    <i class="fa-solid fa-circle-exclamation mt-0.5" aria-hidden="true"></i>
+                    <span>{{error}}</span>
+                  </p>
+                {{/if}}
+
+                <form method="post" action="/admin/login" autocomplete="on" class="space-y-5">
+                  <div class="login-rise login-rise-delay-2">
+                    <label
+                      for="email"
+                      class="mb-2 block text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-sage"
+                    >
+                      Email
+                    </label>
+                    <div class="relative">
+                      <i
+                        class="fa-solid fa-envelope pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-sage"
+                        aria-hidden="true"
+                      ></i>
+                      <input
+                        id="email"
+                        name="email"
+                        type="email"
+                        required
+                        autocomplete="username"
+                        value="{{email}}"
+                        placeholder="you@arc.internal"
+                      />
+                    </div>
+                  </div>
+
+                  <div class="login-rise login-rise-delay-3">
+                    <label
+                      for="password"
+                      class="mb-2 block text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-sage"
+                    >
+                      Password
+                    </label>
+                    <div class="relative">
+                      <i
+                        class="fa-solid fa-key pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-sage"
+                        aria-hidden="true"
+                      ></i>
+                      <input
+                        id="password"
+                        name="password"
+                        type="password"
+                        required
+                        autocomplete="current-password"
+                        placeholder="••••••••"
+                      />
+                    </div>
+                  </div>
+
+                  <div class="flex items-center justify-between gap-4 pt-1">
+                    <p class="text-xs text-sage/80">
+                      <i class="fa-solid fa-user-shield mr-1" aria-hidden="true"></i>
+                      Elevated role only
+                    </p>
+                    <button
+                      type="submit"
+                      class="btn btn-primary group inline-flex items-center gap-2"
+                    >
+                      Sign in
+                      <i
+                        class="fa-solid fa-arrow-right text-xs transition-transform group-hover:translate-x-0.5"
+                        aria-hidden="true"
+                      ></i>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   </body>

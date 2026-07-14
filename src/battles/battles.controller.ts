@@ -42,6 +42,14 @@ export class BattlesController {
     return this.battles.create(user.userId, dto);
   }
 
+  @Get('catalog')
+  @ApiOperation({
+    summary: 'Battle subject/topic chips from skill-graph catalog',
+  })
+  catalog() {
+    return this.battles.listCatalog();
+  }
+
   @Get('invites')
   @ApiOperation({
     summary: 'Open battles: invites + live/ready/funding matches',

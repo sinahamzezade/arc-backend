@@ -19,8 +19,11 @@ import { memoryStorage } from 'multer';
 import type { Response } from 'express';
 import {
   BadgeCategory,
+  BadgeCriteriaType,
   BadgeDefinitionStatus,
   BadgeRarity,
+  type BadgeCriteriaJson,
+  type BadgeRewardJson,
 } from '../badges/badge.constants';
 import { ContentPublicationStatus } from '../content-pool/content-pool.constants';
 import { RewardCurrency } from '../gamification/entities/reward-ledger-entry.entity';
@@ -31,6 +34,7 @@ import { UsersService } from '../users/users.service';
 import { AdminAnalyticsService } from './admin-analytics.service';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminBadgeIconService } from './admin-badge-icon.service';
+import { AdminRankIconService } from './admin-rank-icon.service';
 import { AdminCatalogService } from './admin-catalog.service';
 import { AdminQuestionnaireService } from './admin-questionnaire.service';
 import { AdminRolesService } from './admin-roles.service';
@@ -40,6 +44,11 @@ import { AdminUserResetService } from './admin-user-reset.service';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { AdminSessionGuard } from './guards/admin-session.guard';
 import type { AdminRequest } from './types/admin-request';
+import { RoadmapsService } from '../roadmaps/roadmaps.service';
+import { AuthService } from '../auth/auth.service';
+import { AppException } from '../common/errors/app.exception';
+import { SystemFlagsService } from '../system-flags/system-flags.service';
+import { SystemFlagKey } from '../system-flags/system-flag.keys';
 
 function checked(v: unknown): boolean {
   return v === '1' || v === 'on' || v === true || v === 'true';
@@ -72,6 +81,34 @@ function fmtDate(value: Date | null | undefined): string | null {
   return value.toISOString().slice(0, 19).replace('T', ' ');
 }
 
+function parseJsonObject<T extends Record<string, unknown>>(
+  raw: string,
+  label: string,
+): T {
+  const text = String(raw ?? '').trim();
+  if (!text) return {} as T;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new BadRequestException(`${label} must be a JSON object`);
+    }
+    return parsed as T;
+  } catch (e) {
+    if (e instanceof BadRequestException) throw e;
+    throw new BadRequestException(`${label} is invalid JSON`);
+  }
+}
+
+function adminErrMessage(e: unknown, fallback: string): string {
+  if (e instanceof BadRequestException) {
+    const body = e.getResponse() as { message?: string | string[] };
+    const raw = body.message ?? e.message;
+    return Array.isArray(raw) ? raw.join(', ') : String(raw);
+  }
+  if (e instanceof Error) return e.message;
+  return fallback;
+}
+
 function toAdminUserView(u: User) {
   const p = u.profile;
   return {
@@ -102,6 +139,98 @@ function toAdminUserView(u: User) {
   };
 }
 
+type RoadmapTree = NonNullable<
+  Awaited<ReturnType<RoadmapsService['getCurrent']>>['roadmap']
+>;
+type RoadmapJob = Awaited<ReturnType<RoadmapsService['getCurrent']>>['job'];
+
+function lessonStatusFlags(status: string) {
+  return {
+    status,
+    isCompleted: status === 'completed',
+    isAvailable: status === 'available',
+    isLocked: status === 'locked',
+  };
+}
+
+function toAdminRoadmapView(tree: RoadmapTree) {
+  let lessonTotal = 0;
+  let lessonCompleted = 0;
+  let lessonAvailable = 0;
+
+  const phases = tree.phases.map((phase) => {
+    const milestones = phase.milestones.map((milestone) => {
+      const lessons = milestone.lessons.map((lesson) => {
+        lessonTotal += 1;
+        if (lesson.status === 'completed') lessonCompleted += 1;
+        if (lesson.status === 'available') lessonAvailable += 1;
+        return {
+          id: lesson.id,
+          title: lesson.title,
+          missionName: lesson.missionName,
+          lessonType: lesson.lessonType,
+          estimatedMinutes: lesson.estimatedMinutes,
+          xpReward: lesson.xpReward,
+          orderIndex: lesson.orderIndex,
+          ...lessonStatusFlags(lesson.status),
+        };
+      });
+      return {
+        id: milestone.id,
+        title: milestone.title,
+        orderIndex: milestone.orderIndex,
+        type: milestone.type,
+        lessonCount: lessons.length,
+        lessons,
+      };
+    });
+    return {
+      id: phase.id,
+      title: phase.title,
+      orderIndex: phase.orderIndex,
+      locked: phase.locked,
+      techStackSlug: phase.techStackSlug,
+      isCurrent: phase.id === tree.currentPhaseId,
+      milestoneCount: milestones.length,
+      milestones,
+    };
+  });
+
+  return {
+    id: tree.id,
+    title: tree.title,
+    primaryRoleSlug: tree.primaryRoleSlug,
+    timelineWeeks: tree.timelineWeeks,
+    progressPercent: tree.progressPercent,
+    status: tree.status,
+    isReady: tree.status === 'ready',
+    isGenerating: tree.status === 'generating',
+    isFailed: tree.status === 'failed',
+    isArchived: tree.status === 'archived',
+    lessonTotal,
+    lessonCompleted,
+    lessonAvailable,
+    phaseCount: phases.length,
+    hasPhases: phases.length > 0,
+    phases,
+  };
+}
+
+function toAdminJobView(job: RoadmapJob) {
+  if (!job) return null;
+  return {
+    id: job.id,
+    status: job.status,
+    roadmapId: job.roadmapId,
+    errorCode: job.errorCode,
+    errorMessage: job.errorMessage,
+    isQueued: job.status === 'queued',
+    isProcessing: job.status === 'processing',
+    isReady: job.status === 'ready',
+    isFailed: job.status === 'failed',
+  };
+}
+
 @Controller('admin')
 export class AdminController {
   constructor(
@@ -111,10 +240,14 @@ export class AdminController {
     private readonly catalog: AdminCatalogService,
     private readonly roadmapEngineAdmin: AdminRoadmapEngineService,
     private readonly badgeIcons: AdminBadgeIconService,
+    private readonly rankIcons: AdminRankIconService,
     private readonly rolesAdmin: AdminRolesService,
     private readonly questionnaireAdmin: AdminQuestionnaireService,
     private readonly skillGraphAdmin: AdminSkillGraphService,
     private readonly userReset: AdminUserResetService,
+    private readonly roadmapsService: RoadmapsService,
+    private readonly authService: AuthService,
+    private readonly systemFlags: SystemFlagsService,
   ) {}
 
   @Get()
@@ -180,11 +313,56 @@ export class AdminController {
       unsuspended: 'User unsuspended.',
       reset:
         'Questionnaire + roadmap reset. User can start questionnaire again.',
+      password: 'Password updated. Active sessions revoked.',
+      flags: 'User feature flags saved.',
     };
     const errMap: Record<string, string> = {
       self: 'Cannot change your own account from here.',
       missing: 'User not found.',
     };
+
+    const { job, roadmap } = await this.roadmapsService.getCurrent(row.id);
+    const roadmapView = roadmap ? toAdminRoadmapView(roadmap) : null;
+    const userFlags = await this.systemFlags.listForUser(row.id);
+    const flagRows = userFlags.map((f) => ({
+      ...f,
+      isBoolean: f.valueType === 'boolean',
+      inheritSelected: f.overrideValue === null,
+      options: (f.options ?? []).map((value) => ({
+        value,
+        label: value,
+        selected: f.overrideValue === value,
+      })),
+      boolOptions: [
+        {
+          value: '__inherit__',
+          label: `Inherit (${f.systemValue === 'true' ? 'on' : 'off'})`,
+          selected: f.overrideValue === null,
+        },
+        {
+          value: 'true',
+          label: 'Force on',
+          selected: f.overrideValue === 'true',
+        },
+        {
+          value: 'false',
+          label: 'Force off',
+          selected: f.overrideValue === 'false',
+        },
+      ],
+      stringOptions: [
+        {
+          value: '__inherit__',
+          label: `Inherit (${f.systemValue})`,
+          selected: f.overrideValue === null,
+        },
+        ...(f.options ?? []).map((value) => ({
+          value,
+          label: value,
+          selected: f.overrideValue === value,
+        })),
+      ],
+    }));
 
     return res.render('user-detail', {
       title: row.email,
@@ -194,7 +372,40 @@ export class AdminController {
       isSelf: req.session.adminUserId === row.id,
       flashOk: ok ? (flashMap[ok] ?? null) : null,
       flashErr: err ? (errMap[err] ?? decodeURIComponent(err)) : null,
+      hasRoadmap: Boolean(roadmapView),
+      roadmap: roadmapView,
+      job: toAdminJobView(job),
+      userFlags: flagRows,
     });
+  }
+
+  @Post('users/:id/feature-flags')
+  @UseGuards(AdminSessionGuard)
+  async saveUserFeatureFlags(
+    @Param('id') id: string,
+    @Body() body: Record<string, string | string[]>,
+    @Res() res: Response,
+  ) {
+    const row = await this.usersService.findById(id);
+    if (!row) {
+      return res.redirect('/admin/users');
+    }
+    try {
+      const updates: Record<string, string> = {};
+      for (const [key, raw] of Object.entries(body)) {
+        if (key === '_csrf') continue;
+        updates[key] = Array.isArray(raw)
+          ? String(raw.at(-1) ?? '')
+          : String(raw);
+      }
+      await this.systemFlags.setUserOverrides(id, updates);
+      return res.redirect(`/admin/users/${id}?ok=flags`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Save failed';
+      return res.redirect(
+        `/admin/users/${id}?err=${encodeURIComponent(msg)}`,
+      );
+    }
   }
 
   @Post('users/:id/reset-learning')
@@ -208,6 +419,33 @@ export class AdminController {
       return res.redirect(`/admin/users/${id}?ok=reset`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Reset failed';
+      return res.redirect(
+        `/admin/users/${id}?err=${encodeURIComponent(msg)}`,
+      );
+    }
+  }
+
+  @Post('users/:id/change-password')
+  @UseGuards(AdminSessionGuard)
+  async changeUserPassword(
+    @Param('id') id: string,
+    @Body() body: Record<string, string>,
+    @Res() res: Response,
+  ) {
+    const password = String(body.password ?? '');
+    const confirmPassword = String(body.confirmPassword ?? '');
+    try {
+      await this.authService.adminSetPassword(id, password, confirmPassword);
+      return res.redirect(`/admin/users/${id}?ok=password`);
+    } catch (e) {
+      let msg = 'Password update failed';
+      if (e instanceof AppException) {
+        const body = e.getResponse() as { message?: string | string[] };
+        const raw = body.message ?? e.message;
+        msg = Array.isArray(raw) ? raw.join(', ') : String(raw);
+      } else if (e instanceof Error) {
+        msg = e.message;
+      }
       return res.redirect(
         `/admin/users/${id}?err=${encodeURIComponent(msg)}`,
       );
@@ -268,8 +506,21 @@ export class AdminController {
   @Get('ranks')
   @UseGuards(AdminSessionGuard)
   @Render('ranks')
-  async ranks(@Req() req: AdminRequest) {
-    const rows = await this.catalog.listRanks();
+  async ranks(
+    @Req() req: AdminRequest,
+    @Query('ok') ok?: string,
+    @Query('err') err?: string,
+  ) {
+    const rows = (await this.catalog.listRanks()).map((r) => ({
+      ...r,
+      iconThumbUrl: AdminRankIconService.isUploadPath(r.iconAssetKey)
+        ? r.iconAssetKey
+        : null,
+    }));
+    const flashMap: Record<string, string> = {
+      created: 'Rank created.',
+      deleted: 'Rank deleted.',
+    };
     return {
       title: 'Ranks',
       email: req.session.adminEmail ?? '',
@@ -278,7 +529,44 @@ export class AdminController {
       hasRows: rows.length > 0,
       count: rows.length,
       countSingular: rows.length === 1,
+      flashOk: ok ? (flashMap[ok] ?? null) : null,
+      flashErr: err ? decodeURIComponent(err) : null,
     };
+  }
+
+  @Post('ranks')
+  @UseGuards(AdminSessionGuard)
+  async rankCreate(
+    @Body() body: Record<string, string>,
+    @Res() res: Response,
+  ) {
+    try {
+      const level = num(body.level, 0);
+      const row = await this.catalog.createRank({
+        level,
+        slug: String(body.slug ?? '').trim(),
+        title: String(body.title ?? '').trim(),
+        xpThreshold: num(body.xpThreshold),
+        minimumActiveDays: num(body.minimumActiveDays),
+        displayOrder: num(body.displayOrder, level),
+        isActive: checked(body.isActive ?? '1'),
+        iconAssetKey: String(body.iconAssetKey ?? '').trim() || null,
+      });
+      return res.redirect(`/admin/ranks/${row.id}?ok=created`);
+    } catch (e) {
+      const msg =
+        e instanceof BadRequestException
+          ? String(
+              (e.getResponse() as { message?: string | string[] }).message ??
+                e.message,
+            )
+          : e instanceof Error
+            ? e.message
+            : 'Create failed';
+      return res.redirect(
+        `/admin/ranks?err=${encodeURIComponent(Array.isArray(msg) ? msg.join(', ') : msg)}`,
+      );
+    }
   }
 
   @Get('ranks/:id')
@@ -288,19 +576,30 @@ export class AdminController {
     @Req() req: AdminRequest,
     @Res() res: Response,
     @Query('ok') ok?: string,
+    @Query('err') err?: string,
   ) {
     try {
       const row = await this.catalog.getRank(id);
+      const iconKey = row.iconAssetKey ?? '';
+      const hasUpload = AdminRankIconService.isUploadPath(iconKey);
+      const flashMap: Record<string, string> = {
+        '1': 'Rank saved.',
+        created: 'Rank created.',
+        icon: 'Rank image uploaded.',
+        cleared: 'Rank image cleared.',
+      };
       return res.render('rank-detail', {
         title: row.title,
         email: req.session.adminEmail ?? '',
         navRanks: true,
         row: {
           ...row,
-          iconAssetKey: row.iconAssetKey ?? '',
+          iconAssetKey: iconKey,
         },
-        flashOk: ok === '1' ? 'Rank saved.' : null,
-        flashErr: null,
+        hasUpload,
+        iconPreviewUrl: hasUpload ? iconKey : null,
+        flashOk: ok ? (flashMap[ok] ?? null) : null,
+        flashErr: err ? decodeURIComponent(err) : null,
       });
     } catch {
       return res.redirect('/admin/ranks');
@@ -316,6 +615,8 @@ export class AdminController {
   ) {
     try {
       await this.catalog.updateRank(id, {
+        level: num(body.level),
+        slug: String(body.slug ?? '').trim(),
         title: String(body.title ?? '').trim(),
         xpThreshold: num(body.xpThreshold),
         minimumActiveDays: num(body.minimumActiveDays),
@@ -324,16 +625,98 @@ export class AdminController {
         isActive: checked(body.isActive),
       });
       return res.redirect(`/admin/ranks/${id}?ok=1`);
+    } catch (e) {
+      const msg =
+        e instanceof BadRequestException
+          ? String(
+              (e.getResponse() as { message?: string | string[] }).message ??
+                e.message,
+            )
+          : e instanceof Error
+            ? e.message
+            : 'Save failed';
+      return res.redirect(
+        `/admin/ranks/${id}?err=${encodeURIComponent(Array.isArray(msg) ? msg.join(', ') : msg)}`,
+      );
+    }
+  }
+
+  @Post('ranks/:id/delete')
+  @UseGuards(AdminSessionGuard)
+  async rankDelete(@Param('id') id: string, @Res() res: Response) {
+    try {
+      const row = await this.catalog.getRank(id);
+      if (AdminRankIconService.isUploadPath(row.iconAssetKey)) {
+        await this.rankIcons.clearIcon(id);
+      }
+      await this.catalog.deleteRank(id);
+      return res.redirect('/admin/ranks?ok=deleted');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Delete failed';
+      return res.redirect(
+        `/admin/ranks/${id}?err=${encodeURIComponent(msg)}`,
+      );
+    }
+  }
+
+  @Post('ranks/:id/icon')
+  @UseGuards(AdminSessionGuard)
+  @UseInterceptors(
+    FileInterceptor('icon', {
+      storage: memoryStorage(),
+      limits: { fileSize: 2 * 1024 * 1024 },
+    }),
+  )
+  async rankIconUpload(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Res() res: Response,
+  ) {
+    try {
+      if (!file) {
+        throw new BadRequestException('Choose an image file');
+      }
+      await this.rankIcons.saveIcon(id, file);
+      return res.redirect(`/admin/ranks/${id}?ok=icon`);
+    } catch (e) {
+      const msg =
+        e instanceof BadRequestException
+          ? String(
+              (e.getResponse() as { message?: string | string[] }).message ??
+                e.message,
+            )
+          : 'Upload failed';
+      return res.redirect(
+        `/admin/ranks/${id}?err=${encodeURIComponent(Array.isArray(msg) ? msg.join(', ') : msg)}`,
+      );
+    }
+  }
+
+  @Post('ranks/:id/icon/clear')
+  @UseGuards(AdminSessionGuard)
+  async rankIconClear(@Param('id') id: string, @Res() res: Response) {
+    try {
+      await this.rankIcons.clearIcon(id);
+      return res.redirect(`/admin/ranks/${id}?ok=cleared`);
     } catch {
-      return res.redirect('/admin/ranks');
+      return res.redirect(
+        `/admin/ranks/${id}?err=${encodeURIComponent('Clear failed')}`,
+      );
     }
   }
 
   @Get('store')
   @UseGuards(AdminSessionGuard)
   @Render('store')
-  async store(@Req() req: AdminRequest) {
+  async store(
+    @Req() req: AdminRequest,
+    @Query('ok') ok?: string,
+    @Query('err') err?: string,
+  ) {
     const rows = await this.catalog.listStoreItems();
+    const flashMap: Record<string, string> = {
+      deleted: 'Store item deleted.',
+    };
     return {
       title: 'Store',
       email: req.session.adminEmail ?? '',
@@ -342,7 +725,53 @@ export class AdminController {
       hasRows: rows.length > 0,
       count: rows.length,
       countSingular: rows.length === 1,
+      currencies: selectOpts(
+        Object.values(RewardCurrency),
+        RewardCurrency.Coins,
+      ),
+      itemTypes: selectOpts(
+        Object.values(StoreItemType),
+        StoreItemType.Consumable,
+      ),
+      flashOk: ok ? (flashMap[ok] ?? null) : null,
+      flashErr: err ? decodeURIComponent(err) : null,
     };
+  }
+
+  @Post('store')
+  @UseGuards(AdminSessionGuard)
+  async storeCreate(
+    @Body() body: Record<string, string>,
+    @Res() res: Response,
+  ) {
+    try {
+      const row = await this.catalog.createStoreItem({
+        sku: String(body.sku ?? '').trim(),
+        title: String(body.title ?? '').trim(),
+        description: String(body.description ?? ''),
+        price: num(body.price),
+        currency: (body.currency as RewardCurrency) || RewardCurrency.Coins,
+        itemType:
+          (body.itemType as StoreItemType) || StoreItemType.Consumable,
+        rarity: String(body.rarity ?? 'common').trim(),
+        purchaseLimit: optNum(body.purchaseLimit),
+        isActive: checked(body.isActive ?? '1'),
+      });
+      return res.redirect(`/admin/store/${row.id}?ok=created`);
+    } catch (e) {
+      const msg =
+        e instanceof BadRequestException
+          ? String(
+              (e.getResponse() as { message?: string | string[] }).message ??
+                e.message,
+            )
+          : e instanceof Error
+            ? e.message
+            : 'Create failed';
+      return res.redirect(
+        `/admin/store?err=${encodeURIComponent(Array.isArray(msg) ? msg.join(', ') : msg)}`,
+      );
+    }
   }
 
   @Get('store/:id')
@@ -352,9 +781,14 @@ export class AdminController {
     @Req() req: AdminRequest,
     @Res() res: Response,
     @Query('ok') ok?: string,
+    @Query('err') err?: string,
   ) {
     try {
       const row = await this.catalog.getStoreItem(id);
+      const flashMap: Record<string, string> = {
+        '1': 'Store item saved.',
+        created: 'Store item created.',
+      };
       return res.render('store-detail', {
         title: row.title,
         email: req.session.adminEmail ?? '',
@@ -365,8 +799,8 @@ export class AdminController {
         },
         currencies: selectOpts(Object.values(RewardCurrency), row.currency),
         itemTypes: selectOpts(Object.values(StoreItemType), row.itemType),
-        flashOk: ok === '1' ? 'Store item saved.' : null,
-        flashErr: null,
+        flashOk: ok ? (flashMap[ok] ?? null) : null,
+        flashErr: err ? decodeURIComponent(err) : null,
       });
     } catch {
       return res.redirect('/admin/store');
@@ -382,6 +816,7 @@ export class AdminController {
   ) {
     try {
       await this.catalog.updateStoreItem(id, {
+        sku: String(body.sku ?? '').trim(),
         title: String(body.title ?? '').trim(),
         description: String(body.description ?? ''),
         price: num(body.price),
@@ -392,15 +827,44 @@ export class AdminController {
         isActive: checked(body.isActive),
       });
       return res.redirect(`/admin/store/${id}?ok=1`);
-    } catch {
-      return res.redirect('/admin/store');
+    } catch (e) {
+      const msg =
+        e instanceof BadRequestException
+          ? String(
+              (e.getResponse() as { message?: string | string[] }).message ??
+                e.message,
+            )
+          : e instanceof Error
+            ? e.message
+            : 'Save failed';
+      return res.redirect(
+        `/admin/store/${id}?err=${encodeURIComponent(Array.isArray(msg) ? msg.join(', ') : msg)}`,
+      );
+    }
+  }
+
+  @Post('store/:id/delete')
+  @UseGuards(AdminSessionGuard)
+  async storeDelete(@Param('id') id: string, @Res() res: Response) {
+    try {
+      await this.catalog.deleteStoreItem(id);
+      return res.redirect('/admin/store?ok=deleted');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Delete failed';
+      return res.redirect(
+        `/admin/store/${id}?err=${encodeURIComponent(msg)}`,
+      );
     }
   }
 
   @Get('badges')
   @UseGuards(AdminSessionGuard)
   @Render('badges')
-  async badges(@Req() req: AdminRequest) {
+  async badges(
+    @Req() req: AdminRequest,
+    @Query('ok') ok?: string,
+    @Query('err') err?: string,
+  ) {
     const rows = (await this.catalog.listBadges()).map((b) => ({
       ...b,
       isActiveStatus: b.status === BadgeDefinitionStatus.Active,
@@ -408,6 +872,9 @@ export class AdminController {
         ? b.iconAssetKey
         : null,
     }));
+    const flashMap: Record<string, string> = {
+      deleted: 'Badge deleted.',
+    };
     return {
       title: 'Badges',
       email: req.session.adminEmail ?? '',
@@ -416,7 +883,64 @@ export class AdminController {
       hasRows: rows.length > 0,
       count: rows.length,
       countSingular: rows.length === 1,
+      categories: selectOpts(
+        Object.values(BadgeCategory),
+        BadgeCategory.Learning,
+      ),
+      rarities: selectOpts(Object.values(BadgeRarity), BadgeRarity.Common),
+      statuses: selectOpts(
+        Object.values(BadgeDefinitionStatus),
+        BadgeDefinitionStatus.Active,
+      ),
+      criteriaTypes: selectOpts(
+        Object.values(BadgeCriteriaType),
+        BadgeCriteriaType.Counter,
+      ),
+      flashOk: ok ? (flashMap[ok] ?? null) : null,
+      flashErr: err ? decodeURIComponent(err) : null,
     };
+  }
+
+  @Post('badges')
+  @UseGuards(AdminSessionGuard)
+  async badgeCreate(
+    @Body() body: Record<string, string>,
+    @Res() res: Response,
+  ) {
+    try {
+      const criteriaJson = parseJsonObject<BadgeCriteriaJson>(
+        body.criteriaJson,
+        'criteriaJson',
+      );
+      const rewardJson = parseJsonObject<BadgeRewardJson>(
+        body.rewardJson ?? '{}',
+        'rewardJson',
+      );
+      const row = await this.catalog.createBadge({
+        code: String(body.code ?? '').trim(),
+        name: String(body.name ?? '').trim(),
+        description: String(body.description ?? ''),
+        category:
+          (body.category as BadgeCategory) || BadgeCategory.Learning,
+        rarity: (body.rarity as BadgeRarity) || BadgeRarity.Common,
+        status:
+          (body.status as BadgeDefinitionStatus) ||
+          BadgeDefinitionStatus.Active,
+        criteriaType:
+          (body.criteriaType as BadgeCriteriaType) ||
+          BadgeCriteriaType.Counter,
+        criteriaJson,
+        rewardJson,
+        sortOrder: num(body.sortOrder),
+        isHidden: checked(body.isHidden),
+        iconAssetKey: String(body.iconAssetKey ?? '').trim() || null,
+      });
+      return res.redirect(`/admin/badges/${row.id}?ok=created`);
+    } catch (e) {
+      return res.redirect(
+        `/admin/badges?err=${encodeURIComponent(adminErrMessage(e, 'Create failed'))}`,
+      );
+    }
   }
 
   @Get('badges/:id')
@@ -434,6 +958,7 @@ export class AdminController {
       const hasUpload = AdminBadgeIconService.isUploadPath(iconKey);
       const flashMap: Record<string, string> = {
         '1': 'Badge saved.',
+        created: 'Badge created.',
         icon: 'Badge image uploaded.',
         cleared: 'Badge image cleared.',
       };
@@ -441,12 +966,21 @@ export class AdminController {
         title: row.name,
         email: req.session.adminEmail ?? '',
         navBadges: true,
-        row: { ...row, iconAssetKey: iconKey },
+        row: {
+          ...row,
+          iconAssetKey: iconKey,
+          criteriaJsonText: JSON.stringify(row.criteriaJson ?? {}, null, 2),
+          rewardJsonText: JSON.stringify(row.rewardJson ?? {}, null, 2),
+        },
         iconPreviewUrl: hasUpload ? iconKey : null,
         hasUpload,
         categories: selectOpts(Object.values(BadgeCategory), row.category),
         rarities: selectOpts(Object.values(BadgeRarity), row.rarity),
         statuses: selectOpts(Object.values(BadgeDefinitionStatus), row.status),
+        criteriaTypes: selectOpts(
+          Object.values(BadgeCriteriaType),
+          row.criteriaType,
+        ),
         flashOk: ok ? (flashMap[ok] ?? null) : null,
         flashErr: err ? decodeURIComponent(err) : null,
       });
@@ -463,19 +997,50 @@ export class AdminController {
     @Res() res: Response,
   ) {
     try {
+      const criteriaJson = parseJsonObject<BadgeCriteriaJson>(
+        body.criteriaJson,
+        'criteriaJson',
+      );
+      const rewardJson = parseJsonObject<BadgeRewardJson>(
+        body.rewardJson ?? '{}',
+        'rewardJson',
+      );
       await this.catalog.updateBadge(id, {
+        code: String(body.code ?? '').trim(),
         name: String(body.name ?? '').trim(),
         description: String(body.description ?? ''),
         category: body.category as BadgeCategory,
         rarity: body.rarity as BadgeRarity,
         status: body.status as BadgeDefinitionStatus,
+        criteriaType: body.criteriaType as BadgeCriteriaType,
+        criteriaJson,
+        rewardJson,
         sortOrder: num(body.sortOrder),
         iconAssetKey: String(body.iconAssetKey ?? '').trim() || null,
         isHidden: checked(body.isHidden),
       });
       return res.redirect(`/admin/badges/${id}?ok=1`);
-    } catch {
-      return res.redirect('/admin/badges');
+    } catch (e) {
+      return res.redirect(
+        `/admin/badges/${id}?err=${encodeURIComponent(adminErrMessage(e, 'Save failed'))}`,
+      );
+    }
+  }
+
+  @Post('badges/:id/delete')
+  @UseGuards(AdminSessionGuard)
+  async badgeDelete(@Param('id') id: string, @Res() res: Response) {
+    try {
+      const row = await this.catalog.getBadge(id);
+      if (AdminBadgeIconService.isUploadPath(row.iconAssetKey)) {
+        await this.badgeIcons.clearIcon(id);
+      }
+      await this.catalog.deleteBadge(id);
+      return res.redirect('/admin/badges?ok=deleted');
+    } catch (e) {
+      return res.redirect(
+        `/admin/badges/${id}?err=${encodeURIComponent(adminErrMessage(e, 'Delete failed'))}`,
+      );
     }
   }
 
@@ -500,15 +1065,8 @@ export class AdminController {
       await this.badgeIcons.saveIcon(id, file);
       return res.redirect(`/admin/badges/${id}?ok=icon`);
     } catch (e) {
-      const msg =
-        e instanceof BadRequestException
-          ? String(
-              (e.getResponse() as { message?: string | string[] }).message ??
-                e.message,
-            )
-          : 'Upload failed';
       return res.redirect(
-        `/admin/badges/${id}?err=${encodeURIComponent(Array.isArray(msg) ? msg.join(', ') : msg)}`,
+        `/admin/badges/${id}?err=${encodeURIComponent(adminErrMessage(e, 'Upload failed'))}`,
       );
     }
   }
@@ -520,7 +1078,9 @@ export class AdminController {
       await this.badgeIcons.clearIcon(id);
       return res.redirect(`/admin/badges/${id}?ok=cleared`);
     } catch {
-      return res.redirect(`/admin/badges/${id}?err=${encodeURIComponent('Clear failed')}`);
+      return res.redirect(
+        `/admin/badges/${id}?err=${encodeURIComponent('Clear failed')}`,
+      );
     }
   }
 
@@ -1362,6 +1922,74 @@ export class AdminController {
     }
   }
 
+  @Get('feature-flags')
+  @UseGuards(AdminSessionGuard)
+  @Render('feature-flags')
+  async featureFlagsPage(
+    @Req() req: AdminRequest,
+    @Query('ok') ok?: string,
+    @Query('err') err?: string,
+  ) {
+    const rows = await this.systemFlags.list();
+    const flags = rows.map((row) => {
+      const options = this.systemFlags.optionsFor(
+        row.key as (typeof SystemFlagKey)[keyof typeof SystemFlagKey],
+      );
+      const isBoolean = row.valueType === 'boolean';
+      return {
+        key: row.key,
+        label: row.label,
+        description: row.description,
+        isBoolean,
+        boolOn: isBoolean && row.value === 'true',
+        options: options
+          ? options.map((value) => ({
+              value,
+              label: value,
+              selected: value === row.value,
+            }))
+          : [],
+        updatedAt: fmtDate(row.updatedAt) ?? '—',
+      };
+    });
+    return {
+      title: 'Feature flags',
+      email: req.session.adminEmail ?? '',
+      navFeatureFlags: true,
+      flags,
+      flashOk: ok === '1' ? 'Feature flags saved.' : null,
+      flashErr: err ? decodeURIComponent(err) : null,
+    };
+  }
+
+  @Post('feature-flags')
+  @UseGuards(AdminSessionGuard)
+  async featureFlagsSave(
+    @Body() body: Record<string, string | string[]>,
+    @Res() res: Response,
+  ) {
+    try {
+      const known = Object.values(SystemFlagKey);
+      const updates: Record<string, string> = {};
+      for (const key of known) {
+        const raw = body[key];
+        if (raw === undefined) continue;
+        if (Array.isArray(raw)) {
+          updates[key] = raw.includes('true') ? 'true' : String(raw.at(-1) ?? 'false');
+        } else {
+          updates[key] = String(raw);
+        }
+      }
+      await this.systemFlags.setMany(updates);
+      return res.redirect('/admin/feature-flags?ok=1');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Save failed';
+      return res.redirect(
+        `/admin/feature-flags?err=${encodeURIComponent(msg)}`,
+      );
+    }
+  }
+
   @Get('roadmap-engine')
   @UseGuards(AdminSessionGuard)
   async roadmapEnginePage(
@@ -1371,7 +1999,7 @@ export class AdminController {
     const [health, goals, config] = await Promise.all([
       this.roadmapEngineAdmin.checkHealth(),
       this.roadmapEngineAdmin.listRecentGoals(),
-      Promise.resolve(this.roadmapEngineAdmin.configSummary()),
+      this.roadmapEngineAdmin.configSummary(),
     ]);
     return res.render('roadmap-engine', {
       title: 'Roadmap Engine',
@@ -1401,7 +2029,7 @@ export class AdminController {
     const [health, goals, config] = await Promise.all([
       this.roadmapEngineAdmin.checkHealth(),
       this.roadmapEngineAdmin.listRecentGoals(),
-      Promise.resolve(this.roadmapEngineAdmin.configSummary()),
+      this.roadmapEngineAdmin.configSummary(),
     ]);
 
     if (!goalId) {

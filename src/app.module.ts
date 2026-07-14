@@ -29,6 +29,7 @@ import { LuckyWheelModule } from './lucky-wheel/lucky-wheel.module';
 import { RanksModule } from './ranks/ranks.module';
 import { StudyTogetherModule } from './study-together/study-together.module';
 import { BadgesModule } from './badges/badges.module';
+import { SystemFlagsModule } from './system-flags/system-flags.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { BadgesModule } from './badges/badges.module';
         typeOrmPostgresConfig(config, { autoLoadEntities: true }),
     }),
     LlmModule,
+    SystemFlagsModule,
     UsersModule,
     ProfilesModule,
     AuthModule,

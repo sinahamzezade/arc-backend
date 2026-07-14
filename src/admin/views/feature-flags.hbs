@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+    <style>
+      .flag-row {
+        display: grid;
+        grid-template-columns: 1fr minmax(220px, 340px);
+        gap: 16px;
+        align-items: start;
+        padding: 16px;
+        border-bottom: 1px solid #e4ebe6;
+      }
+      .flag-row:last-child { border-bottom: none; }
+      .flag-row .key {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.75rem;
+        color: #5b7c6e;
+        margin: 0 0 4px;
+      }
+      .flag-row .label {
+        margin: 0 0 6px;
+        font-size: 1rem;
+        font-weight: 600;
+      }
+      .flag-row .desc {
+        margin: 0;
+        font-size: 0.85rem;
+        color: #5b7c6e;
+        line-height: 1.45;
+      }
+      .flag-control label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.9rem;
+        cursor: pointer;
+      }
+      .flag-control select {
+        width: 100%;
+      }
+      .flag-control .hint {
+        margin: 6px 0 0;
+        font-size: 0.75rem;
+        color: #8aa396;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      {{> shell-sidebar}}
+      <main class="main">
+        <div class="page-head">
+          <h1>Feature flags</h1>
+          <p class="sub">Runtime toggles + LLM model picks — changes apply within ~10s</p>
+        </div>
+
+        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
+        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+
+        <form method="post" action="/admin/feature-flags">
+          <div class="panel">
+            {{#each flags}}
+              <div class="flag-row">
+                <div>
+                  <p class="key">{{key}}</p>
+                  <p class="label">{{label}}</p>
+                  {{#if description}}
+                    <p class="desc">{{description}}</p>
+                  {{/if}}
+                </div>
+                <div class="flag-control">
+                  {{#if isBoolean}}
+                    <input type="hidden" name="{{key}}" value="false" />
+                    <label>
+                      <input
+                        type="checkbox"
+                        name="{{key}}"
+                        value="true"
+                        {{#if boolOn}}checked{{/if}}
+                      />
+                      Enabled
+                    </label>
+                  {{else}}
+                    <label for="flag-{{key}}" class="sr-only">{{label}}</label>
+                    <select id="flag-{{key}}" name="{{key}}">
+                      {{#each options}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                  {{/if}}
+                  <p class="hint">Updated {{updatedAt}}</p>
+                </div>
+              </div>
+            {{/each}}
+          </div>
+          <div class="form-actions" style="margin-top:16px">
+            {{> ui-button label="Save flags" icon="fa-solid fa-floppy-disk" }}
+          </div>
+        </form>
+      </main>
+    </div>
+  </body>
+</html>

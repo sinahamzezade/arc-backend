@@ -169,6 +169,181 @@
             </div>
           </section>
 
+          <section class="mb-10 md:mb-14 md:w-[88%]">
+            <div class="mb-3 flex items-baseline justify-between gap-3">
+              <h2 class="font-display text-2xl font-semibold">Feature flags</h2>
+              <span class="text-xs font-medium uppercase tracking-[0.14em] text-sage">Per-user overrides</span>
+            </div>
+            <p class="mb-4 max-w-2xl text-sm text-sage">
+              Inherit uses the global Feature flags page. Force on/off (or a mode) only for this account.
+            </p>
+            <form method="post" action="/admin/users/{{user.id}}/feature-flags" class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+              <div class="space-y-4">
+                {{#each userFlags}}
+                  <div class="grid gap-3 border-b border-[#e4ebe6] pb-4 last:border-0 last:pb-0 md:grid-cols-[1fr_220px] md:items-center">
+                    <div>
+                      <p class="font-medium text-moss">{{label}}</p>
+                      <p class="mt-0.5 font-mono text-[11px] text-sage">{{key}}</p>
+                      {{#if description}}
+                        <p class="mt-1 text-xs leading-relaxed text-sage">{{description}}</p>
+                      {{/if}}
+                      <p class="mt-1 text-[11px] text-sage">
+                        Effective:
+                        <span class="font-semibold text-moss">{{effectiveValue}}</span>
+                      </p>
+                    </div>
+                    <div>
+                      <label class="sr-only" for="uff-{{key}}">{{label}}</label>
+                      <select id="uff-{{key}}" name="{{key}}" class="w-full rounded-xl border border-[#d5ddd7] bg-mist px-3 py-2 text-sm">
+                        {{#if isBoolean}}
+                          {{#each boolOptions}}
+                            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                          {{/each}}
+                        {{else}}
+                          {{#each stringOptions}}
+                            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                          {{/each}}
+                        {{/if}}
+                      </select>
+                    </div>
+                  </div>
+                {{/each}}
+              </div>
+              <div class="mt-5">
+                {{> ui-button label="Save user flags" icon="fa-solid fa-floppy-disk" }}
+              </div>
+            </form>
+          </section>
+
+          <section class="mb-10 md:mb-14">
+            <div class="mb-3 flex items-baseline justify-between gap-3">
+              <h2 class="font-display text-2xl font-semibold">Roadmap</h2>
+              <span class="text-xs font-medium uppercase tracking-[0.14em] text-sage">Learning path</span>
+            </div>
+
+            {{#if hasRoadmap}}
+              <div class="mb-4 flex flex-wrap items-center gap-2">
+                {{#if roadmap.isReady}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-leaf px-3 py-1 text-xs font-semibold text-moss">
+                    <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                    Ready
+                  </span>
+                {{else if roadmap.isGenerating}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-clay/20 px-3 py-1 text-xs font-semibold text-clay">
+                    <i class="fa-solid fa-spinner" aria-hidden="true"></i>
+                    Generating
+                  </span>
+                {{else if roadmap.isFailed}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-[#fde8e6] px-3 py-1 text-xs font-semibold text-coral">
+                    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                    Failed
+                  </span>
+                {{else}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-mist px-3 py-1 text-xs font-semibold text-sage">
+                    {{roadmap.status}}
+                  </span>
+                {{/if}}
+                <span class="text-sm text-sage">{{roadmap.progressPercent}}% · {{roadmap.lessonCompleted}}/{{roadmap.lessonTotal}} lessons</span>
+              </div>
+
+              <div class="overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7]">
+                <div class="border-b border-[#e4ebe6] bg-[#eef3ef] px-5 py-4">
+                  <p class="font-display text-xl font-semibold">{{roadmap.title}}</p>
+                  <p class="mt-1 break-all text-xs text-sage">
+                    {{roadmap.id}}
+                    {{#if roadmap.primaryRoleSlug}} · {{roadmap.primaryRoleSlug}}{{/if}}
+                    {{#if roadmap.timelineWeeks}} · {{roadmap.timelineWeeks}} weeks{{/if}}
+                  </p>
+                </div>
+
+                {{#if roadmap.hasPhases}}
+                  <div class="divide-y divide-[#e4ebe6]">
+                    {{#each roadmap.phases}}
+                      <div class="px-5 py-4">
+                        <div class="mb-3 flex flex-wrap items-center gap-2">
+                          <p class="font-display text-lg font-semibold">
+                            <span class="text-sage">Phase {{orderIndex}}</span>
+                            · {{title}}
+                          </p>
+                          {{#if isCurrent}}
+                            <span class="rounded-full bg-leaf/80 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-moss">Current</span>
+                          {{/if}}
+                          {{#if locked}}
+                            <span class="rounded-full bg-mist px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sage">Locked</span>
+                          {{else}}
+                            <span class="rounded-full bg-leaf/50 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-moss">Open</span>
+                          {{/if}}
+                          {{#if techStackSlug}}
+                            <span class="text-xs text-sage">{{techStackSlug}}</span>
+                          {{/if}}
+                        </div>
+
+                        {{#each milestones}}
+                          <div class="mb-3 last:mb-0">
+                            <p class="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-sage">
+                              Milestone {{orderIndex}} · {{title}}
+                              {{#if type}} · {{type}}{{/if}}
+                            </p>
+                            <ul class="space-y-1.5">
+                              {{#each lessons}}
+                                <li class="flex flex-wrap items-center gap-2 rounded-2xl bg-mist/60 px-3 py-2 text-sm">
+                                  {{#if isCompleted}}
+                                    <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-leaf text-moss" title="completed">
+                                      <i class="fa-solid fa-check text-xs" aria-hidden="true"></i>
+                                    </span>
+                                  {{else if isAvailable}}
+                                    <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-clay/25 text-clay" title="available">
+                                      <i class="fa-solid fa-play text-[10px]" aria-hidden="true"></i>
+                                    </span>
+                                  {{else}}
+                                    <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/80 text-sage" title="locked">
+                                      <i class="fa-solid fa-lock text-[10px]" aria-hidden="true"></i>
+                                    </span>
+                                  {{/if}}
+                                  <span class="min-w-0 flex-1 font-medium">{{title}}</span>
+                                  <span class="text-xs capitalize text-sage">{{status}}</span>
+                                  <span class="tabular-nums text-xs text-sage">{{estimatedMinutes}}m · {{xpReward}} XP</span>
+                                  {{#if lessonType}}
+                                    <span class="rounded-full bg-foam px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sage ring-1 ring-[#d5ddd7]">{{lessonType}}</span>
+                                  {{/if}}
+                                </li>
+                              {{else}}
+                                <li class="px-3 py-2 text-sm text-sage">No lessons.</li>
+                              {{/each}}
+                            </ul>
+                          </div>
+                        {{else}}
+                          <p class="text-sm text-sage">No milestones in this phase.</p>
+                        {{/each}}
+                      </div>
+                    {{/each}}
+                  </div>
+                {{else}}
+                  <div class="px-5 py-8 text-center text-sm text-sage">
+                    Roadmap exists but has no phases yet{{#if roadmap.isGenerating}} (still generating){{/if}}.
+                  </div>
+                {{/if}}
+              </div>
+
+              {{#if job}}
+                <p class="mt-3 text-xs text-sage">
+                  Generation job: <span class="font-medium text-moss">{{job.status}}</span>
+                  {{#if job.errorMessage}} · {{job.errorMessage}}{{/if}}
+                </p>
+              {{/if}}
+            {{else}}
+              <div class="rounded-blob bg-foam px-5 py-10 text-center shadow-lift ring-1 ring-[#d5ddd7]">
+                <p class="text-sm text-sage">No active roadmap for this user.</p>
+                {{#if job}}
+                  <p class="mt-3 text-xs text-sage">
+                    Latest job: <span class="font-medium text-moss">{{job.status}}</span>
+                    {{#if job.errorMessage}} — {{job.errorMessage}}{{/if}}
+                  </p>
+                {{/if}}
+              </div>
+            {{/if}}
+          </section>
+
           <div class="grid grid-cols-1 gap-8 lg:grid-cols-12">
             <section class="lg:col-span-7">
               <div class="mb-3 flex items-baseline justify-between gap-3">
@@ -210,6 +385,60 @@
                     <dd class="px-4 py-3 text-sm tabular-nums">{{#if user.lastLoginAt}}{{user.lastLoginAt}}{{else}}—{{/if}}</dd>
                   </div>
                 </dl>
+              </div>
+
+              <div class="mt-6 overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7]">
+                <div class="border-b border-[#e4ebe6] bg-[#eef3ef] px-5 py-4">
+                  <div class="flex items-center gap-2">
+                    <span class="flex h-8 w-8 items-center justify-center rounded-full bg-leaf text-moss">
+                      <i class="fa-solid fa-key" aria-hidden="true"></i>
+                    </span>
+                    <div>
+                      <h3 class="font-display text-lg font-semibold">
+                        {{#if user.hasPassword}}Change password{{else}}Set password{{/if}}
+                      </h3>
+                      <p class="text-xs text-sage">Min 8 chars, 1 digit, 1 special. Revokes sessions.</p>
+                    </div>
+                  </div>
+                </div>
+                <form
+                  method="post"
+                  action="/admin/users/{{user.id}}/change-password"
+                  class="space-y-3 px-5 py-4"
+                  onsubmit="return confirm('Update password for this user? All refresh sessions will be revoked.');"
+                >
+                  <div>
+                    <label for="admin-new-password" class="mb-1 block text-xs font-semibold uppercase tracking-wide text-sage">New password</label>
+                    <input
+                      id="admin-new-password"
+                      name="password"
+                      type="password"
+                      autocomplete="new-password"
+                      required
+                      minlength="8"
+                      class="w-full rounded-2xl border border-[#d5ddd7] bg-mist/40 px-4 py-2.5 text-sm text-moss outline-none transition focus:border-sage focus:bg-foam"
+                    />
+                  </div>
+                  <div>
+                    <label for="admin-confirm-password" class="mb-1 block text-xs font-semibold uppercase tracking-wide text-sage">Confirm</label>
+                    <input
+                      id="admin-confirm-password"
+                      name="confirmPassword"
+                      type="password"
+                      autocomplete="new-password"
+                      required
+                      minlength="8"
+                      class="w-full rounded-2xl border border-[#d5ddd7] bg-mist/40 px-4 py-2.5 text-sm text-moss outline-none transition focus:border-sage focus:bg-foam"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    class="inline-flex items-center justify-center gap-2 rounded-full bg-moss px-5 py-2.5 text-sm font-semibold text-mist transition hover:brightness-110"
+                  >
+                    <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+                    Save password
+                  </button>
+                </form>
               </div>
             </section>
 

@@ -6,6 +6,7 @@ import { Profile } from '../profiles/entities/profile.entity';
 import { ReferralsModule } from '../referrals/referrals.module';
 import { RoadmapsModule } from '../roadmaps/roadmaps.module';
 import { RoleRecipe } from '../skill-graph/entities/role-recipe.entity';
+import { SystemFlagsModule } from '../system-flags/system-flags.module';
 import { QuestionnaireDefinition } from './entities/questionnaire-definition.entity';
 import { QuestionnaireOption } from './entities/questionnaire-option.entity';
 import { QuestionnaireResponse } from './entities/questionnaire-response.entity';
@@ -33,6 +34,7 @@ import { QuestionnaireService } from './questionnaire.service';
     ]),
     AuthModule,
     RoadmapsModule,
+    SystemFlagsModule,
     forwardRef(() => ReferralsModule),
   ],
   controllers: [QuestionnaireController],

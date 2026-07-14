@@ -35,6 +35,8 @@ import { ModuleTemplate } from './entities/module-template.entity';
 import { QuestionTemplate } from './entities/question-template.entity';
 import { QuestionVersion } from './entities/question-version.entity';
 import { SkillPrerequisite } from './entities/skill-prerequisite.entity';
+import { BattleCatalogService } from './battle-catalog.service';
+import { BattleQuestionLlmService } from './battle-question-llm.service';
 import { QuestionPoolService } from './question-pool.service';
 import { BattleQuestionSeedService } from './seeds/battle-question.seed';
 
@@ -79,6 +81,8 @@ import { BattleQuestionSeedService } from './seeds/battle-question.seed';
     ContentVersionService,
     ContentPersonalizationService,
     QuestionPoolService,
+    BattleCatalogService,
+    BattleQuestionLlmService,
     ContentAnalyticsService,
     ContentCacheService,
     ContentCatalogService,
@@ -92,6 +96,8 @@ import { BattleQuestionSeedService } from './seeds/battle-question.seed';
     ContentVersionService,
     ContentPersonalizationService,
     QuestionPoolService,
+    BattleCatalogService,
+    BattleQuestionLlmService,
     ContentAnalyticsService,
     ContentQualityService,
     ContentCatalogService,

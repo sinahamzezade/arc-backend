@@ -6,6 +6,8 @@ import { resolveRedisUrl } from '../common/redis/resolve-redis-url';
 import { Goal, GoalStatus } from '../goals/entities/goal.entity';
 import { RoadmapEngineClient } from '../roadmaps/roadmap-engine.client';
 import { RoadmapSnapshotService } from '../roadmaps/roadmap-snapshot.service';
+import { SystemFlagsService } from '../system-flags/system-flags.service';
+import { SystemFlagKey } from '../system-flags/system-flag.keys';
 
 export type EngineHealthView = {
   reachable: boolean;
@@ -31,18 +33,23 @@ export class AdminRoadmapEngineService {
     private readonly config: ConfigService,
     private readonly engine: RoadmapEngineClient,
     private readonly snapshot: RoadmapSnapshotService,
+    private readonly systemFlags: SystemFlagsService,
     @InjectRepository(Goal)
     private readonly goalsRepo: Repository<Goal>,
   ) {}
 
-  configSummary() {
+  async configSummary() {
+    const mode = (
+      await this.systemFlags.getString(
+        SystemFlagKey.ROADMAP_ENGINE_MODE,
+        this.config.get<string>('ROADMAP_ENGINE_MODE') ?? 'llm',
+      )
+    ).toLowerCase();
     return {
       baseUrl: (
         this.config.get<string>('ROADMAP_ENGINE_URL') ?? 'http://localhost:8080'
       ).replace(/\/$/, ''),
-      mode: (
-        this.config.get<string>('ROADMAP_ENGINE_MODE') ?? 'llm'
-      ).toLowerCase(),
+      mode,
       nestExpectedVersion: Number(
         this.config.get('ROADMAP_ENGINE_VERSION') ?? 2,
       ),
@@ -54,7 +61,7 @@ export class AdminRoadmapEngineService {
   }
 
   async checkHealth(): Promise<EngineHealthView> {
-    const cfg = this.configSummary();
+    const cfg = await this.configSummary();
     const started = Date.now();
     try {
       const health = await this.engine.health();

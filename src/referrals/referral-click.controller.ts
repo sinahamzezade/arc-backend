@@ -28,7 +28,10 @@ export class ReferralClickController {
       ok: true,
       cookieToken: result.cookieToken,
       cookieMaxAgeSec: result.cookieMaxAgeSec ?? null,
-      signupPath: '/register',
+      referralCode: result.referralCode ?? null,
+      signupPath: result.referralCode
+        ? `/register?ref=${encodeURIComponent(result.referralCode)}`
+        : '/register',
     };
   }
 }

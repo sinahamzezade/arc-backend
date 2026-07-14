@@ -11,6 +11,8 @@ import {
   type QuestionnaireAiCopy,
 } from './questionnaire-ai.schema';
 import type { QuestionnaireSchemaDto } from './schema/schema.types';
+import { SystemFlagsService } from '../system-flags/system-flags.service';
+import { SystemFlagKey } from '../system-flags/system-flag.keys';
 
 @Injectable()
 export class QuestionnaireAiService {
@@ -19,16 +21,22 @@ export class QuestionnaireAiService {
   constructor(
     private readonly config: ConfigService,
     private readonly llm: LlmService,
+    private readonly systemFlags: SystemFlagsService,
   ) {}
 
-  isEnabled(): boolean {
-    if (this.config.get<string>('QUESTIONNAIRE_AI_ENABLED') === 'false') {
+  async isEnabled(): Promise<boolean> {
+    if (
+      !(await this.systemFlags.getBool(
+        SystemFlagKey.QUESTIONNAIRE_AI_ENABLED,
+        true,
+      ))
+    ) {
       return false;
     }
     return this.llm.isConfigured();
   }
 
-  getModel(): string {
+  async getModel(): Promise<string> {
     return this.llm.getModel('questionnaire_copy');
   }
 
@@ -46,7 +54,7 @@ export class QuestionnaireAiService {
   async generateCopy(
     base: QuestionnaireSchemaDto,
   ): Promise<QuestionnaireAiCopy | null> {
-    if (!base.steps.length || !this.isEnabled()) {
+    if (!base.steps.length || !(await this.isEnabled())) {
       return null;
     }
 
@@ -55,7 +63,7 @@ export class QuestionnaireAiService {
       return null;
     }
 
-    const model = this.getModel();
+    const model = await this.getModel();
     const promptVersion = this.getPromptVersion();
 
     try {

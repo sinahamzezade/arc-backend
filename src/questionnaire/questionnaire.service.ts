@@ -1,5 +1,4 @@
 import { HttpStatus, Injectable, Optional } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
@@ -30,6 +29,8 @@ import {
   emptyQuestionnaireAnswers,
   type QuestionnaireAnswers,
 } from './types/answers';
+import { SystemFlagsService } from '../system-flags/system-flags.service';
+import { SystemFlagKey } from '../system-flags/system-flag.keys';
 
 export type IntakeMode = 'form' | 'chat';
 
@@ -47,25 +48,35 @@ export class QuestionnaireService {
     private readonly schemaService: QuestionnaireSchemaService,
     private readonly roadmapsService: RoadmapsService,
     private readonly dataSource: DataSource,
-    private readonly config: ConfigService,
+    private readonly systemFlags: SystemFlagsService,
     @Optional()
     private readonly referrals?: ReferralsService,
   ) {}
 
-  chatEnabled(): boolean {
-    return this.config.get<string>('INTAKE_CHAT_ENABLED') !== 'false';
+  async chatEnabled(userId?: string | null): Promise<boolean> {
+    return this.systemFlags.getBool(
+      SystemFlagKey.INTAKE_CHAT_ENABLED,
+      true,
+      userId,
+    );
   }
 
-  defaultIntakeMode(): IntakeMode {
-    const raw = (this.config.get<string>('INTAKE_DEFAULT_MODE') ?? 'form')
+  async defaultIntakeMode(userId?: string | null): Promise<IntakeMode> {
+    const raw = (
+      await this.systemFlags.getString(
+        SystemFlagKey.INTAKE_DEFAULT_MODE,
+        'form',
+        userId,
+      )
+    )
       .trim()
       .toLowerCase();
     return raw === 'chat' ? 'chat' : 'form';
   }
 
   async getIntakeConfig(userId: string) {
-    const chatEnabled = this.chatEnabled();
-    const defaultMode = this.defaultIntakeMode();
+    const chatEnabled = await this.chatEnabled(userId);
+    const defaultMode = await this.defaultIntakeMode(userId);
     const profile = await this.profilesRepo.findOne({ where: { userId } });
     const userMode =
       profile?.intakeMode === 'form' || profile?.intakeMode === 'chat'
@@ -83,7 +94,7 @@ export class QuestionnaireService {
   }
 
   async setIntakeMode(userId: string, mode: IntakeMode) {
-    if (mode === 'chat' && !this.chatEnabled()) {
+    if (mode === 'chat' && !(await this.chatEnabled(userId))) {
       throw new AppException(
         AuthErrorCode.VALIDATION_ERROR,
         'Conversational intake is disabled',

@@ -29,6 +29,8 @@ import { EmailService } from './services/email.service';
 import { OAuthService, VerifiedOAuthIdentity } from './services/oauth.service';
 import { PasswordService } from './services/password.service';
 import { TokenService } from './services/token.service';
+import { SystemFlagsService } from '../system-flags/system-flags.service';
+import { SystemFlagKey } from '../system-flags/system-flag.keys';
 
 const OTP_TTL_MS = 15 * 60 * 1000;
 const OTP_MAX_ATTEMPTS = 5;
@@ -54,11 +56,20 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly dataSource: DataSource,
     private readonly referralsService: ReferralsService,
+    private readonly systemFlags: SystemFlagsService,
     @InjectRepository(AuthChallenge)
     private readonly challengesRepo: Repository<AuthChallenge>,
     @InjectRepository(AuthIdentity)
     private readonly identitiesRepo: Repository<AuthIdentity>,
   ) {}
+
+  async isOtpVerificationEnabled(userId?: string | null): Promise<boolean> {
+    return this.systemFlags.getBool(
+      SystemFlagKey.OTP_VERIFICATION_ENABLED,
+      true,
+      userId,
+    );
+  }
 
   async register(dto: RegisterDto, meta?: RequestMeta) {
     if (!isPasswordStrong(dto.password)) {
@@ -79,6 +90,7 @@ export class AuthService {
     }
 
     const passwordHash = await this.passwordService.hash(dto.password);
+    const otpEnabled = await this.isOtpVerificationEnabled();
 
     const { user, profile } = await this.dataSource.transaction(
       async (manager) => {
@@ -91,7 +103,7 @@ export class AuthService {
             passwordHash,
             passwordLastChangedAt: new Date(),
             authProvider: AuthProvider.EMAIL,
-            emailVerifiedAt: null,
+            emailVerifiedAt: otpEnabled ? null : new Date(),
             isActive: true,
           }),
         );
@@ -122,7 +134,9 @@ export class AuthService {
       // Attribution failure must not block registration.
     }
 
-    await this.requestEmailVerification(user);
+    if (otpEnabled) {
+      await this.requestEmailVerification(user);
+    }
     return this.buildAuthResponse(user, profile, meta);
   }
 
@@ -224,6 +238,14 @@ export class AuthService {
       return { ok: true };
     }
 
+    if (!(await this.isOtpVerificationEnabled(user.id))) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'Email verification is disabled',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     await this.createAndSendOtp(user, AuthChallengePurpose.EMAIL_VERIFY);
     return { ok: true };
   }
@@ -234,6 +256,14 @@ export class AuthService {
       throw new AppException(
         AuthErrorCode.OTP_INVALID,
         'Invalid OTP',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (!(await this.isOtpVerificationEnabled(user.id))) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'Email verification is disabled',
         HttpStatus.BAD_REQUEST,
       );
     }
@@ -396,7 +426,46 @@ export class AuthService {
     };
   }
 
+  /** Admin override — set/replace password, revoke refresh sessions. */
+  async adminSetPassword(
+    userId: string,
+    password: string,
+    confirmPassword: string,
+  ) {
+    if (password !== confirmPassword) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'Passwords do not match',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (!isPasswordStrong(password)) {
+      throw new AppException(
+        AuthErrorCode.PASSWORD_TOO_WEAK,
+        passwordStrengthMessage(),
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'User not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const passwordHash = await this.passwordService.hash(password);
+    await this.usersService.updatePassword(user.id, passwordHash);
+    await this.tokenService.revokeAllForUser(user.id);
+
+    return { ok: true };
+  }
+
   async loginWithGoogle(idToken: string, meta?: RequestMeta) {
+    await this.assertSsoEnabled();
     return this.loginWithOAuth(
       await this.oauthService.verifyGoogle(idToken),
       meta,
@@ -404,10 +473,25 @@ export class AuthService {
   }
 
   async loginWithApple(idToken: string, meta?: RequestMeta) {
+    await this.assertSsoEnabled();
     return this.loginWithOAuth(
       await this.oauthService.verifyApple(idToken),
       meta,
     );
+  }
+
+  private async assertSsoEnabled() {
+    const enabled = await this.systemFlags.getBool(
+      SystemFlagKey.SSO_ENABLED,
+      true,
+    );
+    if (!enabled) {
+      throw new AppException(
+        AuthErrorCode.OAUTH_FAILED,
+        'Social sign-in is disabled',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
   }
 
   private async loginWithOAuth(

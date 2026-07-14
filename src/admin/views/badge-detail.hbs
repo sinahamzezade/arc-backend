@@ -57,12 +57,12 @@
                   PNG, JPEG, WebP, GIF, or SVG · max 2MB. Replaces current upload.
                 </p>
                 <div class="form-actions" style="padding-left:0">
-                  <button type="submit">Upload image</button>
+                  {{> ui-button label="Upload image" icon="fa-solid fa-upload" }}
                 </div>
               </form>
               {{#if hasUpload}}
                 <form method="post" action="/admin/badges/{{row.id}}/icon/clear" style="margin-top:8px">
-                  <button type="submit" class="secondary">Remove uploaded image</button>
+                  {{> ui-button label="Remove uploaded image" variant="secondary" }}
                 </form>
               {{/if}}
             </div>
@@ -73,6 +73,10 @@
         <div class="panel">
           <form method="post" action="/admin/badges/{{row.id}}">
             <div class="form-grid">
+              <div>
+                <label for="code">Code</label>
+                <input id="code" name="code" type="text" value="{{row.code}}" required />
+              </div>
               <div>
                 <label for="name">Name</label>
                 <input id="name" name="name" type="text" value="{{row.name}}" required />
@@ -102,13 +106,21 @@
                 </select>
               </div>
               <div>
+                <label for="criteriaType">Criteria type</label>
+                <select id="criteriaType" name="criteriaType">
+                  {{#each criteriaTypes}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div>
                 <label for="sortOrder">Sort order</label>
                 <input id="sortOrder" name="sortOrder" type="number" value="{{row.sortOrder}}" />
               </div>
               <div>
                 <label for="iconAssetKey">Icon asset key</label>
                 <input id="iconAssetKey" name="iconAssetKey" type="text" value="{{row.iconAssetKey}}" />
-                <p class="muted" style="margin:-8px 0 14px;font-size:0.75rem">
+                <p class="muted" style="margin:6px 0 0;font-size:0.75rem">
                   Bundled key (e.g. first-step) or upload path. Upload sets this automatically.
                 </p>
               </div>
@@ -116,14 +128,43 @@
                 <label for="description">Description</label>
                 <textarea id="description" name="description">{{row.description}}</textarea>
               </div>
+              <div style="grid-column: 1 / -1">
+                <label for="criteriaJson">Criteria JSON</label>
+                <textarea id="criteriaJson" name="criteriaJson" rows="5" required>{{{row.criteriaJsonText}}}</textarea>
+                <p class="muted" style="margin:6px 0 0;font-size:0.75rem">
+                  counter: <code>{"counterKey":"lessons_completed","target":5}</code> ·
+                  distinct_set: <code>{"setKey":"lesson_formats","setTarget":5}</code> ·
+                  consecutive: <code>{"consecutiveKey":"weekly_streak","minConsecutive":2}</code> ·
+                  event_once: <code>{"eventType":"roadmap.generated.v1"}</code> ·
+                  referral_milestone: <code>{"referralQualified":5}</code>
+                </p>
+              </div>
+              <div style="grid-column: 1 / -1">
+                <label for="rewardJson">Reward JSON</label>
+                <textarea id="rewardJson" name="rewardJson" rows="3">{{{row.rewardJsonText}}}</textarea>
+              </div>
               <div class="check-row">
                 <input id="isHidden" name="isHidden" type="checkbox" value="1" {{#if row.isHidden}}checked{{/if}} />
                 <label for="isHidden">Hidden from catalog</label>
               </div>
             </div>
             <div class="form-actions">
-              <button type="submit">Save badge</button>
+              {{> ui-button label="Save badge" icon="fa-solid fa-floppy-disk" }}
             </div>
+          </form>
+        </div>
+
+        <h2 class="section-title">Danger</h2>
+        <div class="panel">
+          <p class="muted" style="margin-top:0">
+            Deletes this definition. Earned user badges keep code/label; definition FK set null.
+          </p>
+          <form
+            method="post"
+            action="/admin/badges/{{row.id}}/delete"
+            onsubmit="return confirm('Delete badge {{row.name}} ({{row.code}})?');"
+          >
+            {{> ui-button label="Delete badge" variant="danger" icon="fa-solid fa-trash" }}
           </form>
         </div>
       </main>

@@ -14,6 +14,65 @@
           <h1>Store</h1>
           <p class="sub">{{count}} item{{#unless countSingular}}s{{/unless}}</p>
         </div>
+        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
+        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+
+        <h2 class="section-title">Add item</h2>
+        <div class="panel" style="margin-bottom:18px">
+          <form method="post" action="/admin/store">
+            <div class="form-grid">
+              <div>
+                <label for="sku">SKU</label>
+                <input id="sku" name="sku" type="text" placeholder="streak-freeze" required />
+              </div>
+              <div>
+                <label for="title">Title</label>
+                <input id="title" name="title" type="text" placeholder="Streak Freeze" required />
+              </div>
+              <div>
+                <label for="price">Price</label>
+                <input id="price" name="price" type="number" min="0" value="0" required />
+              </div>
+              <div>
+                <label for="currency">Currency</label>
+                <select id="currency" name="currency">
+                  {{#each currencies}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div>
+                <label for="itemType">Item type</label>
+                <select id="itemType" name="itemType">
+                  {{#each itemTypes}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div>
+                <label for="rarity">Rarity</label>
+                <input id="rarity" name="rarity" type="text" value="common" />
+              </div>
+              <div>
+                <label for="purchaseLimit">Purchase limit</label>
+                <input id="purchaseLimit" name="purchaseLimit" type="number" min="0" placeholder="Optional" />
+              </div>
+              <div style="grid-column: 1 / -1">
+                <label for="description">Description</label>
+                <textarea id="description" name="description" placeholder="Optional"></textarea>
+              </div>
+              <div class="check-row">
+                <input id="isActive" name="isActive" type="checkbox" value="1" checked />
+                <label for="isActive">Active</label>
+              </div>
+            </div>
+            <div class="form-actions">
+              {{> ui-button label="Create item" icon="fa-solid fa-plus" }}
+            </div>
+          </form>
+        </div>
+
+        <h2 class="section-title">Catalog</h2>
         <div class="panel">
           {{#if hasRows}}
             <div class="table-wrap">
@@ -49,7 +108,7 @@
               </table>
             </div>
           {{else}}
-            <div class="empty">No store items yet.</div>
+            <div class="empty">No store items yet. Create one above.</div>
           {{/if}}
         </div>
       </main>

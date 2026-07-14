@@ -15,11 +15,17 @@
         {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
         <div class="page-head">
           <h1>{{row.title}}</h1>
-          <p class="sub">{{row.sku}}</p>
+          <p class="sub">{{row.sku}} · v{{row.version}}</p>
         </div>
+
+        <h2 class="section-title">Details</h2>
         <div class="panel">
           <form method="post" action="/admin/store/{{row.id}}">
             <div class="form-grid">
+              <div>
+                <label for="sku">SKU</label>
+                <input id="sku" name="sku" type="text" value="{{row.sku}}" required />
+              </div>
               <div>
                 <label for="title">Title</label>
                 <input id="title" name="title" type="text" value="{{row.title}}" required />
@@ -62,8 +68,22 @@
               </div>
             </div>
             <div class="form-actions">
-              <button type="submit">Save item</button>
+              {{> ui-button label="Save item" icon="fa-solid fa-floppy-disk" }}
             </div>
+          </form>
+        </div>
+
+        <h2 class="section-title">Danger</h2>
+        <div class="panel">
+          <p class="muted" style="margin-top:0">
+            Deletes this catalog row. Inventory refs with this store item are set null (SKU kept on those rows).
+          </p>
+          <form
+            method="post"
+            action="/admin/store/{{row.id}}/delete"
+            onsubmit="return confirm('Delete store item {{row.title}} ({{row.sku}})?');"
+          >
+            {{> ui-button label="Delete item" variant="danger" icon="fa-solid fa-trash" }}
           </form>
         </div>
       </main>

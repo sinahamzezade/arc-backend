@@ -310,7 +310,7 @@ export class RoadmapLlmPlannerService {
     }
     if (!input.catalog.lessons.length) return null;
 
-    const model = this.llm.getModel('enrich');
+    const model = await this.llm.getModel('enrich');
     const system = buildRoadmapLlmPlannerSystemPrompt();
     const baseUser = buildRoadmapLlmPlannerUserPrompt({
       user: input.user,

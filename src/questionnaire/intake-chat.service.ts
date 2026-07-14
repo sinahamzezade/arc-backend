@@ -1,5 +1,4 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import OpenAI from 'openai';
 import { Repository } from 'typeorm';
@@ -65,7 +64,6 @@ export class IntakeChatService {
   private static readonly SKILL_SUGGEST_TTL_MS = 15 * 60_000;
 
   constructor(
-    private readonly config: ConfigService,
     private readonly llm: LlmService,
     private readonly schemaService: QuestionnaireSchemaService,
     private readonly questionnaireService: QuestionnaireService,
@@ -77,12 +75,12 @@ export class IntakeChatService {
     private readonly recipesRepo: Repository<RoleRecipe>,
   ) {}
 
-  chatEnabled(): boolean {
-    return this.config.get<string>('INTAKE_CHAT_ENABLED') !== 'false';
+  async chatEnabled(userId?: string | null): Promise<boolean> {
+    return this.questionnaireService.chatEnabled(userId);
   }
 
-  private assertChatEnabled() {
-    if (!this.chatEnabled()) {
+  private async assertChatEnabled(userId: string) {
+    if (!(await this.chatEnabled(userId))) {
       throw new AppException(
         AuthErrorCode.VALIDATION_ERROR,
         'Conversational intake is disabled',
@@ -92,7 +90,7 @@ export class IntakeChatService {
   }
 
   async start(userId: string): Promise<ChatTurnResponse> {
-    this.assertChatEnabled();
+    await this.assertChatEnabled(userId);
     const schema = this.schemaService.getSchema();
     await this.markInProgress(userId);
 
@@ -123,7 +121,7 @@ export class IntakeChatService {
     userId: string,
     input: { message?: string; selection?: IntakeChatSelectionDto },
   ): Promise<ChatTurnResponse> {
-    this.assertChatEnabled();
+    await this.assertChatEnabled(userId);
     const hasText = Boolean(input.message?.trim());
     const hasSelection = Boolean(input.selection?.fieldId);
 
@@ -160,7 +158,7 @@ export class IntakeChatService {
   }
 
   async complete(userId: string) {
-    this.assertChatEnabled();
+    await this.assertChatEnabled(userId);
     const schema = this.schemaService.getSchema();
     const row = await this.responsesRepo.findOne({ where: { userId } });
     if (!row) {
@@ -193,7 +191,7 @@ export class IntakeChatService {
   }
 
   async getState(userId: string): Promise<ChatTurnResponse> {
-    this.assertChatEnabled();
+    await this.assertChatEnabled(userId);
     const schema = this.schemaService.getSchema();
     const row = await this.responsesRepo.findOne({ where: { userId } });
     const answers = normalizeDraftAnswers(row?.answers ?? {}, schema);
@@ -387,7 +385,7 @@ export class IntakeChatService {
     });
 
     const client = this.llm.createClient();
-    let model = this.llm.getModel('intake');
+    let model = await this.llm.getModel('intake');
 
     if (!client) {
       const fallback =
@@ -583,7 +581,7 @@ export class IntakeChatService {
     const client = this.llm.createClient();
     if (!client) return [];
 
-    const model = this.llm.getModel('intake');
+    const model = await this.llm.getModel('intake');
     const system = [
       'You suggest skills a learner might already have for a career goal.',
       'Return JSON only: {"skills":[{"value":"kebab-case","label":"Short Name"},...]}',

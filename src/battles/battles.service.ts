@@ -13,6 +13,7 @@ import { BadgesService } from '../badges/badges.service';
 import { OUTBOX_BATTLE_COMPLETED } from '../badges/badge.constants';
 import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
+import { BattleCatalogService } from '../content-pool/battle-catalog.service';
 import { ContentQualityService } from '../content-pool/content-quality.service';
 import { QuestionPoolService } from '../content-pool/question-pool.service';
 import {
@@ -102,6 +103,7 @@ export class BattlesService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly questionPool: QuestionPoolService,
+    private readonly battleCatalog: BattleCatalogService,
     private readonly contentQuality: ContentQualityService,
     private readonly profiles: ProfilesService,
     private readonly users: UsersService,
@@ -131,6 +133,10 @@ export class BattlesService {
     @InjectRepository(Profile)
     private readonly profilesRepo: Repository<Profile>,
   ) {}
+
+  async listCatalog() {
+    return this.battleCatalog.listCatalog();
+  }
 
   async create(userId: string, dto: CreateBattleDto) {
     const existing = await this.battlesRepo.findOne({
@@ -193,26 +199,33 @@ export class BattlesService {
 
     const exposure = await this.loadExposureHistories(userId, dto.opponentId);
 
-    // Validate pool availability before invite (no debit yet).
-    try {
-      await this.questionPool.selectBattleSet({
-        subject: dto.subject.toLowerCase().replace(/\s+/g, '-'),
-        topic: dto.topic,
-        count: dto.questions,
-        difficultyMix,
-        mode: dto.mode,
-        userExposureHistory: exposure.user,
-        opponentExposureHistory: exposure.opponent,
-      });
-    } catch (err) {
-      if (err instanceof AppException) {
-        throw new AppException(
-          AuthErrorCode.BATTLE_INSUFFICIENT_QUESTION_POOL,
-          err.message,
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-      throw err;
+    const stack =
+      (await this.battleCatalog.resolveSubject(dto.subject)) ??
+      ({
+        slug: dto.subject.toLowerCase().replace(/\s+/g, '-'),
+        name: dto.subject,
+      } as const);
+    const skill = await this.battleCatalog.resolveSkill(stack.slug, dto.topic);
+    const subjectLabel = stack.name;
+    const topicLabel = skill?.title ?? dto.topic ?? null;
+
+    // LLM configured OR seeded pool must cover this matchup (no debit yet).
+    const canFulfill = await this.questionPool.canFulfillBattleSet({
+      subject: stack.slug,
+      topic: topicLabel ?? dto.topic,
+      skillNodeId: skill?.id,
+      count: dto.questions,
+      difficultyMix,
+      mode: dto.mode,
+      userExposureHistory: exposure.user,
+      opponentExposureHistory: exposure.opponent,
+    });
+    if (!canFulfill) {
+      throw new AppException(
+        AuthErrorCode.BATTLE_INSUFFICIENT_QUESTION_POOL,
+        'Not enough questions for this subject/topic yet',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     const challengerProfile = await this.profiles.findByUserId(userId);
@@ -230,8 +243,8 @@ export class BattlesService {
         battleRepo.create({
           challengerId: userId,
           opponentId: opponent.id,
-          subject: dto.subject,
-          topic: dto.topic ?? null,
+          subject: subjectLabel,
+          topic: topicLabel,
           difficulty: dto.difficulty,
           mode: dto.mode,
           questionCount: dto.questions,
@@ -259,7 +272,10 @@ export class BattlesService {
 
       await this.appendEvent(manager, row.id, BattleEventType.Invite, userId, {
         stake: dto.stake,
-        subject: dto.subject,
+        subject: subjectLabel,
+        topic: topicLabel,
+        skillNodeId: skill?.id ?? null,
+        stackSlug: stack.slug,
       });
 
       return row;
@@ -274,7 +290,7 @@ export class BattlesService {
       userId: opponent.id,
       type: NotificationType.BattleInvite,
       title: 'Battle challenge',
-      body: `${challengerName} challenged you to ${dto.questions} ${dto.subject} questions for ${dto.stake} Coins.`,
+      body: `${challengerName} challenged you to ${dto.questions} ${subjectLabel} questions for ${dto.stake} Coins.`,
       actionUrl: `/battle/invite/${battle.id}`,
       payload: { battleId: battle.id },
       dedupeKey: `battle_invite:${battle.id}`,
@@ -432,11 +448,12 @@ export class BattlesService {
         let questionSet;
         try {
           questionSet = await this.questionPool.selectBattleSet({
-            subject: battle.subject.toLowerCase().replace(/\s+/g, '-'),
+            subject: battle.subject,
             topic: battle.topic ?? undefined,
             count: battle.questionCount,
             difficultyMix,
             mode: battle.mode,
+            secondsPerQuestion: battle.secondsPerQuestion,
             userExposureHistory: exposure.user,
             opponentExposureHistory: exposure.opponent,
           });
@@ -1658,11 +1675,12 @@ export class BattlesService {
         : [battle.difficulty === 'easy' ? 'medium' : battle.difficulty];
 
     const set = await this.questionPool.selectBattleSet({
-      subject: battle.subject.toLowerCase().replace(/\s+/g, '-'),
+      subject: battle.subject,
       topic: battle.topic ?? undefined,
       count: 1,
       difficultyMix,
       mode: battle.mode,
+      secondsPerQuestion: battle.secondsPerQuestion,
       ...(await this.loadExposureHistories(
         battle.challengerId,
         battle.opponentId,

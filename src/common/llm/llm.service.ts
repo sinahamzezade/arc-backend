@@ -1,17 +1,32 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
+import {
+  DEFAULT_LLM_MODEL,
+  SystemFlagKey,
+} from '../../system-flags/system-flag.keys';
+import { SystemFlagsService } from '../../system-flags/system-flags.service';
 
-export type LlmPurpose = 'intake' | 'enrich' | 'questionnaire_copy' | 'arlo';
+export type LlmPurpose =
+  | 'intake'
+  | 'enrich'
+  | 'questionnaire_copy'
+  | 'arlo'
+  | 'battle';
 
 /**
  * Provider-agnostic OpenAI-compatible client.
  * Groq: LLM_BASE_URL=https://api.groq.com/openai/v1
  * OpenRouter: LLM_BASE_URL=https://openrouter.ai/api/v1
+ *
+ * Model picks for roadmap / arlo / battle live in admin Feature flags.
  */
 @Injectable()
 export class LlmService {
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly systemFlags: SystemFlagsService,
+  ) {}
 
   isConfigured(): boolean {
     return Boolean(this.resolveApiKey());
@@ -34,36 +49,41 @@ export class LlmService {
     return url || undefined;
   }
 
-  getModel(purpose: LlmPurpose): string {
+  async getModel(purpose: LlmPurpose): Promise<string> {
     switch (purpose) {
       case 'intake':
         return (
           this.config.get<string>('LLM_INTAKE_MODEL')?.trim() ||
           this.config.get<string>('OPENAI_ROADMAP_MODEL')?.trim() ||
-          'llama-3.3-70b-versatile'
+          DEFAULT_LLM_MODEL
         );
       case 'enrich':
-        return (
-          this.config.get<string>('LLM_ROADMAP_MODEL')?.trim() ||
-          this.config.get<string>('OPENAI_ROADMAP_MODEL')?.trim() ||
-          'llama-3.3-70b-versatile'
+        return this.systemFlags.getString(
+          SystemFlagKey.LLM_ROADMAP_MODEL,
+          DEFAULT_LLM_MODEL,
         );
       case 'questionnaire_copy':
         return (
           this.config.get<string>('OPENAI_QUESTIONNAIRE_MODEL')?.trim() ||
-          this.config.get<string>('LLM_ROADMAP_MODEL')?.trim() ||
+          (await this.systemFlags.getString(
+            SystemFlagKey.LLM_ROADMAP_MODEL,
+            '',
+          )) ||
           this.config.get<string>('OPENAI_ROADMAP_MODEL')?.trim() ||
           'gpt-4o-mini'
         );
       case 'arlo':
-        return (
-          this.config.get<string>('OPENAI_ARLO_MODEL')?.trim() ||
-          this.config.get<string>('LLM_ROADMAP_MODEL')?.trim() ||
-          this.config.get<string>('OPENAI_ROADMAP_MODEL')?.trim() ||
-          'gpt-4o-mini'
+        return this.systemFlags.getString(
+          SystemFlagKey.LLM_ARLO_MODEL,
+          DEFAULT_LLM_MODEL,
+        );
+      case 'battle':
+        return this.systemFlags.getString(
+          SystemFlagKey.LLM_BATTLE_MODEL,
+          DEFAULT_LLM_MODEL,
         );
       default:
-        return 'llama-3.3-70b-versatile';
+        return DEFAULT_LLM_MODEL;
     }
   }
 

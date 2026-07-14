@@ -14,6 +14,183 @@
           <h1>Badges</h1>
           <p class="sub">{{count}} definition{{#unless countSingular}}s{{/unless}}</p>
         </div>
+        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
+        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+
+        <h2 class="section-title">How to add a badge</h2>
+        <div class="panel" style="margin-bottom:18px">
+          <p style="margin-top:0">
+            Badge unlocks when user progress hits the criteria. Fill the form below →
+            set <strong>status = active</strong> → reuse a <strong>known counter/event key</strong>
+            (unknown keys never unlock without a code change).
+          </p>
+
+          <ol style="margin:0 0 16px;padding-left:1.25rem;line-height:1.55">
+            <li><strong>Code</strong> — unique slug, e.g. <code>ten-lessons</code> (lowercase, <code>-</code>/<code>_</code> ok).</li>
+            <li><strong>Name / description</strong> — shown in the app catalog.</li>
+            <li><strong>Criteria type</strong> — pick one, then match JSON shape (examples below).</li>
+            <li><strong>Reward JSON</strong> — optional, e.g. <code>{"coins":25}</code> or <code>{"gems":5}</code>.</li>
+            <li><strong>Image</strong> — optional here; after create, open the badge → upload PNG/WebP.</li>
+            <li>Save → unlocks automatically next time matching domain event runs.</li>
+          </ol>
+
+          <p class="muted" style="margin:0 0 8px;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">Worked example — complete 10 lessons</p>
+          <div class="form-grid" style="gap:10px;margin-bottom:14px">
+            <div>
+              <label>Code</label>
+              <input type="text" value="ten-lessons" readonly />
+            </div>
+            <div>
+              <label>Name</label>
+              <input type="text" value="Ten Lessons" readonly />
+            </div>
+            <div>
+              <label>Criteria type</label>
+              <input type="text" value="counter" readonly />
+            </div>
+            <div>
+              <label>Status</label>
+              <input type="text" value="active" readonly />
+            </div>
+            <div style="grid-column:1/-1">
+              <label>Criteria JSON</label>
+              <textarea rows="2" readonly>{"counterKey":"lessons_completed","target":10}</textarea>
+            </div>
+            <div style="grid-column:1/-1">
+              <label>Reward JSON</label>
+              <textarea rows="1" readonly>{"coins":40}</textarea>
+            </div>
+          </div>
+
+          <p class="muted" style="margin:0 0 8px;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">Criteria cheat sheet</p>
+          <div class="table-wrap">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Criteria JSON</th>
+                  <th>Live keys</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="mono">counter</td>
+                  <td class="mono">{"counterKey":"lessons_completed","target":5}</td>
+                  <td>lessons_completed, weeks_completed, quizzes_passed, perfect_quizzes, practices_completed, deep_lessons, challenges_passed, battle_wins, study_sessions_qualified</td>
+                </tr>
+                <tr>
+                  <td class="mono">distinct_set</td>
+                  <td class="mono">{"setKey":"lesson_formats","setTarget":5}</td>
+                  <td>lesson_formats, study_partners</td>
+                </tr>
+                <tr>
+                  <td class="mono">consecutive</td>
+                  <td class="mono">{"consecutiveKey":"weekly_streak","minConsecutive":2}</td>
+                  <td>weekly_streak</td>
+                </tr>
+                <tr>
+                  <td class="mono">event_once</td>
+                  <td class="mono">{"eventType":"roadmap.generated.v1"}</td>
+                  <td>roadmap.generated.v1, weekly_plan.activated.v1, comeback.completed.v1</td>
+                </tr>
+                <tr>
+                  <td class="mono">referral_milestone</td>
+                  <td class="mono">{"referralQualified":5}</td>
+                  <td>referrals_qualified</td>
+                </tr>
+                <tr>
+                  <td class="mono">composite</td>
+                  <td colspan="2"><span class="muted">Deferred — will not unlock yet.</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="muted" style="margin:12px 0 0;font-size:0.85rem">
+            Tip: leave status <code>draft</code> while testing fields, then switch to <code>active</code> when ready.
+            Prefer <strong>active</strong> only when counter/event key is in the cheat sheet above.
+          </p>
+        </div>
+
+        <h2 class="section-title">Add badge</h2>
+        <div class="panel" style="margin-bottom:18px">
+          <form method="post" action="/admin/badges">
+            <div class="form-grid">
+              <div>
+                <label for="code">Code</label>
+                <input id="code" name="code" type="text" placeholder="lesson-starter-plus" required />
+              </div>
+              <div>
+                <label for="name">Name</label>
+                <input id="name" name="name" type="text" placeholder="Lesson Starter+" required />
+              </div>
+              <div>
+                <label for="category">Category</label>
+                <select id="category" name="category">
+                  {{#each categories}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div>
+                <label for="rarity">Rarity</label>
+                <select id="rarity" name="rarity">
+                  {{#each rarities}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div>
+                <label for="status">Status</label>
+                <select id="status" name="status">
+                  {{#each statuses}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div>
+                <label for="criteriaType">Criteria type</label>
+                <select id="criteriaType" name="criteriaType">
+                  {{#each criteriaTypes}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </div>
+              <div>
+                <label for="sortOrder">Sort order</label>
+                <input id="sortOrder" name="sortOrder" type="number" value="100" />
+              </div>
+              <div>
+                <label for="iconAssetKey">Icon asset key</label>
+                <input id="iconAssetKey" name="iconAssetKey" type="text" placeholder="first-step (optional)" />
+              </div>
+              <div style="grid-column: 1 / -1">
+                <label for="description">Description</label>
+                <textarea id="description" name="description" placeholder="What the user did to earn this"></textarea>
+              </div>
+              <div style="grid-column: 1 / -1">
+                <label for="criteriaJson">Criteria JSON</label>
+                <textarea id="criteriaJson" name="criteriaJson" rows="4" required>{"counterKey":"lessons_completed","target":10}</textarea>
+                <p class="muted" style="margin:6px 0 0;font-size:0.75rem">
+                  Keys must match live counters/events (e.g. lessons_completed, weekly_streak, roadmap.generated.v1).
+                  <code>composite</code> type never unlocks yet.
+                </p>
+              </div>
+              <div style="grid-column: 1 / -1">
+                <label for="rewardJson">Reward JSON</label>
+                <textarea id="rewardJson" name="rewardJson" rows="2">{"coins":25}</textarea>
+              </div>
+              <div class="check-row">
+                <input id="isHidden" name="isHidden" type="checkbox" value="1" />
+                <label for="isHidden">Hidden from catalog</label>
+              </div>
+            </div>
+            <div class="form-actions">
+              {{> ui-button label="Create badge" icon="fa-solid fa-plus" }}
+            </div>
+          </form>
+        </div>
+
+        <h2 class="section-title">Catalog</h2>
         <div class="panel">
           {{#if hasRows}}
             <div class="table-wrap">
@@ -25,6 +202,7 @@
                     <th>Name</th>
                     <th>Category</th>
                     <th>Rarity</th>
+                    <th>Criteria</th>
                     <th>Status</th>
                   </tr>
                 </thead>
@@ -42,6 +220,7 @@
                       <td>{{name}}</td>
                       <td class="mono">{{category}}</td>
                       <td>{{rarity}}</td>
+                      <td class="mono">{{criteriaType}}</td>
                       <td>
                         {{#if isActiveStatus}}
                           <span class="badge badge-ok">{{status}}</span>
@@ -55,7 +234,7 @@
               </table>
             </div>
           {{else}}
-            <div class="empty">No badges yet.</div>
+            <div class="empty">No badges yet. Create one above.</div>
           {{/if}}
         </div>
       </main>

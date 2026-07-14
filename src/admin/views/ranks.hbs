@@ -14,12 +14,56 @@
           <h1>Ranks</h1>
           <p class="sub">{{count}} definition{{#unless countSingular}}s{{/unless}}</p>
         </div>
+        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
+        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+
+        <h2 class="section-title">Add rank</h2>
+        <div class="panel" style="margin-bottom:18px">
+          <form method="post" action="/admin/ranks">
+            <div class="form-grid">
+              <div>
+                <label for="level">Level</label>
+                <input id="level" name="level" type="number" min="1" placeholder="13" required />
+              </div>
+              <div>
+                <label for="slug">Slug</label>
+                <input id="slug" name="slug" type="text" placeholder="sky-eagle" required />
+              </div>
+              <div>
+                <label for="title">Title</label>
+                <input id="title" name="title" type="text" placeholder="Sky Eagle" required />
+              </div>
+              <div>
+                <label for="xpThreshold">XP threshold</label>
+                <input id="xpThreshold" name="xpThreshold" type="number" min="0" value="0" required />
+              </div>
+              <div>
+                <label for="minimumActiveDays">Min active days</label>
+                <input id="minimumActiveDays" name="minimumActiveDays" type="number" min="0" value="0" required />
+              </div>
+              <div>
+                <label for="displayOrder">Display order</label>
+                <input id="displayOrder" name="displayOrder" type="number" value="0" />
+              </div>
+              <div class="check-row">
+                <input id="isActive" name="isActive" type="checkbox" value="1" checked />
+                <label for="isActive">Active</label>
+              </div>
+            </div>
+            <div class="form-actions">
+              {{> ui-button label="Create rank" icon="fa-solid fa-plus" }}
+            </div>
+          </form>
+        </div>
+
+        <h2 class="section-title">Catalog</h2>
         <div class="panel">
           {{#if hasRows}}
             <div class="table-wrap">
               <table class="data">
                 <thead>
                   <tr>
+                    <th></th>
                     <th>Level</th>
                     <th>Title</th>
                     <th>Slug</th>
@@ -31,6 +75,13 @@
                 <tbody>
                   {{#each rows}}
                     <tr>
+                      <td>
+                        {{#if iconThumbUrl}}
+                          <img src="{{iconThumbUrl}}" alt="" width="32" height="32" style="width:32px;height:32px;object-fit:cover;border-radius:8px;border:1px solid #d5ddd7" />
+                        {{else}}
+                          <span class="muted">—</span>
+                        {{/if}}
+                      </td>
                       <td class="mono">{{level}}</td>
                       <td><a class="link" href="/admin/ranks/{{id}}">{{title}}</a></td>
                       <td class="mono">{{slug}}</td>
@@ -49,7 +100,7 @@
               </table>
             </div>
           {{else}}
-            <div class="empty">No ranks seeded yet.</div>
+            <div class="empty">No ranks yet. Create one above.</div>
           {{/if}}
         </div>
       </main>
