@@ -29,6 +29,7 @@ import { NotificationType } from '../notifications/entities/notification.entity'
 import { NotificationsService } from '../notifications/notifications.service';
 import { Profile } from '../profiles/entities/profile.entity';
 import { ProfilesService } from '../profiles/profiles.service';
+import { RankAvatarService } from '../ranks/rank-avatar.service';
 import { SocialPermissionService } from '../social/social-permission.service';
 import { User } from '../users/entities/user.entity';
 import { UsersService } from '../users/users.service';
@@ -132,6 +133,7 @@ export class BattlesService {
     private readonly leagueStateRepo: Repository<UserLeagueState>,
     @InjectRepository(Profile)
     private readonly profilesRepo: Repository<Profile>,
+    private readonly rankAvatars: RankAvatarService,
   ) {}
 
   async listCatalog() {
@@ -456,6 +458,7 @@ export class BattlesService {
             secondsPerQuestion: battle.secondsPerQuestion,
             userExposureHistory: exposure.user,
             opponentExposureHistory: exposure.opponent,
+            userId: battle.challengerId,
           });
         } catch (err) {
           // Refund and void if pool failed after debit.
@@ -1681,6 +1684,7 @@ export class BattlesService {
       difficultyMix,
       mode: battle.mode,
       secondsPerQuestion: battle.secondsPerQuestion,
+      userId: battle.challengerId,
       ...(await this.loadExposureHistories(
         battle.challengerId,
         battle.opponentId,
@@ -1882,6 +1886,7 @@ export class BattlesService {
     const opponentProfile = await this.profilesRepo.findOne({
       where: { userId: opponentId },
     });
+    const rankIcon = await this.rankAvatars.iconKeyForUser(opponentId);
 
     let currentQuestion: BattleQuestion | null = null;
     if (battle.currentRound > 0) {
@@ -1920,7 +1925,17 @@ export class BattlesService {
       currentAnswers: currentQuestion?.revealedAt ? currentAnswers : undefined,
       youAnswered,
       opponentAnswered,
-      opponentProfile,
+      opponentProfile: opponentProfile
+        ? {
+            displayName: opponentProfile.displayName,
+            username: opponentProfile.username,
+            avatarUrl: rankIcon ?? opponentProfile.avatarUrl ?? null,
+          }
+        : {
+            displayName: null,
+            username: null,
+            avatarUrl: rankIcon,
+          },
     });
   }
 

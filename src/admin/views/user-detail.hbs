@@ -5,6 +5,56 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{title}} · Arc Admin</title>
     {{> layout}}
+    <style>
+      .ud-tabs [role='tablist'] {
+        border-bottom: 1px solid #d5ddd7;
+      }
+      .ud-tabs [role='tab'] {
+        position: relative;
+        margin-bottom: -1px;
+        padding: 0.65rem 1rem;
+        border: none;
+        border-bottom: 2px solid transparent;
+        border-radius: 0;
+        background: transparent;
+        color: #5b7c6e;
+        font: inherit;
+        font-size: 0.875rem;
+        font-weight: 600;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: color 180ms ease, border-color 180ms ease;
+      }
+      .ud-tabs [role='tab']:hover {
+        color: #1a2e28;
+      }
+      .ud-tabs [role='tab'][aria-selected='true'] {
+        color: #1a2e28;
+        border-bottom-color: #c4785a;
+      }
+      .ud-tabs [role='tab']:focus-visible {
+        outline: 2px solid #c4785a;
+        outline-offset: 2px;
+      }
+      .ud-panel {
+        animation: ud-panel-in 280ms ease both;
+      }
+      @keyframes ud-panel-in {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .ud-panel {
+          animation: none;
+        }
+      }
+    </style>
   </head>
   <body class="bg-mist text-moss font-sans antialiased">
     <div class="shell min-h-screen">
@@ -15,7 +65,7 @@
           aria-hidden="true"
         ></div>
         <div
-          class="pointer-events-none absolute left-1/3 top-64 h-56 w-56 rounded-full bg-clay/15 blur-3xl"
+          class="pointer-events-none absolute left-1/4 top-80 h-64 w-64 rounded-full bg-clay/12 blur-3xl"
           aria-hidden="true"
         ></div>
 
@@ -37,23 +87,29 @@
             </p>
           {{/if}}
 
-          <section class="relative mb-8 md:mb-12">
+          {{!-- Hero + actions --}}
+          <section class="relative mb-10 md:mb-14">
             <div
-              class="relative overflow-hidden rounded-blob bg-gradient-to-br from-moss via-[#243f36] to-[#314f44] px-7 py-9 text-mist shadow-soft md:w-[88%] md:px-10 md:py-11"
+              class="relative overflow-hidden rounded-blob bg-gradient-to-br from-moss via-[#243f36] to-[#314f44] px-7 py-9 text-mist shadow-soft md:w-[86%] md:px-10 md:py-11"
             >
               <div
                 class="absolute -left-10 bottom-0 h-40 w-40 rounded-full bg-leaf/20 blur-2xl"
+                aria-hidden="true"
+              ></div>
+              <div
+                class="absolute -right-8 top-0 h-32 w-32 rotate-12 rounded-[2rem] border border-white/10"
                 aria-hidden="true"
               ></div>
               <p class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-leaf/80">
                 Member profile
               </p>
               <h1
-                class="font-display max-w-[12ch] text-4xl font-semibold leading-[1.05] tracking-tight md:text-5xl lg:text-6xl"
+                class="font-display max-w-[14ch] text-4xl font-semibold leading-[1.05] tracking-tight text-balance md:text-5xl lg:text-6xl"
               >
                 {{#if user.displayName}}{{user.displayName}}{{else}}{{user.email}}{{/if}}
               </h1>
-              <p class="mt-4 max-w-lg break-all text-xs text-mist/45 md:text-sm">
+              <p class="mt-3 max-w-md text-sm text-mist/55">{{user.email}}</p>
+              <p class="mt-2 max-w-lg break-all font-mono text-[11px] text-mist/35">
                 {{user.id}}
               </p>
               <div class="mt-6 flex flex-wrap gap-2">
@@ -79,11 +135,15 @@
                     User
                   </span>
                 {{/if}}
+                <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold tabular-nums text-mist/70">
+                  <i class="fa-solid fa-bolt" aria-hidden="true"></i>
+                  {{user.totalXp}} XP
+                </span>
               </div>
             </div>
 
             <aside
-              class="relative z-10 mt-4 rounded-blob border border-[#d5ddd7] bg-foam/95 p-5 shadow-lift backdrop-blur md:absolute md:-bottom-6 md:right-0 md:mt-0 md:w-[300px]"
+              class="relative z-10 mt-4 rounded-blob border border-[#d5ddd7] bg-foam/95 p-5 shadow-lift backdrop-blur md:absolute md:-bottom-8 md:right-0 md:mt-0 md:w-[280px]"
               aria-label="Account actions"
             >
               <div class="mb-2 flex items-center gap-2">
@@ -93,8 +153,7 @@
                 <h2 class="font-display text-lg font-semibold">Actions</h2>
               </div>
               <p class="mb-4 text-sm leading-relaxed text-sage">
-                Suspend locks sign-in. Delete soft-removes this account from active lists.
-                Reset clears questionnaire answers + roadmap so they start onboarding again.
+                Suspend locks sign-in. Delete soft-removes. Reset clears questionnaire + roadmap.
               </p>
               <div class="flex flex-col gap-2">
                 <form
@@ -154,240 +213,168 @@
             </aside>
           </section>
 
-          <section class="mb-10 grid grid-cols-1 gap-3 sm:grid-cols-3 md:mb-14 md:w-[68%]">
-            <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]/sm:translate-y-1">
-              <p class="text-xs font-semibold uppercase tracking-[0.14em] text-sage">XP</p>
-              <p class="font-display mt-1 text-3xl font-semibold tabular-nums">{{user.totalXp}}</p>
+          {{!-- Tabbed sections --}}
+          <div class="ud-tabs md:w-[92%] md:max-w-5xl" data-user-tabs>
+            <div
+              class="mb-6 flex gap-0 overflow-x-auto"
+              role="tablist"
+              aria-label="User detail sections"
+            >
+              <button type="button" role="tab" id="tab-overview" aria-controls="panel-overview" aria-selected="true" data-tab="overview" class="shrink-0">
+                <i class="fa-solid fa-id-card mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Overview
+              </button>
+              <button type="button" role="tab" id="tab-security" aria-controls="panel-security" aria-selected="false" data-tab="security" class="shrink-0">
+                <i class="fa-solid fa-shield-halved mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Security
+              </button>
+              <button type="button" role="tab" id="tab-wallet" aria-controls="panel-wallet" aria-selected="false" data-tab="wallet" class="shrink-0">
+                <i class="fa-solid fa-coins mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Wallet
+              </button>
+              <button type="button" role="tab" id="tab-ai" aria-controls="panel-ai" aria-selected="false" data-tab="ai" class="shrink-0">
+                <i class="fa-solid fa-microchip mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                AI usage
+              </button>
+              <button type="button" role="tab" id="tab-flags" aria-controls="panel-flags" aria-selected="false" data-tab="flags" class="shrink-0">
+                <i class="fa-solid fa-flag mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Flags
+              </button>
+              <button type="button" role="tab" id="tab-roadmap" aria-controls="panel-roadmap" aria-selected="false" data-tab="roadmap" class="shrink-0">
+                <i class="fa-solid fa-route mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Roadmap
+              </button>
             </div>
-            <div class="rounded-blob bg-leaf p-5 shadow-lift sm:translate-y-5">
-              <p class="text-xs font-semibold uppercase tracking-[0.14em] text-sage">Coins</p>
-              <p class="font-display mt-1 text-3xl font-semibold tabular-nums">{{user.coins}}</p>
-            </div>
-            <div class="rounded-blob bg-[#f3e0d6] p-5 shadow-lift sm:translate-y-2">
-              <p class="text-xs font-semibold uppercase tracking-[0.14em] text-clay">Gems</p>
-              <p class="font-display mt-1 text-3xl font-semibold tabular-nums text-moss">{{user.gems}}</p>
-            </div>
-          </section>
 
-          <section class="mb-10 md:mb-14 md:w-[88%]">
-            <div class="mb-3 flex items-baseline justify-between gap-3">
-              <h2 class="font-display text-2xl font-semibold">Feature flags</h2>
-              <span class="text-xs font-medium uppercase tracking-[0.14em] text-sage">Per-user overrides</span>
-            </div>
-            <p class="mb-4 max-w-2xl text-sm text-sage">
-              Inherit uses the global Feature flags page. Force on/off (or a mode) only for this account.
-            </p>
-            <form method="post" action="/admin/users/{{user.id}}/feature-flags" class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
-              <div class="space-y-4">
-                {{#each userFlags}}
-                  <div class="grid gap-3 border-b border-[#e4ebe6] pb-4 last:border-0 last:pb-0 md:grid-cols-[1fr_220px] md:items-center">
-                    <div>
-                      <p class="font-medium text-moss">{{label}}</p>
-                      <p class="mt-0.5 font-mono text-[11px] text-sage">{{key}}</p>
-                      {{#if description}}
-                        <p class="mt-1 text-xs leading-relaxed text-sage">{{description}}</p>
-                      {{/if}}
-                      <p class="mt-1 text-[11px] text-sage">
-                        Effective:
-                        <span class="font-semibold text-moss">{{effectiveValue}}</span>
-                      </p>
-                    </div>
-                    <div>
-                      <label class="sr-only" for="uff-{{key}}">{{label}}</label>
-                      <select id="uff-{{key}}" name="{{key}}" class="w-full rounded-xl border border-[#d5ddd7] bg-mist px-3 py-2 text-sm">
-                        {{#if isBoolean}}
-                          {{#each boolOptions}}
-                            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                          {{/each}}
-                        {{else}}
-                          {{#each stringOptions}}
-                            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                          {{/each}}
-                        {{/if}}
-                      </select>
-                    </div>
+            {{!-- Overview: Account + Profile --}}
+            <div
+              id="panel-overview"
+              role="tabpanel"
+              aria-labelledby="tab-overview"
+              data-panel="overview"
+              class="ud-panel"
+            >
+              <div class="mb-4 md:ml-4 md:max-w-xl">
+                <h2 class="font-display text-2xl font-semibold">Identity</h2>
+                <p class="mt-1 text-sm text-sage">Account identity + profile dossier.</p>
+              </div>
+
+              <div class="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-8">
+                <section class="lg:col-span-7">
+                  <div class="mb-3 flex items-baseline justify-between gap-3">
+                    <h3 class="font-display text-xl font-semibold">Account</h3>
+                    <span class="text-xs font-medium uppercase tracking-[0.14em] text-sage">Auth</span>
                   </div>
-                {{/each}}
-              </div>
-              <div class="mt-5">
-                {{> ui-button label="Save user flags" icon="fa-solid fa-floppy-disk" }}
-              </div>
-            </form>
-          </section>
+                  <div class="overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7]">
+                    <dl class="divide-y divide-[#e4ebe6]">
+                      <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
+                        <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Email</dt>
+                        <dd class="px-4 py-3 text-sm font-medium">{{user.email}}</dd>
+                      </div>
+                      <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
+                        <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Provider</dt>
+                        <dd class="px-4 py-3 text-sm tabular-nums">{{user.authProvider}}</dd>
+                      </div>
+                      <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
+                        <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Email verified</dt>
+                        <dd class="px-4 py-3 text-sm">{{#if user.emailVerifiedAt}}{{user.emailVerifiedAt}}{{else}}—{{/if}}</dd>
+                      </div>
+                      <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
+                        <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Created</dt>
+                        <dd class="px-4 py-3 text-sm tabular-nums">{{user.createdAt}}</dd>
+                      </div>
+                      <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
+                        <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Updated</dt>
+                        <dd class="px-4 py-3 text-sm tabular-nums">{{#if user.updatedAt}}{{user.updatedAt}}{{else}}—{{/if}}</dd>
+                      </div>
+                      <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
+                        <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Last login</dt>
+                        <dd class="px-4 py-3 text-sm tabular-nums">{{#if user.lastLoginAt}}{{user.lastLoginAt}}{{else}}—{{/if}}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                </section>
 
-          <section class="mb-10 md:mb-14">
-            <div class="mb-3 flex items-baseline justify-between gap-3">
-              <h2 class="font-display text-2xl font-semibold">Roadmap</h2>
-              <span class="text-xs font-medium uppercase tracking-[0.14em] text-sage">Learning path</span>
+                <section class="lg:col-span-5 lg:pt-2">
+                  <div class="mb-3 flex items-baseline justify-between gap-3">
+                    <h3 class="font-display text-xl font-semibold">Profile</h3>
+                    <span class="text-xs font-medium uppercase tracking-[0.14em] text-sage">Dossier</span>
+                  </div>
+                  <div class="overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7]">
+                    {{#if user.hasProfile}}
+                      <dl class="divide-y divide-[#e4ebe6]">
+                        <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
+                          <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Display name</dt>
+                          <dd class="px-4 py-3 text-sm font-medium">{{#if user.displayName}}{{user.displayName}}{{else}}—{{/if}}</dd>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
+                          <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Username</dt>
+                          <dd class="px-4 py-3 text-sm">{{#if user.username}}{{user.username}}{{else}}—{{/if}}</dd>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
+                          <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Language</dt>
+                          <dd class="px-4 py-3 text-sm">{{#if user.language}}{{user.language}}{{else}}—{{/if}}</dd>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
+                          <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Timezone</dt>
+                          <dd class="px-4 py-3 text-sm">{{#if user.timezone}}{{user.timezone}}{{else}}—{{/if}}</dd>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
+                          <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Rank</dt>
+                          <dd class="px-4 py-3 text-sm">{{#if user.currentRank}}{{user.currentRank}}{{else}}—{{/if}}</dd>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
+                          <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Weekly streak</dt>
+                          <dd class="px-4 py-3 text-sm">{{user.weeklyStreak}}</dd>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
+                          <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Questionnaire</dt>
+                          <dd class="px-4 py-3 text-sm">{{user.questionnaireStatus}}{{#if user.questionnaireCompletedAt}} · {{user.questionnaireCompletedAt}}{{/if}}</dd>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
+                          <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Onboarding</dt>
+                          <dd class="px-4 py-3 text-sm">{{#if user.onboardingCompletedAt}}{{user.onboardingCompletedAt}}{{else}}—{{/if}}</dd>
+                        </div>
+                      </dl>
+                    {{else}}
+                      <div class="px-4 py-10 text-center text-sm text-sage">No profile row.</div>
+                    {{/if}}
+                  </div>
+                </section>
+              </div>
             </div>
 
-            {{#if hasRoadmap}}
-              <div class="mb-4 flex flex-wrap items-center gap-2">
-                {{#if roadmap.isReady}}
-                  <span class="inline-flex items-center gap-2 rounded-full bg-leaf px-3 py-1 text-xs font-semibold text-moss">
-                    <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
-                    Ready
-                  </span>
-                {{else if roadmap.isGenerating}}
-                  <span class="inline-flex items-center gap-2 rounded-full bg-clay/20 px-3 py-1 text-xs font-semibold text-clay">
-                    <i class="fa-solid fa-spinner" aria-hidden="true"></i>
-                    Generating
-                  </span>
-                {{else if roadmap.isFailed}}
-                  <span class="inline-flex items-center gap-2 rounded-full bg-[#fde8e6] px-3 py-1 text-xs font-semibold text-coral">
-                    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-                    Failed
-                  </span>
-                {{else}}
-                  <span class="inline-flex items-center gap-2 rounded-full bg-mist px-3 py-1 text-xs font-semibold text-sage">
-                    {{roadmap.status}}
-                  </span>
-                {{/if}}
-                <span class="text-sm text-sage">{{roadmap.progressPercent}}% · {{roadmap.lessonCompleted}}/{{roadmap.lessonTotal}} lessons</span>
-              </div>
-
-              <div class="overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7]">
-                <div class="border-b border-[#e4ebe6] bg-[#eef3ef] px-5 py-4">
-                  <p class="font-display text-xl font-semibold">{{roadmap.title}}</p>
-                  <p class="mt-1 break-all text-xs text-sage">
-                    {{roadmap.id}}
-                    {{#if roadmap.primaryRoleSlug}} · {{roadmap.primaryRoleSlug}}{{/if}}
-                    {{#if roadmap.timelineWeeks}} · {{roadmap.timelineWeeks}} weeks{{/if}}
+            {{!-- Security --}}
+            <div
+              id="panel-security"
+              role="tabpanel"
+              aria-labelledby="tab-security"
+              data-panel="security"
+              class="ud-panel hidden"
+              hidden
+            >
+              <div class="mb-4 flex items-baseline justify-between gap-3 md:ml-4 md:max-w-xl">
+                <div>
+                  <h2 class="font-display text-2xl font-semibold">Security</h2>
+                  <p class="mt-1 text-sm text-sage">
+                    Password status + reset. Saving revokes all refresh sessions.
                   </p>
                 </div>
-
-                {{#if roadmap.hasPhases}}
-                  <div class="divide-y divide-[#e4ebe6]">
-                    {{#each roadmap.phases}}
-                      <div class="px-5 py-4">
-                        <div class="mb-3 flex flex-wrap items-center gap-2">
-                          <p class="font-display text-lg font-semibold">
-                            <span class="text-sage">Phase {{orderIndex}}</span>
-                            · {{title}}
-                          </p>
-                          {{#if isCurrent}}
-                            <span class="rounded-full bg-leaf/80 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-moss">Current</span>
-                          {{/if}}
-                          {{#if locked}}
-                            <span class="rounded-full bg-mist px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sage">Locked</span>
-                          {{else}}
-                            <span class="rounded-full bg-leaf/50 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-moss">Open</span>
-                          {{/if}}
-                          {{#if techStackSlug}}
-                            <span class="text-xs text-sage">{{techStackSlug}}</span>
-                          {{/if}}
-                        </div>
-
-                        {{#each milestones}}
-                          <div class="mb-3 last:mb-0">
-                            <p class="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-sage">
-                              Milestone {{orderIndex}} · {{title}}
-                              {{#if type}} · {{type}}{{/if}}
-                            </p>
-                            <ul class="space-y-1.5">
-                              {{#each lessons}}
-                                <li class="flex flex-wrap items-center gap-2 rounded-2xl bg-mist/60 px-3 py-2 text-sm">
-                                  {{#if isCompleted}}
-                                    <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-leaf text-moss" title="completed">
-                                      <i class="fa-solid fa-check text-xs" aria-hidden="true"></i>
-                                    </span>
-                                  {{else if isAvailable}}
-                                    <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-clay/25 text-clay" title="available">
-                                      <i class="fa-solid fa-play text-[10px]" aria-hidden="true"></i>
-                                    </span>
-                                  {{else}}
-                                    <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/80 text-sage" title="locked">
-                                      <i class="fa-solid fa-lock text-[10px]" aria-hidden="true"></i>
-                                    </span>
-                                  {{/if}}
-                                  <span class="min-w-0 flex-1 font-medium">{{title}}</span>
-                                  <span class="text-xs capitalize text-sage">{{status}}</span>
-                                  <span class="tabular-nums text-xs text-sage">{{estimatedMinutes}}m · {{xpReward}} XP</span>
-                                  {{#if lessonType}}
-                                    <span class="rounded-full bg-foam px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sage ring-1 ring-[#d5ddd7]">{{lessonType}}</span>
-                                  {{/if}}
-                                </li>
-                              {{else}}
-                                <li class="px-3 py-2 text-sm text-sage">No lessons.</li>
-                              {{/each}}
-                            </ul>
-                          </div>
-                        {{else}}
-                          <p class="text-sm text-sage">No milestones in this phase.</p>
-                        {{/each}}
-                      </div>
-                    {{/each}}
-                  </div>
-                {{else}}
-                  <div class="px-5 py-8 text-center text-sm text-sage">
-                    Roadmap exists but has no phases yet{{#if roadmap.isGenerating}} (still generating){{/if}}.
-                  </div>
-                {{/if}}
+                <span class="shrink-0 text-xs font-medium uppercase tracking-[0.14em] text-sage">Credentials</span>
               </div>
 
-              {{#if job}}
-                <p class="mt-3 text-xs text-sage">
-                  Generation job: <span class="font-medium text-moss">{{job.status}}</span>
-                  {{#if job.errorMessage}} · {{job.errorMessage}}{{/if}}
-                </p>
-              {{/if}}
-            {{else}}
-              <div class="rounded-blob bg-foam px-5 py-10 text-center shadow-lift ring-1 ring-[#d5ddd7]">
-                <p class="text-sm text-sage">No active roadmap for this user.</p>
-                {{#if job}}
-                  <p class="mt-3 text-xs text-sage">
-                    Latest job: <span class="font-medium text-moss">{{job.status}}</span>
-                    {{#if job.errorMessage}} — {{job.errorMessage}}{{/if}}
-                  </p>
-                {{/if}}
-              </div>
-            {{/if}}
-          </section>
-
-          <div class="grid grid-cols-1 gap-8 lg:grid-cols-12">
-            <section class="lg:col-span-7">
-              <div class="mb-3 flex items-baseline justify-between gap-3">
-                <h2 class="font-display text-2xl font-semibold">Account</h2>
-                <span class="text-xs font-medium uppercase tracking-[0.14em] text-sage">Identity</span>
-              </div>
-              <div class="overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7]">
-                <dl class="divide-y divide-[#e4ebe6]">
-                  <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
-                    <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Email</dt>
-                    <dd class="px-4 py-3 text-sm font-medium">{{user.email}}</dd>
-                  </div>
-                  <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
-                    <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Provider</dt>
-                    <dd class="px-4 py-3 text-sm tabular-nums">{{user.authProvider}}</dd>
-                  </div>
-                  <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
-                    <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Email verified</dt>
-                    <dd class="px-4 py-3 text-sm">{{#if user.emailVerifiedAt}}{{user.emailVerifiedAt}}{{else}}—{{/if}}</dd>
-                  </div>
-                  <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
-                    <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Has password</dt>
-                    <dd class="px-4 py-3 text-sm">{{#if user.hasPassword}}Yes{{else}}No{{/if}}</dd>
-                  </div>
-                  <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
-                    <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Password changed</dt>
-                    <dd class="px-4 py-3 text-sm">{{#if user.passwordLastChangedAt}}{{user.passwordLastChangedAt}}{{else}}—{{/if}}</dd>
-                  </div>
-                  <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
-                    <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Created</dt>
-                    <dd class="px-4 py-3 text-sm tabular-nums">{{user.createdAt}}</dd>
-                  </div>
-                  <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
-                    <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Updated</dt>
-                    <dd class="px-4 py-3 text-sm tabular-nums">{{#if user.updatedAt}}{{user.updatedAt}}{{else}}—{{/if}}</dd>
-                  </div>
-                  <div class="grid grid-cols-1 sm:grid-cols-[150px_1fr]">
-                    <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Last login</dt>
-                    <dd class="px-4 py-3 text-sm tabular-nums">{{#if user.lastLoginAt}}{{user.lastLoginAt}}{{else}}—{{/if}}</dd>
-                  </div>
-                </dl>
+              <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 md:ml-2 md:max-w-xl">
+                <div class="rounded-blob bg-foam p-4 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <p class="text-xs font-semibold uppercase tracking-[0.14em] text-sage">Has password</p>
+                  <p class="mt-1 font-display text-xl font-semibold">{{#if user.hasPassword}}Yes{{else}}No{{/if}}</p>
+                </div>
+                <div class="rounded-blob bg-foam p-4 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <p class="text-xs font-semibold uppercase tracking-[0.14em] text-sage">Last changed</p>
+                  <p class="mt-1 text-sm font-medium tabular-nums">{{#if user.passwordLastChangedAt}}{{user.passwordLastChangedAt}}{{else}}—{{/if}}</p>
+                </div>
               </div>
 
-              <div class="mt-6 overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7]">
+              <div class="overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7] md:ml-2 md:max-w-xl">
                 <div class="border-b border-[#e4ebe6] bg-[#eef3ef] px-5 py-4">
                   <div class="flex items-center gap-2">
                     <span class="flex h-8 w-8 items-center justify-center rounded-full bg-leaf text-moss">
@@ -397,7 +384,7 @@
                       <h3 class="font-display text-lg font-semibold">
                         {{#if user.hasPassword}}Change password{{else}}Set password{{/if}}
                       </h3>
-                      <p class="text-xs text-sage">Min 8 chars, 1 digit, 1 special. Revokes sessions.</p>
+                      <p class="text-xs text-sage">Min 8 chars, 1 digit, 1 special.</p>
                     </div>
                   </div>
                 </div>
@@ -440,57 +427,459 @@
                   </button>
                 </form>
               </div>
-            </section>
+            </div>
 
-            <section class="lg:col-span-5 lg:pt-12">
-              <div class="mb-3 flex items-baseline justify-between gap-3">
-                <h2 class="font-display text-2xl font-semibold">Profile</h2>
-                <span class="text-xs font-medium uppercase tracking-[0.14em] text-sage">Dossier</span>
+            {{!-- Wallet --}}
+            <div
+              id="panel-wallet"
+              role="tabpanel"
+              aria-labelledby="tab-wallet"
+              data-panel="wallet"
+              class="ud-panel hidden"
+              hidden
+            >
+              <div class="mb-4 flex items-baseline justify-between gap-3 md:ml-4 md:max-w-xl">
+                <div>
+                  <h2 class="font-display text-2xl font-semibold">Wallet</h2>
+                  <p class="mt-1 text-sm text-sage">
+                    Set absolute balances. Writes ledger adjustment (admin). Cannot go below zero.
+                  </p>
+                </div>
+                <span class="shrink-0 text-xs font-medium uppercase tracking-[0.14em] text-sage">XP · Coins · Gems</span>
               </div>
-              <div class="overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7]">
-                {{#if user.hasProfile}}
-                  <dl class="divide-y divide-[#e4ebe6]">
-                    <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
-                      <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Display name</dt>
-                      <dd class="px-4 py-3 text-sm font-medium">{{#if user.displayName}}{{user.displayName}}{{else}}—{{/if}}</dd>
+              <form
+                method="post"
+                action="/admin/users/{{user.id}}/wallet"
+                class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7] md:ml-2"
+                onsubmit="return confirm('Overwrite XP / coins / gems for this user?');"
+              >
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <div>
+                    <label for="wallet-xp" class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-sage">XP</label>
+                    <input
+                      id="wallet-xp"
+                      name="totalXp"
+                      type="number"
+                      min="0"
+                      step="1"
+                      required
+                      value="{{user.totalXp}}"
+                      class="w-full rounded-2xl border border-[#d5ddd7] bg-mist/40 px-4 py-2.5 font-display text-2xl font-semibold tabular-nums text-moss outline-none transition focus:border-sage focus:bg-foam"
+                    />
+                  </div>
+                  <div>
+                    <label for="wallet-coins" class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-sage">Coins</label>
+                    <input
+                      id="wallet-coins"
+                      name="coins"
+                      type="number"
+                      min="0"
+                      step="1"
+                      required
+                      value="{{user.coins}}"
+                      class="w-full rounded-2xl border border-[#d5ddd7] bg-leaf/40 px-4 py-2.5 font-display text-2xl font-semibold tabular-nums text-moss outline-none transition focus:border-sage focus:bg-foam"
+                    />
+                  </div>
+                  <div>
+                    <label for="wallet-gems" class="mb-1 block text-xs font-semibold uppercase tracking-[0.14em] text-clay">Gems</label>
+                    <input
+                      id="wallet-gems"
+                      name="gems"
+                      type="number"
+                      min="0"
+                      step="1"
+                      required
+                      value="{{user.gems}}"
+                      class="w-full rounded-2xl border border-[#d5ddd7] bg-[#f3e0d6]/70 px-4 py-2.5 font-display text-2xl font-semibold tabular-nums text-moss outline-none transition focus:border-sage focus:bg-foam"
+                    />
+                  </div>
+                </div>
+                <div class="mt-5">
+                  {{> ui-button label="Save wallet" icon="fa-solid fa-coins" }}
+                </div>
+              </form>
+            </div>
+
+            {{!-- AI usage --}}
+            <div
+              id="panel-ai"
+              role="tabpanel"
+              aria-labelledby="tab-ai"
+              data-panel="ai"
+              class="ud-panel hidden"
+              hidden
+            >
+              <div class="mb-4 flex items-baseline justify-between gap-3 md:ml-4 md:max-w-xl">
+                <div>
+                  <h2 class="font-display text-2xl font-semibold">AI usage</h2>
+                  <p class="mt-1 text-sm text-sage">
+                    Metered from provider responses. Older calls before this feature are not counted.
+                  </p>
+                </div>
+                <span class="shrink-0 text-xs font-medium uppercase tracking-[0.14em] text-sage">Calls · Tokens</span>
+              </div>
+
+              {{#if aiUsage.hasUsage}}
+                <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4 md:ml-2">
+                  <div class="rounded-blob bg-foam p-4 shadow-lift ring-1 ring-[#d5ddd7]">
+                    <p class="text-xs font-semibold uppercase tracking-[0.14em] text-sage">Calls</p>
+                    <p class="font-display mt-1 text-2xl font-semibold tabular-nums">{{aiUsage.totals.calls}}</p>
+                  </div>
+                  <div class="rounded-blob bg-foam p-4 shadow-lift ring-1 ring-[#d5ddd7]">
+                    <p class="text-xs font-semibold uppercase tracking-[0.14em] text-sage">Prompt</p>
+                    <p class="font-display mt-1 text-2xl font-semibold tabular-nums">{{aiUsage.totals.promptTokens}}</p>
+                  </div>
+                  <div class="rounded-blob bg-foam p-4 shadow-lift ring-1 ring-[#d5ddd7]">
+                    <p class="text-xs font-semibold uppercase tracking-[0.14em] text-sage">Completion</p>
+                    <p class="font-display mt-1 text-2xl font-semibold tabular-nums">{{aiUsage.totals.completionTokens}}</p>
+                  </div>
+                  <div class="rounded-blob bg-leaf p-4 shadow-lift">
+                    <p class="text-xs font-semibold uppercase tracking-[0.14em] text-sage">Total tokens</p>
+                    <p class="font-display mt-1 text-2xl font-semibold tabular-nums text-moss">{{aiUsage.totals.totalTokens}}</p>
+                  </div>
+                </div>
+
+                <div class="mb-4 overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7] md:ml-2">
+                  <div class="border-b border-[#e4ebe6] bg-[#eef3ef] px-5 py-3">
+                    <p class="text-xs font-semibold uppercase tracking-[0.14em] text-sage">By feature</p>
+                  </div>
+                  <div class="overflow-x-auto">
+                    <table class="w-full min-w-[480px] text-left text-sm">
+                      <thead>
+                        <tr class="border-b border-[#e4ebe6] text-xs uppercase tracking-wide text-sage">
+                          <th class="px-5 py-3 font-semibold">Feature</th>
+                          <th class="px-3 py-3 font-semibold tabular-nums">Calls</th>
+                          <th class="px-3 py-3 font-semibold tabular-nums">Prompt</th>
+                          <th class="px-3 py-3 font-semibold tabular-nums">Completion</th>
+                          <th class="px-5 py-3 font-semibold tabular-nums">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-[#e4ebe6]">
+                        {{#each aiUsage.byPurpose}}
+                          <tr>
+                            <td class="px-5 py-3 font-medium">{{label}}</td>
+                            <td class="px-3 py-3 tabular-nums text-sage">{{calls}}</td>
+                            <td class="px-3 py-3 tabular-nums text-sage">{{promptTokens}}</td>
+                            <td class="px-3 py-3 tabular-nums text-sage">{{completionTokens}}</td>
+                            <td class="px-5 py-3 font-semibold tabular-nums">{{totalTokens}}</td>
+                          </tr>
+                        {{/each}}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {{#if aiUsage.hasRecent}}
+                  <div class="overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7] md:ml-2">
+                    <div class="border-b border-[#e4ebe6] bg-[#eef3ef] px-5 py-3">
+                      <p class="text-xs font-semibold uppercase tracking-[0.14em] text-sage">Recent calls</p>
                     </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
-                      <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Username</dt>
-                      <dd class="px-4 py-3 text-sm">{{#if user.username}}{{user.username}}{{else}}—{{/if}}</dd>
+                    <div class="overflow-x-auto">
+                      <table class="w-full min-w-[560px] text-left text-sm">
+                        <thead>
+                          <tr class="border-b border-[#e4ebe6] text-xs uppercase tracking-wide text-sage">
+                            <th class="px-5 py-3 font-semibold">When</th>
+                            <th class="px-3 py-3 font-semibold">Feature</th>
+                            <th class="px-3 py-3 font-semibold">Model</th>
+                            <th class="px-3 py-3 font-semibold tabular-nums">In</th>
+                            <th class="px-3 py-3 font-semibold tabular-nums">Out</th>
+                            <th class="px-5 py-3 font-semibold tabular-nums">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-[#e4ebe6]">
+                          {{#each aiUsage.recent}}
+                            <tr>
+                              <td class="px-5 py-2.5 tabular-nums text-xs text-sage">{{createdAt}}</td>
+                              <td class="px-3 py-2.5 font-medium">{{label}}</td>
+                              <td class="px-3 py-2.5 font-mono text-[11px] text-sage">{{model}}</td>
+                              <td class="px-3 py-2.5 tabular-nums text-sage">{{promptTokens}}</td>
+                              <td class="px-3 py-2.5 tabular-nums text-sage">{{completionTokens}}</td>
+                              <td class="px-5 py-2.5 font-semibold tabular-nums">{{totalTokens}}</td>
+                            </tr>
+                          {{/each}}
+                        </tbody>
+                      </table>
                     </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
-                      <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Language</dt>
-                      <dd class="px-4 py-3 text-sm">{{#if user.language}}{{user.language}}{{else}}—{{/if}}</dd>
-                    </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
-                      <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Timezone</dt>
-                      <dd class="px-4 py-3 text-sm">{{#if user.timezone}}{{user.timezone}}{{else}}—{{/if}}</dd>
-                    </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
-                      <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Rank</dt>
-                      <dd class="px-4 py-3 text-sm">{{#if user.currentRank}}{{user.currentRank}}{{else}}—{{/if}}</dd>
-                    </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
-                      <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Weekly streak</dt>
-                      <dd class="px-4 py-3 text-sm">{{user.weeklyStreak}}</dd>
-                    </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
-                      <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Questionnaire</dt>
-                      <dd class="px-4 py-3 text-sm">{{user.questionnaireStatus}}{{#if user.questionnaireCompletedAt}} · {{user.questionnaireCompletedAt}}{{/if}}</dd>
-                    </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-[130px_1fr]">
-                      <dt class="bg-[#eef3ef] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-sage">Onboarding</dt>
-                      <dd class="px-4 py-3 text-sm">{{#if user.onboardingCompletedAt}}{{user.onboardingCompletedAt}}{{else}}—{{/if}}</dd>
-                    </div>
-                  </dl>
-                {{else}}
-                  <div class="px-4 py-10 text-center text-sm text-sage">No profile row.</div>
+                  </div>
                 {{/if}}
+              {{else}}
+                <div class="rounded-blob bg-foam px-5 py-10 text-center shadow-lift ring-1 ring-[#d5ddd7] md:ml-2">
+                  <p class="text-sm text-sage">No metered AI usage for this user yet.</p>
+                </div>
+              {{/if}}
+            </div>
+
+            {{!-- Feature flags --}}
+            <div
+              id="panel-flags"
+              role="tabpanel"
+              aria-labelledby="tab-flags"
+              data-panel="flags"
+              class="ud-panel hidden"
+              hidden
+            >
+              <div class="mb-4 flex items-baseline justify-between gap-3 md:ml-4 md:max-w-xl">
+                <div>
+                  <h2 class="font-display text-2xl font-semibold">Feature flags</h2>
+                  <p class="mt-1 text-sm text-sage">
+                    Inherit uses the global Feature flags page. Force on/off (or a mode) only for this account.
+                  </p>
+                </div>
+                <span class="shrink-0 text-xs font-medium uppercase tracking-[0.14em] text-sage">Overrides</span>
               </div>
-            </section>
+              <form method="post" action="/admin/users/{{user.id}}/feature-flags" class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7] md:ml-2">
+                <div class="space-y-4">
+                  {{#each userFlags}}
+                    <div class="grid gap-3 border-b border-[#e4ebe6] pb-4 last:border-0 last:pb-0 md:grid-cols-[1fr_220px] md:items-center">
+                      <div>
+                        <p class="font-medium text-moss">{{label}}</p>
+                        <p class="mt-0.5 font-mono text-[11px] text-sage">{{key}}</p>
+                        {{#if description}}
+                          <p class="mt-1 text-xs leading-relaxed text-sage">{{description}}</p>
+                        {{/if}}
+                        <p class="mt-1 text-[11px] text-sage">
+                          Effective:
+                          <span class="font-semibold text-moss">{{effectiveValue}}</span>
+                        </p>
+                      </div>
+                      <div>
+                        <label class="sr-only" for="uff-{{key}}">{{label}}</label>
+                        <select id="uff-{{key}}" name="{{key}}" class="w-full rounded-xl border border-[#d5ddd7] bg-mist px-3 py-2 text-sm">
+                          {{#if isBoolean}}
+                            {{#each boolOptions}}
+                              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                            {{/each}}
+                          {{else}}
+                            {{#each stringOptions}}
+                              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                            {{/each}}
+                          {{/if}}
+                        </select>
+                      </div>
+                    </div>
+                  {{/each}}
+                </div>
+                <div class="mt-5">
+                  {{> ui-button label="Save user flags" icon="fa-solid fa-floppy-disk" }}
+                </div>
+              </form>
+            </div>
+
+            {{!-- Roadmap --}}
+            <div
+              id="panel-roadmap"
+              role="tabpanel"
+              aria-labelledby="tab-roadmap"
+              data-panel="roadmap"
+              class="ud-panel hidden"
+              hidden
+            >
+              <div class="mb-4 flex items-baseline justify-between gap-3 md:ml-4 md:max-w-xl">
+                <div>
+                  <h2 class="font-display text-2xl font-semibold">Roadmap</h2>
+                  <p class="mt-1 text-sm text-sage">Learning path phases, milestones, lessons.</p>
+                </div>
+                <span class="shrink-0 text-xs font-medium uppercase tracking-[0.14em] text-sage">Path</span>
+              </div>
+
+              {{#if hasRoadmap}}
+                <div class="mb-4 flex flex-wrap items-center gap-2 md:ml-2">
+                  {{#if roadmap.isReady}}
+                    <span class="inline-flex items-center gap-2 rounded-full bg-leaf px-3 py-1 text-xs font-semibold text-moss">
+                      <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                      Ready
+                    </span>
+                  {{else if roadmap.isGenerating}}
+                    <span class="inline-flex items-center gap-2 rounded-full bg-clay/20 px-3 py-1 text-xs font-semibold text-clay">
+                      <i class="fa-solid fa-spinner" aria-hidden="true"></i>
+                      Generating
+                    </span>
+                  {{else if roadmap.isFailed}}
+                    <span class="inline-flex items-center gap-2 rounded-full bg-[#fde8e6] px-3 py-1 text-xs font-semibold text-coral">
+                      <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                      Failed
+                    </span>
+                  {{else}}
+                    <span class="inline-flex items-center gap-2 rounded-full bg-mist px-3 py-1 text-xs font-semibold text-sage">
+                      {{roadmap.status}}
+                    </span>
+                  {{/if}}
+                  <span class="text-sm text-sage">{{roadmap.progressPercent}}% · {{roadmap.lessonCompleted}}/{{roadmap.lessonTotal}} lessons</span>
+                </div>
+
+                <div class="overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7] md:ml-2">
+                  <div class="border-b border-[#e4ebe6] bg-[#eef3ef] px-5 py-4">
+                    <p class="font-display text-xl font-semibold">{{roadmap.title}}</p>
+                    <p class="mt-1 break-all text-xs text-sage">
+                      {{roadmap.id}}
+                      {{#if roadmap.primaryRoleSlug}} · {{roadmap.primaryRoleSlug}}{{/if}}
+                      {{#if roadmap.timelineWeeks}} · {{roadmap.timelineWeeks}} weeks{{/if}}
+                    </p>
+                  </div>
+
+                  {{#if roadmap.hasPhases}}
+                    <div class="divide-y divide-[#e4ebe6]">
+                      {{#each roadmap.phases}}
+                        <div class="px-5 py-4">
+                          <div class="mb-3 flex flex-wrap items-center gap-2">
+                            <p class="font-display text-lg font-semibold">
+                              <span class="text-sage">Phase {{orderIndex}}</span>
+                              · {{title}}
+                            </p>
+                            {{#if isCurrent}}
+                              <span class="rounded-full bg-leaf/80 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-moss">Current</span>
+                            {{/if}}
+                            {{#if locked}}
+                              <span class="rounded-full bg-mist px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sage">Locked</span>
+                            {{else}}
+                              <span class="rounded-full bg-leaf/50 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-moss">Open</span>
+                            {{/if}}
+                            {{#if techStackSlug}}
+                              <span class="text-xs text-sage">{{techStackSlug}}</span>
+                            {{/if}}
+                          </div>
+
+                          {{#each milestones}}
+                            <div class="mb-3 last:mb-0">
+                              <p class="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-sage">
+                                Milestone {{orderIndex}} · {{title}}
+                                {{#if type}} · {{type}}{{/if}}
+                              </p>
+                              <ul class="space-y-1.5">
+                                {{#each lessons}}
+                                  <li class="flex flex-wrap items-center gap-2 rounded-2xl bg-mist/60 px-3 py-2 text-sm">
+                                    {{#if isCompleted}}
+                                      <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-leaf text-moss" title="completed">
+                                        <i class="fa-solid fa-check text-xs" aria-hidden="true"></i>
+                                      </span>
+                                    {{else if isAvailable}}
+                                      <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-clay/25 text-clay" title="available">
+                                        <i class="fa-solid fa-play text-[10px]" aria-hidden="true"></i>
+                                      </span>
+                                    {{else}}
+                                      <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/80 text-sage" title="locked">
+                                        <i class="fa-solid fa-lock text-[10px]" aria-hidden="true"></i>
+                                      </span>
+                                    {{/if}}
+                                    <span class="min-w-0 flex-1 font-medium">{{title}}</span>
+                                    <span class="text-xs capitalize text-sage">{{status}}</span>
+                                    <span class="tabular-nums text-xs text-sage">{{estimatedMinutes}}m · {{xpReward}} XP</span>
+                                    {{#if lessonType}}
+                                      <span class="rounded-full bg-foam px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sage ring-1 ring-[#d5ddd7]">{{lessonType}}</span>
+                                    {{/if}}
+                                  </li>
+                                {{else}}
+                                  <li class="px-3 py-2 text-sm text-sage">No lessons.</li>
+                                {{/each}}
+                              </ul>
+                            </div>
+                          {{else}}
+                            <p class="text-sm text-sage">No milestones in this phase.</p>
+                          {{/each}}
+                        </div>
+                      {{/each}}
+                    </div>
+                  {{else}}
+                    <div class="px-5 py-8 text-center text-sm text-sage">
+                      Roadmap exists but has no phases yet{{#if roadmap.isGenerating}} (still generating){{/if}}.
+                    </div>
+                  {{/if}}
+                </div>
+
+                {{#if job}}
+                  <p class="mt-3 text-xs text-sage md:ml-2">
+                    Generation job: <span class="font-medium text-moss">{{job.status}}</span>
+                    {{#if job.errorMessage}} · {{job.errorMessage}}{{/if}}
+                  </p>
+                {{/if}}
+              {{else}}
+                <div class="rounded-blob bg-foam px-5 py-10 text-center shadow-lift ring-1 ring-[#d5ddd7] md:ml-2">
+                  <p class="text-sm text-sage">No active roadmap for this user.</p>
+                  {{#if job}}
+                    <p class="mt-3 text-xs text-sage">
+                      Latest job: <span class="font-medium text-moss">{{job.status}}</span>
+                      {{#if job.errorMessage}} — {{job.errorMessage}}{{/if}}
+                    </p>
+                  {{/if}}
+                </div>
+              {{/if}}
+            </div>
           </div>
         </div>
       </main>
     </div>
+
+    <script>
+      (function () {
+        var root = document.querySelector('[data-user-tabs]');
+        if (!root) return;
+
+        var tabs = Array.prototype.slice.call(root.querySelectorAll('[role="tab"]'));
+        var panels = Array.prototype.slice.call(root.querySelectorAll('[role="tabpanel"]'));
+        var valid = { overview: 1, security: 1, wallet: 1, ai: 1, flags: 1, roadmap: 1 };
+
+        var flashToTab = {
+          wallet: 'wallet',
+          flags: 'flags',
+          password: 'security',
+          reset: 'roadmap',
+          suspended: 'overview',
+          unsuspended: 'overview',
+        };
+
+        function activate(id, pushHash) {
+          if (!valid[id]) id = 'overview';
+          tabs.forEach(function (tab) {
+            var on = tab.getAttribute('data-tab') === id;
+            tab.setAttribute('aria-selected', on ? 'true' : 'false');
+            tab.tabIndex = on ? 0 : -1;
+          });
+          panels.forEach(function (panel) {
+            var on = panel.getAttribute('data-panel') === id;
+            panel.hidden = !on;
+            panel.classList.toggle('hidden', !on);
+            if (on) {
+              panel.classList.remove('ud-panel');
+              void panel.offsetWidth;
+              panel.classList.add('ud-panel');
+            }
+          });
+          if (pushHash !== false) {
+            var url = new URL(window.location.href);
+            url.hash = id === 'overview' ? '' : id;
+            history.replaceState(null, '', url.pathname + url.search + url.hash);
+          }
+        }
+
+        function resolveInitial() {
+          var params = new URLSearchParams(window.location.search);
+          var ok = params.get('ok');
+          if (ok && flashToTab[ok]) return flashToTab[ok];
+          var hash = (window.location.hash || '').replace(/^#/, '');
+          if (hash && valid[hash]) return hash;
+          return 'overview';
+        }
+
+        tabs.forEach(function (tab) {
+          tab.addEventListener('click', function () {
+            activate(tab.getAttribute('data-tab'), true);
+          });
+          tab.addEventListener('keydown', function (e) {
+            var i = tabs.indexOf(tab);
+            var next = -1;
+            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (i + 1) % tabs.length;
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = (i - 1 + tabs.length) % tabs.length;
+            if (e.key === 'Home') next = 0;
+            if (e.key === 'End') next = tabs.length - 1;
+            if (next < 0) return;
+            e.preventDefault();
+            tabs[next].focus();
+            activate(tabs[next].getAttribute('data-tab'), true);
+          });
+        });
+
+        activate(resolveInitial(), false);
+      })();
+    </script>
   </body>
 </html>

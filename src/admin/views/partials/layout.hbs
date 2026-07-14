@@ -363,4 +363,100 @@
     .main { padding: 20px 16px 40px; }
     .detail-grid { grid-template-columns: 1fr; }
   }
+
+  /* Shared Tailwind-era admin UI (list/detail redesigns) */
+  .admin-tabs [role='tablist'] { border-bottom: 1px solid #d5ddd7; }
+  .admin-tabs [role='tab'] {
+    position: relative;
+    margin-bottom: -1px;
+    padding: 0.65rem 1rem;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    color: #5b7c6e;
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color 180ms ease, border-color 180ms ease;
+  }
+  .admin-tabs [role='tab']:hover { color: #1a2e28; }
+  .admin-tabs [role='tab'][aria-selected='true'] {
+    color: #1a2e28;
+    border-bottom-color: #c4785a;
+  }
+  .admin-tabs [role='tab']:focus-visible {
+    outline: 2px solid #c4785a;
+    outline-offset: 2px;
+  }
+  .admin-panel { animation: admin-panel-in 260ms ease both; }
+  @keyframes admin-panel-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .admin-panel { animation: none; }
+  }
+  .admin-field label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #5b7c6e;
+  }
+  .admin-field input,
+  .admin-field select,
+  .admin-field textarea {
+    width: 100%;
+    margin: 0;
+    padding: 11px 14px;
+    border: 1px solid #d5ddd7;
+    border-radius: 1rem;
+    background: #fffefa;
+    color: #1a2e28;
+    font: inherit;
+    font-size: 0.9rem;
+    box-sizing: border-box;
+    transition: border-color 160ms ease, background 160ms ease;
+  }
+  .admin-field textarea {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    resize: vertical;
+  }
+  .admin-field input:focus,
+  .admin-field select:focus,
+  .admin-field textarea:focus {
+    outline: none;
+    border-color: #5b7c6e;
+    background: #fff;
+  }
+  .admin-table {
+    width: 100%;
+    min-width: 560px;
+    text-align: left;
+    font-size: 0.875rem;
+  }
+  .admin-table thead tr {
+    border-bottom: 1px solid #e4ebe6;
+    background: #eef3ef;
+    color: #5b7c6e;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .admin-table th { padding: 0.75rem 0.75rem; font-weight: 600; }
+  .admin-table th:first-child,
+  .admin-table td:first-child { padding-left: 1.25rem; }
+  .admin-table th:last-child,
+  .admin-table td:last-child { padding-right: 1.25rem; }
+  .admin-table tbody { border-color: #e4ebe6; }
+  .admin-table tbody tr { border-bottom: 1px solid #e4ebe6; transition: background 140ms ease; }
+  .admin-table tbody tr:hover { background: rgba(243, 246, 242, 0.55); }
+  .admin-table td { padding: 0.75rem; vertical-align: middle; }
 </style>

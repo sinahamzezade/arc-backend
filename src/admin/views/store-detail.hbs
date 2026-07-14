@@ -6,87 +6,186 @@
     <title>{{title}} · Arc Admin</title>
     {{> layout}}
   </head>
-  <body>
-    <div class="shell">
+  <body class="bg-mist text-moss font-sans antialiased">
+    <div class="shell min-h-screen">
       {{> shell-sidebar}}
-      <main class="main">
-        <p class="crumb"><a class="link" href="/admin/store">Store</a> / {{row.sku}}</p>
-        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
-        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
-        <div class="page-head">
-          <h1>{{row.title}}</h1>
-          <p class="sub">{{row.sku}} · v{{row.version}}</p>
-        </div>
+      <main class="relative flex-1 min-w-0 overflow-x-hidden">
+        <div
+          class="pointer-events-none absolute -right-24 top-10 h-72 w-72 rounded-full bg-leaf/60 blur-3xl"
+          aria-hidden="true"
+        ></div>
+        <div
+          class="pointer-events-none absolute left-1/4 top-80 h-64 w-64 rounded-full bg-clay/12 blur-3xl"
+          aria-hidden="true"
+        ></div>
 
-        <h2 class="section-title">Details</h2>
-        <div class="panel">
-          <form method="post" action="/admin/store/{{row.id}}">
-            <div class="form-grid">
-              <div>
-                <label for="sku">SKU</label>
-                <input id="sku" name="sku" type="text" value="{{row.sku}}" required />
-              </div>
-              <div>
-                <label for="title">Title</label>
-                <input id="title" name="title" type="text" value="{{row.title}}" required />
-              </div>
-              <div>
-                <label for="price">Price</label>
-                <input id="price" name="price" type="number" min="0" value="{{row.price}}" required />
-              </div>
-              <div>
-                <label for="currency">Currency</label>
-                <select id="currency" name="currency">
-                  {{#each currencies}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </div>
-              <div>
-                <label for="itemType">Item type</label>
-                <select id="itemType" name="itemType">
-                  {{#each itemTypes}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </div>
-              <div>
-                <label for="rarity">Rarity</label>
-                <input id="rarity" name="rarity" type="text" value="{{row.rarity}}" />
-              </div>
-              <div>
-                <label for="purchaseLimit">Purchase limit</label>
-                <input id="purchaseLimit" name="purchaseLimit" type="number" min="0" value="{{row.purchaseLimit}}" />
-              </div>
-              <div style="grid-column: 1 / -1">
-                <label for="description">Description</label>
-                <textarea id="description" name="description">{{row.description}}</textarea>
-              </div>
-              <div class="check-row">
-                <input id="isActive" name="isActive" type="checkbox" value="1" {{#if row.isActive}}checked{{/if}} />
-                <label for="isActive">Active</label>
-              </div>
-            </div>
-            <div class="form-actions">
-              {{> ui-button label="Save item" icon="fa-solid fa-floppy-disk" }}
-            </div>
-          </form>
-        </div>
-
-        <h2 class="section-title">Danger</h2>
-        <div class="panel">
-          <p class="muted" style="margin-top:0">
-            Deletes this catalog row. Inventory refs with this store item are set null (SKU kept on those rows).
+        <div class="relative px-5 pb-24 pt-6 md:px-10 lg:px-12">
+          <p class="mb-5 text-sm text-sage">
+            <a href="/admin/store" class="transition hover:text-moss">Store</a>
+            <span class="mx-2 opacity-40">/</span>
+            <span class="font-mono text-[13px]">{{row.sku}}</span>
           </p>
-          <form
-            method="post"
-            action="/admin/store/{{row.id}}/delete"
-            onsubmit="return confirm('Delete store item {{row.title}} ({{row.sku}})?');"
+
+          {{#if flashOk}}
+            <p class="mb-5 rounded-2xl bg-leaf px-4 py-3 text-sm font-medium text-moss" role="status">{{flashOk}}</p>
+          {{/if}}
+          {{#if flashErr}}
+            <p class="mb-5 rounded-2xl bg-[#fde8e6] px-4 py-3 text-sm font-medium text-coral" role="alert">{{flashErr}}</p>
+          {{/if}}
+
+          <section class="relative mb-10 md:mb-12">
+            <div
+              class="relative overflow-hidden rounded-blob bg-gradient-to-br from-moss via-[#243f36] to-[#314f44] px-7 py-9 text-mist shadow-soft md:w-[85%] md:px-10 md:py-11"
+            >
+              <div class="absolute -right-6 top-4 h-28 w-28 rotate-12 rounded-[1.5rem] border border-white/10" aria-hidden="true"></div>
+              <p class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-leaf/80">Store item</p>
+              <h1 class="font-display max-w-[16ch] text-4xl font-semibold leading-[1.05] tracking-tight text-balance md:text-5xl">
+                {{row.title}}
+              </h1>
+              <p class="mt-3 font-mono text-sm text-mist/50">{{row.sku}} · v{{row.version}}</p>
+              <div class="mt-6 flex flex-wrap gap-2">
+                <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold tabular-nums text-mist/85">
+                  <i class="fa-solid fa-coins" aria-hidden="true"></i>
+                  {{row.price}} {{row.currency}}
+                </span>
+                <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-mist/85">
+                  <i class="fa-solid fa-box" aria-hidden="true"></i>
+                  {{row.itemType}}
+                </span>
+                <span class="inline-flex items-center gap-2 rounded-full bg-clay/90 px-3 py-1 text-xs font-semibold text-foam">
+                  {{row.rarity}}
+                </span>
+                {{#if row.isActive}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-leaf/90 px-3 py-1 text-xs font-semibold text-moss">
+                    <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                    Active
+                  </span>
+                {{else}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-mist/80">
+                    Off
+                  </span>
+                {{/if}}
+              </div>
+            </div>
+          </section>
+
+          <div
+            class="admin-tabs md:w-[94%] md:max-w-5xl"
+            data-admin-tabs
+            data-default="basics"
+            data-err-tab="basics"
           >
-            {{> ui-button label="Delete item" variant="danger" icon="fa-solid fa-trash" }}
-          </form>
+            <div class="mb-6 flex gap-0 overflow-x-auto" role="tablist" aria-label="Store item sections">
+              <button type="button" role="tab" id="tab-basics" aria-controls="panel-basics" aria-selected="true" data-tab="basics" class="shrink-0">
+                <i class="fa-solid fa-pen-to-square mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Details
+              </button>
+            </div>
+
+            <div id="panel-basics" role="tabpanel" aria-labelledby="tab-basics" data-panel="basics" class="admin-panel">
+              <div class="mb-4 md:ml-2 md:max-w-lg">
+                <h2 class="font-display text-2xl font-semibold">Details</h2>
+                <p class="mt-1 text-sm text-sage">SKU, pricing, type, and purchase limits.</p>
+              </div>
+
+              <form method="post" action="/admin/store/{{row.id}}" class="space-y-6 md:ml-2">
+                <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <div class="mb-4 flex items-center gap-2">
+                    <span class="flex h-8 w-8 items-center justify-center rounded-full bg-leaf text-moss">
+                      <i class="fa-solid fa-tag" aria-hidden="true"></i>
+                    </span>
+                    <h3 class="font-display text-lg font-semibold">Identity</h3>
+                  </div>
+                  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div class="admin-field">
+                      <label for="sku">SKU</label>
+                      <input id="sku" name="sku" type="text" value="{{row.sku}}" required />
+                    </div>
+                    <div class="admin-field">
+                      <label for="title">Title</label>
+                      <input id="title" name="title" type="text" value="{{row.title}}" required />
+                    </div>
+                    <div class="admin-field sm:col-span-2">
+                      <label for="description">Description</label>
+                      <textarea id="description" name="description" rows="3">{{row.description}}</textarea>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <div class="mb-4 flex items-center gap-2">
+                    <span class="flex h-8 w-8 items-center justify-center rounded-full bg-leaf text-moss">
+                      <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                    </span>
+                    <h3 class="font-display text-lg font-semibold">Commerce</h3>
+                  </div>
+                  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div class="admin-field">
+                      <label for="price">Price</label>
+                      <input id="price" name="price" type="number" min="0" value="{{row.price}}" required />
+                    </div>
+                    <div class="admin-field">
+                      <label for="currency">Currency</label>
+                      <select id="currency" name="currency">
+                        {{#each currencies}}
+                          <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </div>
+                    <div class="admin-field">
+                      <label for="itemType">Item type</label>
+                      <select id="itemType" name="itemType">
+                        {{#each itemTypes}}
+                          <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </div>
+                    <div class="admin-field">
+                      <label for="rarity">Rarity</label>
+                      <input id="rarity" name="rarity" type="text" value="{{row.rarity}}" />
+                    </div>
+                    <div class="admin-field sm:col-span-2">
+                      <label for="purchaseLimit">Purchase limit</label>
+                      <input id="purchaseLimit" name="purchaseLimit" type="number" min="0" value="{{row.purchaseLimit}}" />
+                    </div>
+                  </div>
+                  <label class="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl bg-mist/70 px-4 py-3 text-sm">
+                    <input id="isActive" name="isActive" type="checkbox" value="1" {{#if row.isActive}}checked{{/if}} class="h-4 w-4 accent-[#5b7c6e]" />
+                    <span>
+                      <span class="font-semibold text-moss">Active</span>
+                      <span class="mt-0.5 block text-xs text-sage">Listed in the shop when checked.</span>
+                    </span>
+                  </label>
+                </div>
+
+                <div class="sticky bottom-4 z-20 flex flex-wrap items-center gap-3 rounded-blob border border-[#d5ddd7] bg-foam/95 px-4 py-3 shadow-lift backdrop-blur">
+                  {{> ui-button label="Save item" icon="fa-solid fa-floppy-disk" }}
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <section class="mt-12 md:ml-2 md:w-[94%] md:max-w-5xl">
+            <div class="mb-4">
+              <h2 class="font-display text-2xl font-semibold text-coral">Danger</h2>
+              <p class="mt-1 text-sm text-sage">
+                Deletes this catalog row. Inventory refs with this store item are set null (SKU kept on those rows).
+              </p>
+            </div>
+            <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+              <form
+                method="post"
+                action="/admin/store/{{row.id}}/delete"
+                onsubmit="return confirm('Delete store item {{row.title}} ({{row.sku}})?');"
+              >
+                {{> ui-button label="Delete item" variant="danger" icon="fa-solid fa-trash" }}
+              </form>
+            </div>
+          </section>
         </div>
       </main>
     </div>
+
+    {{> admin-tabs-script}}
   </body>
 </html>

@@ -6,168 +6,291 @@
     <title>{{title}} · Arc Admin</title>
     {{> layout}}
   </head>
-  <body>
-    <div class="shell">
+  <body class="bg-mist text-moss font-sans antialiased">
+    <div class="shell min-h-screen">
       {{> shell-sidebar}}
-      <main class="main">
-        <p class="crumb"><a class="link" href="/admin/badges">Badges</a> / {{row.code}}</p>
-        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
-        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
-        <div class="page-head">
-          <h1>{{row.name}}</h1>
-          <p class="sub">{{row.code}} · v{{row.version}}</p>
-        </div>
+      <main class="relative flex-1 min-w-0 overflow-x-hidden">
+        <div
+          class="pointer-events-none absolute -right-24 top-10 h-72 w-72 rounded-full bg-leaf/60 blur-3xl"
+          aria-hidden="true"
+        ></div>
 
-        <h2 class="section-title">Badge image</h2>
-        <div class="panel" style="margin-bottom: 18px">
-          <div class="form-grid" style="align-items: start">
-            <div>
-              <label>Preview</label>
-              {{#if iconPreviewUrl}}
-                <img
-                  src="{{iconPreviewUrl}}"
-                  alt="{{row.name}}"
-                  width="96"
-                  height="96"
-                  style="display:block;width:96px;height:96px;object-fit:cover;border-radius:1rem;border:1px solid #d5ddd7;background:#eef3ef"
-                />
-              {{else}}
-                <div
-                  style="width:96px;height:96px;border-radius:1rem;border:1px dashed #d5ddd7;background:#eef3ef;display:flex;align-items:center;justify-content:center;color:#5b7c6e;font-size:0.75rem;text-align:center;padding:8px"
-                >
-                  {{#if row.iconAssetKey}}Key: {{row.iconAssetKey}}{{else}}No image{{/if}}
-                </div>
-              {{/if}}
+        <div class="relative px-5 pb-24 pt-6 md:px-10 lg:px-12">
+          <p class="mb-5 text-sm text-sage">
+            <a href="/admin/badges" class="transition hover:text-moss">Badges</a>
+            <span class="mx-2 opacity-40">/</span>
+            <span class="font-mono text-[13px]">{{row.code}}</span>
+          </p>
+
+          {{#if flashOk}}
+            <p class="mb-5 rounded-2xl bg-leaf px-4 py-3 text-sm font-medium text-moss" role="status">{{flashOk}}</p>
+          {{/if}}
+          {{#if flashErr}}
+            <p class="mb-5 rounded-2xl bg-[#fde8e6] px-4 py-3 text-sm font-medium text-coral" role="alert">{{flashErr}}</p>
+          {{/if}}
+
+          <section class="relative mb-10 md:mb-12">
+            <div
+              class="relative overflow-hidden rounded-blob bg-gradient-to-br from-moss via-[#243f36] to-[#314f44] px-7 py-9 text-mist shadow-soft md:w-[85%] md:px-10 md:py-11"
+            >
+              <div class="absolute -right-6 top-4 h-28 w-28 rotate-12 rounded-[1.5rem] border border-white/10" aria-hidden="true"></div>
+              <p class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-leaf/80">Badge definition</p>
+              <h1 class="font-display max-w-[16ch] text-4xl font-semibold leading-[1.05] tracking-tight text-balance md:text-5xl">
+                {{row.name}}
+              </h1>
+              <p class="mt-3 font-mono text-sm text-mist/50">{{row.code}} · v{{row.version}}</p>
+              <div class="mt-6 flex flex-wrap gap-2">
+                <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-mist/85">
+                  <i class="fa-solid fa-folder" aria-hidden="true"></i>
+                  {{row.category}}
+                </span>
+                <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-mist/85">
+                  <i class="fa-solid fa-gem" aria-hidden="true"></i>
+                  {{row.rarity}}
+                </span>
+                <span class="inline-flex items-center gap-2 rounded-full bg-clay/90 px-3 py-1 text-xs font-semibold text-foam">
+                  <i class="fa-solid fa-code" aria-hidden="true"></i>
+                  {{row.criteriaType}}
+                </span>
+                <span class="inline-flex items-center gap-2 rounded-full bg-leaf/90 px-3 py-1 text-xs font-semibold text-moss">
+                  {{row.status}}
+                </span>
+                {{#if row.isHidden}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-mist/80">
+                    Hidden
+                  </span>
+                {{/if}}
+              </div>
             </div>
-            <div style="grid-column: span 2">
-              <form
-                method="post"
-                action="/admin/badges/{{row.id}}/icon"
-                enctype="multipart/form-data"
-              >
-                <label for="icon">Upload image</label>
-                <input
-                  id="icon"
-                  name="icon"
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
-                  required
-                />
-                <p class="muted" style="margin:0 0 12px;font-size:0.8rem">
-                  PNG, JPEG, WebP, GIF, or SVG · max 2MB. Replaces current upload.
-                </p>
-                <div class="form-actions" style="padding-left:0">
-                  {{> ui-button label="Upload image" icon="fa-solid fa-upload" }}
+          </section>
+
+          <div
+            class="admin-tabs md:w-[94%] md:max-w-5xl"
+            data-admin-tabs
+            data-default="image"
+            data-err-tab="details"
+          >
+            <div class="mb-6 flex gap-0 overflow-x-auto" role="tablist" aria-label="Badge editor sections">
+              <button type="button" role="tab" id="tab-image" aria-controls="panel-image" aria-selected="true" data-tab="image" class="shrink-0">
+                <i class="fa-solid fa-image mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Image
+              </button>
+              <button type="button" role="tab" id="tab-details" aria-controls="panel-details" aria-selected="false" data-tab="details" class="shrink-0">
+                <i class="fa-solid fa-pen-to-square mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Details
+              </button>
+            </div>
+
+            {{!-- Image --}}
+            <div id="panel-image" role="tabpanel" aria-labelledby="tab-image" data-panel="image" class="admin-panel">
+              <div class="mb-4 md:ml-2 md:max-w-lg">
+                <h2 class="font-display text-2xl font-semibold">Badge image</h2>
+                <p class="mt-1 text-sm text-sage">Upload replaces current file. Asset key updates automatically.</p>
+              </div>
+
+              <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7] md:ml-2">
+                <div class="grid grid-cols-1 gap-6 sm:grid-cols-[auto_1fr] sm:items-start">
+                  <div>
+                    <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-sage">Preview</p>
+                    {{#if iconPreviewUrl}}
+                      <img
+                        src="{{iconPreviewUrl}}"
+                        alt="{{row.name}}"
+                        width="96"
+                        height="96"
+                        class="block h-24 w-24 rounded-[1rem] border border-[#d5ddd7] bg-[#eef3ef] object-cover"
+                      />
+                    {{else}}
+                      <div
+                        class="flex h-24 w-24 items-center justify-center rounded-[1rem] border border-dashed border-[#d5ddd7] bg-[#eef3ef] px-2 text-center text-xs text-sage"
+                      >
+                        {{#if row.iconAssetKey}}Key: {{row.iconAssetKey}}{{else}}No image{{/if}}
+                      </div>
+                    {{/if}}
+                  </div>
+
+                  <div class="space-y-4">
+                    <form
+                      method="post"
+                      action="/admin/badges/{{row.id}}/icon"
+                      enctype="multipart/form-data"
+                      class="space-y-3"
+                    >
+                      <div class="admin-field">
+                        <label for="icon">Upload image</label>
+                        <input
+                          id="icon"
+                          name="icon"
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+                          required
+                        />
+                      </div>
+                      <p class="text-xs text-sage">
+                        PNG, JPEG, WebP, GIF, or SVG · max 2MB. Replaces current upload.
+                      </p>
+                      {{> ui-button label="Upload image" icon="fa-solid fa-upload" }}
+                    </form>
+                    {{#if hasUpload}}
+                      <form method="post" action="/admin/badges/{{row.id}}/icon/clear">
+                        {{> ui-button label="Remove uploaded image" variant="secondary" }}
+                      </form>
+                    {{/if}}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {{!-- Details --}}
+            <div id="panel-details" role="tabpanel" aria-labelledby="tab-details" data-panel="details" class="admin-panel hidden" hidden>
+              <div class="mb-4 md:ml-2 md:max-w-lg">
+                <h2 class="font-display text-2xl font-semibold">Details</h2>
+                <p class="mt-1 text-sm text-sage">Identity, classification, criteria JSON, rewards.</p>
+              </div>
+
+              <form method="post" action="/admin/badges/{{row.id}}" class="space-y-6 md:ml-2">
+                <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <div class="mb-4 flex items-center gap-2">
+                    <span class="flex h-8 w-8 items-center justify-center rounded-full bg-leaf text-moss">
+                      <i class="fa-solid fa-tag" aria-hidden="true"></i>
+                    </span>
+                    <h3 class="font-display text-lg font-semibold">Identity</h3>
+                  </div>
+                  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div class="admin-field">
+                      <label for="code">Code</label>
+                      <input id="code" name="code" type="text" value="{{row.code}}" required />
+                    </div>
+                    <div class="admin-field">
+                      <label for="name">Name</label>
+                      <input id="name" name="name" type="text" value="{{row.name}}" required />
+                    </div>
+                    <div class="admin-field sm:col-span-2">
+                      <label for="description">Description</label>
+                      <textarea id="description" name="description" rows="2">{{row.description}}</textarea>
+                    </div>
+                    <div class="admin-field">
+                      <label for="iconAssetKey">Icon asset key</label>
+                      <input id="iconAssetKey" name="iconAssetKey" type="text" value="{{row.iconAssetKey}}" />
+                      <p class="mt-1.5 text-xs text-sage">
+                        Bundled key (e.g. first-step) or upload path. Upload sets this automatically.
+                      </p>
+                    </div>
+                    <div class="admin-field">
+                      <label for="sortOrder">Sort order</label>
+                      <input id="sortOrder" name="sortOrder" type="number" value="{{row.sortOrder}}" />
+                    </div>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+                    <div class="mb-4 flex items-center gap-2">
+                      <span class="flex h-8 w-8 items-center justify-center rounded-full bg-leaf text-moss">
+                        <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                      </span>
+                      <h3 class="font-display text-lg font-semibold">Classification</h3>
+                    </div>
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div class="admin-field">
+                        <label for="category">Category</label>
+                        <select id="category" name="category">
+                          {{#each categories}}
+                            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                          {{/each}}
+                        </select>
+                      </div>
+                      <div class="admin-field">
+                        <label for="rarity">Rarity</label>
+                        <select id="rarity" name="rarity">
+                          {{#each rarities}}
+                            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                          {{/each}}
+                        </select>
+                      </div>
+                      <div class="admin-field">
+                        <label for="status">Status</label>
+                        <select id="status" name="status">
+                          {{#each statuses}}
+                            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                          {{/each}}
+                        </select>
+                      </div>
+                      <div class="admin-field">
+                        <label for="criteriaType">Criteria type</label>
+                        <select id="criteriaType" name="criteriaType">
+                          {{#each criteriaTypes}}
+                            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                          {{/each}}
+                        </select>
+                      </div>
+                    </div>
+                    <label class="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl bg-mist/70 px-4 py-3 text-sm">
+                      <input id="isHidden" name="isHidden" type="checkbox" value="1" class="h-4 w-4 accent-[#5b7c6e]" {{#if row.isHidden}}checked{{/if}} />
+                      <span>
+                        <span class="font-semibold text-moss">Hidden from catalog</span>
+                        <span class="mt-0.5 block text-xs text-sage">Still unlocks; not shown in browse.</span>
+                      </span>
+                    </label>
+                  </div>
+
+                  <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+                    <div class="mb-4 flex items-center gap-2">
+                      <span class="flex h-8 w-8 items-center justify-center rounded-full bg-[#f3e0d6] text-clay">
+                        <i class="fa-solid fa-code" aria-hidden="true"></i>
+                      </span>
+                      <h3 class="font-display text-lg font-semibold">Rules JSON</h3>
+                    </div>
+                    <div class="space-y-4">
+                      <div class="admin-field">
+                        <label for="criteriaJson">Criteria JSON</label>
+                        <textarea id="criteriaJson" name="criteriaJson" rows="6" required>{{{row.criteriaJsonText}}}</textarea>
+                        <p class="mt-1.5 text-xs leading-relaxed text-sage">
+                          counter: <code class="rounded bg-mist px-1">{"counterKey":"lessons_completed","target":5}</code>
+                          · distinct_set: <code class="rounded bg-mist px-1">{"setKey":"lesson_formats","setTarget":5}</code>
+                          · consecutive: <code class="rounded bg-mist px-1">{"consecutiveKey":"weekly_streak","minConsecutive":2}</code>
+                          · event_once: <code class="rounded bg-mist px-1">{"eventType":"roadmap.generated.v1"}</code>
+                          · referral_milestone: <code class="rounded bg-mist px-1">{"referralQualified":5}</code>
+                        </p>
+                      </div>
+                      <div class="admin-field">
+                        <label for="rewardJson">Reward JSON</label>
+                        <textarea id="rewardJson" name="rewardJson" rows="3">{{{row.rewardJsonText}}}</textarea>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="sticky bottom-4 z-20 flex flex-wrap items-center gap-3 rounded-blob border border-[#d5ddd7] bg-foam/95 px-5 py-4 shadow-lift backdrop-blur">
+                  {{> ui-button label="Save badge" icon="fa-solid fa-floppy-disk" }}
+                  <a href="/admin/badges" class="text-sm font-semibold text-sage transition hover:text-moss">Back to catalog</a>
                 </div>
               </form>
-              {{#if hasUpload}}
-                <form method="post" action="/admin/badges/{{row.id}}/icon/clear" style="margin-top:8px">
-                  {{> ui-button label="Remove uploaded image" variant="secondary" }}
-                </form>
-              {{/if}}
             </div>
           </div>
-        </div>
 
-        <h2 class="section-title">Details</h2>
-        <div class="panel">
-          <form method="post" action="/admin/badges/{{row.id}}">
-            <div class="form-grid">
-              <div>
-                <label for="code">Code</label>
-                <input id="code" name="code" type="text" value="{{row.code}}" required />
-              </div>
-              <div>
-                <label for="name">Name</label>
-                <input id="name" name="name" type="text" value="{{row.name}}" required />
-              </div>
-              <div>
-                <label for="category">Category</label>
-                <select id="category" name="category">
-                  {{#each categories}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </div>
-              <div>
-                <label for="rarity">Rarity</label>
-                <select id="rarity" name="rarity">
-                  {{#each rarities}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </div>
-              <div>
-                <label for="status">Status</label>
-                <select id="status" name="status">
-                  {{#each statuses}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </div>
-              <div>
-                <label for="criteriaType">Criteria type</label>
-                <select id="criteriaType" name="criteriaType">
-                  {{#each criteriaTypes}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </div>
-              <div>
-                <label for="sortOrder">Sort order</label>
-                <input id="sortOrder" name="sortOrder" type="number" value="{{row.sortOrder}}" />
-              </div>
-              <div>
-                <label for="iconAssetKey">Icon asset key</label>
-                <input id="iconAssetKey" name="iconAssetKey" type="text" value="{{row.iconAssetKey}}" />
-                <p class="muted" style="margin:6px 0 0;font-size:0.75rem">
-                  Bundled key (e.g. first-step) or upload path. Upload sets this automatically.
-                </p>
-              </div>
-              <div style="grid-column: 1 / -1">
-                <label for="description">Description</label>
-                <textarea id="description" name="description">{{row.description}}</textarea>
-              </div>
-              <div style="grid-column: 1 / -1">
-                <label for="criteriaJson">Criteria JSON</label>
-                <textarea id="criteriaJson" name="criteriaJson" rows="5" required>{{{row.criteriaJsonText}}}</textarea>
-                <p class="muted" style="margin:6px 0 0;font-size:0.75rem">
-                  counter: <code>{"counterKey":"lessons_completed","target":5}</code> ·
-                  distinct_set: <code>{"setKey":"lesson_formats","setTarget":5}</code> ·
-                  consecutive: <code>{"consecutiveKey":"weekly_streak","minConsecutive":2}</code> ·
-                  event_once: <code>{"eventType":"roadmap.generated.v1"}</code> ·
-                  referral_milestone: <code>{"referralQualified":5}</code>
-                </p>
-              </div>
-              <div style="grid-column: 1 / -1">
-                <label for="rewardJson">Reward JSON</label>
-                <textarea id="rewardJson" name="rewardJson" rows="3">{{{row.rewardJsonText}}}</textarea>
-              </div>
-              <div class="check-row">
-                <input id="isHidden" name="isHidden" type="checkbox" value="1" {{#if row.isHidden}}checked{{/if}} />
-                <label for="isHidden">Hidden from catalog</label>
-              </div>
+          <section class="mt-12 md:ml-2 md:max-w-xl">
+            <div class="mb-3 flex items-baseline justify-between gap-3">
+              <h2 class="font-display text-xl font-semibold text-coral">Danger</h2>
+              <span class="text-xs font-medium uppercase tracking-[0.14em] text-sage">Irreversible</span>
             </div>
-            <div class="form-actions">
-              {{> ui-button label="Save badge" icon="fa-solid fa-floppy-disk" }}
+            <div class="rounded-blob border border-[#f0c9c5] bg-[#fdf6f5] p-5">
+              <p class="mb-4 text-sm leading-relaxed text-sage">
+                Deletes this definition. Earned user badges keep code/label; definition FK set null.
+              </p>
+              <form
+                method="post"
+                action="/admin/badges/{{row.id}}/delete"
+                onsubmit="return confirm('Delete badge {{row.name}} ({{row.code}})?');"
+              >
+                {{> ui-button label="Delete badge" variant="danger" icon="fa-solid fa-trash" }}
+              </form>
             </div>
-          </form>
-        </div>
-
-        <h2 class="section-title">Danger</h2>
-        <div class="panel">
-          <p class="muted" style="margin-top:0">
-            Deletes this definition. Earned user badges keep code/label; definition FK set null.
-          </p>
-          <form
-            method="post"
-            action="/admin/badges/{{row.id}}/delete"
-            onsubmit="return confirm('Delete badge {{row.name}} ({{row.code}})?');"
-          >
-            {{> ui-button label="Delete badge" variant="danger" icon="fa-solid fa-trash" }}
-          </form>
+          </section>
         </div>
       </main>
     </div>
+
+    {{> admin-tabs-script}}
   </body>
 </html>

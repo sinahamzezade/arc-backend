@@ -30,6 +30,16 @@ export function toCurrentLeagueDto(input: {
   topUsers: LeaderboardEntryDto[];
   surrounding: LeaderboardEntryDto[];
   breakdown: Record<string, number>;
+  quests?: Array<{
+    id: string;
+    code: string;
+    title: string;
+    detail: string;
+    progress: number;
+    goal: number;
+    xpReward: number;
+    done: boolean;
+  }>;
 }) {
   return {
     serverTimestamp: input.serverTimestamp.toISOString(),
@@ -60,6 +70,7 @@ export function toCurrentLeagueDto(input: {
     topUsers: input.topUsers,
     surroundingUsers: input.surrounding,
     scoreSourceBreakdown: input.breakdown,
+    quests: input.quests ?? [],
   };
 }
 

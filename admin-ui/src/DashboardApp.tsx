@@ -20,6 +20,27 @@ import {
 type NamedCount = { name: string; value: number };
 type DayCount = { day: string; count: number };
 
+type AiUsageTopUser = {
+  userId: string;
+  email: string;
+  calls: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+};
+
+type AiUsagePayload = {
+  hasUsage: boolean;
+  totals: {
+    calls: number;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  byPurpose: { name?: string; label: string; calls: number; totalTokens: number }[];
+  topUsers: AiUsageTopUser[];
+};
+
 type AnalyticsPayload = {
   rangeDays: number;
   totals: {
@@ -30,6 +51,7 @@ type AnalyticsPayload = {
     battles: number;
     referrals: number;
   };
+  aiUsage: AiUsagePayload;
   charts: {
     signupsByDay: DayCount[];
     authProviders: NamedCount[];
@@ -58,6 +80,12 @@ function shortDay(day: string) {
   return day.slice(5);
 }
 
+function formatTokens(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
 function ChartCard({
   title,
   hint,
@@ -74,6 +102,122 @@ function ChartCard({
       <h3>{title}</h3>
       <p className="hint">{hint}</p>
       <div style={{ width: '100%', height: 220 }}>{children}</div>
+    </section>
+  );
+}
+
+function AiUsageSection({ aiUsage }: { aiUsage: AiUsagePayload }) {
+  const purposeData = aiUsage.byPurpose.map((row) => ({
+    name: row.label,
+    value: row.totalTokens,
+    calls: row.calls,
+  }));
+
+  return (
+    <section className="ai-usage-panel">
+      <div className="ai-usage-head">
+        <div>
+          <h3>AI global usage</h3>
+          <p className="hint">Metered across all users · all time</p>
+        </div>
+        <span className="ai-usage-badge">Calls · Tokens</span>
+      </div>
+
+      {!aiUsage.hasUsage ? (
+        <p className="ai-usage-empty">No metered AI usage yet.</p>
+      ) : (
+        <>
+          <div className="ai-kpi-row">
+            <div className="kpi">
+              <div className="label">Calls</div>
+              <div className="value">{aiUsage.totals.calls}</div>
+            </div>
+            <div className="kpi">
+              <div className="label">Prompt</div>
+              <div className="value">{formatTokens(aiUsage.totals.promptTokens)}</div>
+            </div>
+            <div className="kpi">
+              <div className="label">Completion</div>
+              <div className="value">
+                {formatTokens(aiUsage.totals.completionTokens)}
+              </div>
+            </div>
+            <div className="kpi kpi-accent">
+              <div className="label">Total tokens</div>
+              <div className="value">
+                {formatTokens(aiUsage.totals.totalTokens)}
+              </div>
+            </div>
+          </div>
+
+          <div className="ai-usage-body">
+            <div className="ai-purpose-chart">
+              <p className="ai-subhead">By feature</p>
+              <div style={{ width: '100%', height: 200 }}>
+                {purposeData.length === 0 ? (
+                  <p className="ai-usage-empty">No feature breakdown.</p>
+                ) : (
+                  <ResponsiveContainer>
+                    <BarChart
+                      data={purposeData}
+                      layout="vertical"
+                      margin={{ left: 8, right: 8 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#d5ddd7" />
+                      <XAxis type="number" tick={{ fontSize: 11 }} />
+                      <YAxis
+                        type="category"
+                        dataKey="name"
+                        width={110}
+                        tick={{ fontSize: 11 }}
+                      />
+                      <Tooltip
+                        formatter={(value, _name, item) => [
+                          `${Number(value).toLocaleString()} tokens · ${item.payload.calls} calls`,
+                          'Usage',
+                        ]}
+                      />
+                      <Bar dataKey="value" fill="#5B7C6E" radius={[0, 8, 8, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </div>
+
+            <div className="ai-top-users">
+              <p className="ai-subhead">Top 5 users</p>
+              {aiUsage.topUsers.length === 0 ? (
+                <p className="ai-usage-empty">No per-user usage yet.</p>
+              ) : (
+                <table className="ai-top-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>User</th>
+                      <th>Calls</th>
+                      <th>Tokens</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {aiUsage.topUsers.map((row, i) => (
+                      <tr key={row.userId}>
+                        <td className="rank">{i + 1}</td>
+                        <td>
+                          <a href={`/admin/users/${row.userId}`}>{row.email}</a>
+                        </td>
+                        <td className="num">{row.calls}</td>
+                        <td className="num strong">
+                          {formatTokens(row.totalTokens)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </section>
   );
 }
@@ -112,7 +256,7 @@ export function DashboardApp() {
     return <div className="dash-loading">Loading analytics…</div>;
   }
 
-  const { totals, charts } = data;
+  const { totals, charts, aiUsage } = data;
   const signups = charts.signupsByDay.map((d) => ({
     ...d,
     label: shortDay(d.day),
@@ -150,6 +294,8 @@ export function DashboardApp() {
           <div className="value">{totals.referrals}</div>
         </div>
       </div>
+
+      <AiUsageSection aiUsage={aiUsage} />
 
       <div className="dash-grid">
         <ChartCard title="Signups" hint="New accounts · last 30 days" span="8">

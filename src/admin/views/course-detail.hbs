@@ -6,106 +6,209 @@
     <title>{{title}} · Arc Admin</title>
     {{> layout}}
   </head>
-  <body>
-    <div class="shell">
+  <body class="bg-mist text-moss font-sans antialiased">
+    <div class="shell min-h-screen">
       {{> shell-sidebar}}
-      <main class="main">
-        <p class="crumb"><a class="link" href="/admin/courses">Courses</a> / {{course.slug}}</p>
-        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
-        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
-        <div class="page-head">
-          <h1>{{course.title}}</h1>
-          <p class="sub">{{course.slug}} · v{{course.version}}</p>
-        </div>
-        <div class="panel">
-          <form method="post" action="/admin/courses/{{course.id}}">
-            <div class="form-grid">
-              <div>
-                <label for="title">Title</label>
-                <input id="title" name="title" type="text" value="{{course.title}}" required />
-              </div>
-              <div>
-                <label for="status">Publication status</label>
-                <input id="status" name="status" type="text" value="{{course.status}}" />
-              </div>
-              <div style="grid-column: 1 / -1">
-                <label for="learningOutcome">Learning outcome</label>
-                <textarea id="learningOutcome" name="learningOutcome">{{course.learningOutcome}}</textarea>
-              </div>
-              <div class="check-row">
-                <input id="isActive" name="isActive" type="checkbox" value="1" {{#if course.isActive}}checked{{/if}} />
-                <label for="isActive">Active</label>
-              </div>
-              <div class="check-row">
-                <input id="isRequired" name="isRequired" type="checkbox" value="1" {{#if course.isRequired}}checked{{/if}} />
-                <label for="isRequired">Required</label>
-              </div>
-            </div>
-            <div class="form-actions">
-              <button type="submit">Save course</button>
-            </div>
-          </form>
-        </div>
+      <main class="relative flex-1 min-w-0 overflow-x-hidden">
+        <div
+          class="pointer-events-none absolute -right-24 top-10 h-72 w-72 rounded-full bg-leaf/60 blur-3xl"
+          aria-hidden="true"
+        ></div>
 
-        <h2 class="section-title">Add module</h2>
-        <div class="panel" style="margin-bottom:18px">
-          <form method="post" action="/admin/courses/{{course.id}}/modules">
-            <div class="form-grid">
-              <div>
-                <label for="modSlug">Slug</label>
-                <input id="modSlug" name="slug" type="text" placeholder="joins" required />
-              </div>
-              <div>
-                <label for="modTitle">Title</label>
-                <input id="modTitle" name="title" type="text" placeholder="SQL Joins" required />
-              </div>
-              <div>
-                <label for="orderHint">Order</label>
-                <input id="orderHint" name="orderHint" type="number" value="0" />
-              </div>
-              <div>
-                <label for="estimatedMinutes">Minutes</label>
-                <input id="estimatedMinutes" name="estimatedMinutes" type="number" value="0" />
-              </div>
-            </div>
-            <div class="form-actions">
-              {{> ui-button label="Create module" icon="fa-solid fa-plus" }}
-            </div>
-          </form>
-        </div>
+        <div class="relative px-5 pb-24 pt-6 md:px-10 lg:px-12">
+          <p class="mb-5 text-sm text-sage">
+            <a href="/admin/courses" class="transition hover:text-moss">Courses</a>
+            <span class="mx-2 opacity-40">/</span>
+            <span class="font-mono text-[13px]">{{course.slug}}</span>
+          </p>
 
-        <h2 class="section-title">Modules</h2>
-        <div class="panel">
-          {{#if hasModules}}
-            <div class="table-wrap">
-              <table class="data">
-                <thead>
-                  <tr>
-                    <th>Order</th>
-                    <th>Slug</th>
-                    <th>Title</th>
-                    <th>Minutes</th>
-                    <th>Lessons</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {{#each modules}}
-                    <tr>
-                      <td class="mono">{{orderHint}}</td>
-                      <td class="mono">{{slug}}</td>
-                      <td>{{title}}</td>
-                      <td class="mono">{{estimatedMinutes}}</td>
-                      <td class="mono">{{lessonCount}}</td>
-                    </tr>
-                  {{/each}}
-                </tbody>
-              </table>
-            </div>
-          {{else}}
-            <div class="empty">No modules on this course.</div>
+          {{#if flashOk}}
+            <p class="mb-5 rounded-2xl bg-leaf px-4 py-3 text-sm font-medium text-moss" role="status">{{flashOk}}</p>
           {{/if}}
+          {{#if flashErr}}
+            <p class="mb-5 rounded-2xl bg-[#fde8e6] px-4 py-3 text-sm font-medium text-coral" role="alert">{{flashErr}}</p>
+          {{/if}}
+
+          <section class="relative mb-10 md:mb-12">
+            <div
+              class="relative overflow-hidden rounded-blob bg-gradient-to-br from-moss via-[#243f36] to-[#314f44] px-7 py-9 text-mist shadow-soft md:w-[85%] md:px-10 md:py-11"
+            >
+              <div class="absolute -right-6 top-4 h-28 w-28 rotate-12 rounded-[1.5rem] border border-white/10" aria-hidden="true"></div>
+              <p class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-leaf/80">Course template</p>
+              <h1 class="font-display max-w-[16ch] text-4xl font-semibold leading-[1.05] tracking-tight text-balance md:text-5xl">
+                {{course.title}}
+              </h1>
+              <p class="mt-3 font-mono text-sm text-mist/50">{{course.slug}} · v{{course.version}}</p>
+              <div class="mt-6 flex flex-wrap gap-2">
+                <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-mist/85">
+                  <i class="fa-solid fa-tag" aria-hidden="true"></i>
+                  {{course.status}}
+                </span>
+                {{#if course.isActive}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-leaf/90 px-3 py-1 text-xs font-semibold text-moss">
+                    <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                    Active
+                  </span>
+                {{else}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-mist/80">
+                    Inactive
+                  </span>
+                {{/if}}
+                {{#if course.isRequired}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-clay/90 px-3 py-1 text-xs font-semibold text-foam">
+                    Required
+                  </span>
+                {{/if}}
+              </div>
+            </div>
+          </section>
+
+          <div
+            class="admin-tabs md:w-[94%] md:max-w-5xl"
+            data-admin-tabs
+            data-default="details"
+            data-err-tab="details"
+          >
+            <div class="mb-6 flex gap-0 overflow-x-auto" role="tablist" aria-label="Course editor sections">
+              <button type="button" role="tab" id="tab-details" aria-controls="panel-details" aria-selected="true" data-tab="details" class="shrink-0">
+                <i class="fa-solid fa-pen-to-square mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Details
+              </button>
+              <button type="button" role="tab" id="tab-modules" aria-controls="panel-modules" aria-selected="false" data-tab="modules" class="shrink-0">
+                <i class="fa-solid fa-layer-group mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Modules
+              </button>
+            </div>
+
+            {{!-- Details --}}
+            <div id="panel-details" role="tabpanel" aria-labelledby="tab-details" data-panel="details" class="admin-panel">
+              <div class="mb-4 md:ml-2 md:max-w-lg">
+                <h2 class="font-display text-2xl font-semibold">Course details</h2>
+                <p class="mt-1 text-sm text-sage">Title, publication status, outcome, and flags.</p>
+              </div>
+
+              <form method="post" action="/admin/courses/{{course.id}}" class="md:ml-2">
+                <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div class="admin-field">
+                      <label for="title">Title</label>
+                      <input id="title" name="title" type="text" value="{{course.title}}" required />
+                    </div>
+                    <div class="admin-field">
+                      <label for="status">Publication status</label>
+                      <input id="status" name="status" type="text" value="{{course.status}}" />
+                    </div>
+                    <div class="admin-field sm:col-span-2">
+                      <label for="learningOutcome">Learning outcome</label>
+                      <textarea id="learningOutcome" name="learningOutcome" rows="3">{{course.learningOutcome}}</textarea>
+                    </div>
+                  </div>
+                  <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <label class="flex cursor-pointer items-center gap-3 rounded-2xl bg-mist/70 px-4 py-3 text-sm">
+                      <input id="isActive" name="isActive" type="checkbox" value="1" class="h-4 w-4 accent-[#5b7c6e]" {{#if course.isActive}}checked{{/if}} />
+                      <span>
+                        <span class="font-semibold text-moss">Active</span>
+                        <span class="mt-0.5 block text-xs text-sage">Visible to learning flows when on.</span>
+                      </span>
+                    </label>
+                    <label class="flex cursor-pointer items-center gap-3 rounded-2xl bg-mist/70 px-4 py-3 text-sm">
+                      <input id="isRequired" name="isRequired" type="checkbox" value="1" class="h-4 w-4 accent-[#5b7c6e]" {{#if course.isRequired}}checked{{/if}} />
+                      <span>
+                        <span class="font-semibold text-moss">Required</span>
+                        <span class="mt-0.5 block text-xs text-sage">Marks this template as required.</span>
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="mt-6 flex flex-wrap items-center gap-3">
+                  {{> ui-button label="Save course" icon="fa-solid fa-floppy-disk" }}
+                  <a href="/admin/courses" class="text-sm font-semibold text-sage transition hover:text-moss">Back to catalog</a>
+                </div>
+              </form>
+            </div>
+
+            {{!-- Modules --}}
+            <div id="panel-modules" role="tabpanel" aria-labelledby="tab-modules" data-panel="modules" class="admin-panel hidden" hidden>
+              <div class="mb-5 md:ml-2 md:max-w-xl">
+                <h2 class="font-display text-2xl font-semibold">Modules</h2>
+                <p class="mt-1 text-sm text-sage">Add a module, then browse the ordered list below.</p>
+              </div>
+
+              <div class="mb-6 rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7] md:ml-2">
+                <div class="mb-4 flex items-center gap-2">
+                  <span class="flex h-8 w-8 items-center justify-center rounded-full bg-leaf text-moss">
+                    <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                  </span>
+                  <h3 class="font-display text-lg font-semibold">Add module</h3>
+                </div>
+                <form method="post" action="/admin/courses/{{course.id}}/modules">
+                  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div class="admin-field">
+                      <label for="modSlug">Slug</label>
+                      <input id="modSlug" name="slug" type="text" placeholder="joins" required />
+                    </div>
+                    <div class="admin-field">
+                      <label for="modTitle">Title</label>
+                      <input id="modTitle" name="title" type="text" placeholder="SQL Joins" required />
+                    </div>
+                    <div class="admin-field">
+                      <label for="orderHint">Order</label>
+                      <input id="orderHint" name="orderHint" type="number" value="0" />
+                    </div>
+                    <div class="admin-field">
+                      <label for="estimatedMinutes">Minutes</label>
+                      <input id="estimatedMinutes" name="estimatedMinutes" type="number" value="0" />
+                    </div>
+                  </div>
+                  <div class="mt-5">
+                    {{> ui-button label="Create module" icon="fa-solid fa-plus" }}
+                  </div>
+                </form>
+              </div>
+
+              {{#if hasModules}}
+                <div class="overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7] md:ml-2">
+                  <div class="overflow-x-auto">
+                    <table class="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Order</th>
+                          <th>Slug</th>
+                          <th>Title</th>
+                          <th>Minutes</th>
+                          <th>Lessons</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {{#each modules}}
+                          <tr>
+                            <td class="font-mono text-[12px] text-sage">{{orderHint}}</td>
+                            <td class="font-mono text-[12px] font-medium">{{slug}}</td>
+                            <td class="font-medium">{{title}}</td>
+                            <td class="font-mono text-[12px] text-sage">{{estimatedMinutes}}</td>
+                            <td class="font-mono text-[12px] text-sage">{{lessonCount}}</td>
+                          </tr>
+                        {{/each}}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              {{else}}
+                <div class="rounded-blob bg-foam px-6 py-14 text-center shadow-lift ring-1 ring-[#d5ddd7] md:ml-2">
+                  <span class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-leaf text-moss">
+                    <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
+                  </span>
+                  <p class="font-display text-xl font-semibold">No modules on this course</p>
+                  <p class="mt-2 text-sm text-sage">Use the form above to add the first module.</p>
+                </div>
+              {{/if}}
+            </div>
+          </div>
         </div>
       </main>
     </div>
+
+    {{> admin-tabs-script}}
   </body>
 </html>

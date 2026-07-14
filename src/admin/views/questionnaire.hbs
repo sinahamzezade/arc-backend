@@ -6,95 +6,122 @@
     <title>{{title}} · Arc Admin</title>
     {{> layout}}
   </head>
-  <body>
-    <div class="shell">
+  <body class="bg-mist text-moss font-sans antialiased">
+    <div class="shell min-h-screen">
       {{> shell-sidebar}}
-      <main class="main">
-        <div class="page-head">
-          <h1>Questionnaire</h1>
-          <p class="sub">
-            {{count}} definition version{{#unless countSingular}}s{{/unless}}
-            ·
-            <a class="link" href="/admin/questionnaire/roles">manage Q1 roles</a>
-          </p>
-        </div>
-        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
-        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+      <main class="relative flex-1 min-w-0 overflow-x-hidden">
+        <div
+          class="pointer-events-none absolute -right-20 top-8 h-64 w-64 rounded-full bg-leaf/70 blur-3xl"
+          aria-hidden="true"
+        ></div>
 
-        <div class="panel" style="margin-bottom:16px">
-          <h2 style="margin:0 0 12px;font-size:1rem">New version</h2>
-          <form method="post" action="/admin/questionnaire">
-            <div class="form-grid">
-              <div>
-                <label for="mode">Create as</label>
-                <select id="mode" name="mode">
-                  <option value="clone" selected>Clone (copy steps + options)</option>
-                  <option value="blank">Blank (empty steps)</option>
-                </select>
-              </div>
-              <div>
-                <label for="sourceId">Clone from</label>
-                <select id="sourceId" name="sourceId">
-                  <option value="">Active version (default)</option>
-                  {{#each rows}}
-                    <option value="{{id}}" {{#if selected}}selected{{/if}}>v{{version}}{{#if isActive}} · active{{/if}}</option>
-                  {{/each}}
-                </select>
-              </div>
-              <div>
-                <label>
-                  <input type="checkbox" name="activate" value="1" />
-                  Activate immediately
-                </label>
-              </div>
-            </div>
-            <div class="form-actions">
-              {{> ui-button label="Create questionnaire" icon="fa-solid fa-plus" }}
-            </div>
-          </form>
-        </div>
-
-        <div class="panel">
-          {{#if hasRows}}
-            <div class="table-wrap">
-              <table class="data">
-                <thead>
-                  <tr>
-                    <th>Version</th>
-                    <th>Steps</th>
-                    <th>AI enriched</th>
-                    <th>Status</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {{#each rows}}
-                    <tr>
-                      <td class="mono"><a class="link" href="/admin/questionnaire/{{id}}">v{{version}}</a></td>
-                      <td class="mono">{{stepCount}}</td>
-                      <td class="mono">{{#if aiEnrichedAt}}{{aiEnrichedAt}}{{else}}—{{/if}}</td>
-                      <td>
-                        {{#if isActive}}
-                          <span class="badge badge-ok">Active</span>
-                        {{else}}
-                          <span class="badge badge-off">Inactive</span>
-                        {{/if}}
-                      </td>
-                      <td>
-                        {{#unless isActive}}
-                          <form method="post" action="/admin/questionnaire/{{id}}/activate" style="margin:0">
-                            <button type="submit" class="secondary" style="padding:7px 12px">Activate</button>
-                          </form>
-                        {{/unless}}
-                      </td>
-                    </tr>
-                  {{/each}}
-                </tbody>
-              </table>
-            </div>
-          {{else}}
-            <div class="empty">No questionnaire definitions yet.</div>
+        <div class="relative px-5 pb-20 pt-6 md:px-10 lg:px-12">
+          {{#if flashOk}}
+            <p class="mb-5 rounded-2xl bg-leaf px-4 py-3 text-sm font-medium text-moss" role="status">{{flashOk}}</p>
           {{/if}}
+          {{#if flashErr}}
+            <p class="mb-5 rounded-2xl bg-[#fde8e6] px-4 py-3 text-sm font-medium text-coral" role="alert">{{flashErr}}</p>
+          {{/if}}
+
+          <section class="relative mb-10 md:mb-12">
+            <div
+              class="relative overflow-hidden rounded-blob bg-gradient-to-br from-moss via-[#243f36] to-[#314f44] px-7 py-9 text-mist shadow-soft md:w-[82%] md:px-10 md:py-11"
+            >
+              <div class="absolute -left-8 bottom-0 h-36 w-36 rounded-full bg-leaf/20 blur-2xl" aria-hidden="true"></div>
+              <p class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-leaf/80">Onboarding</p>
+              <h1 class="font-display max-w-[14ch] text-4xl font-semibold leading-[1.05] tracking-tight md:text-5xl lg:text-6xl">
+                Questionnaire
+              </h1>
+              <p class="mt-4 max-w-md text-sm text-mist/60">
+                Versioned schema definitions. Activate one live version; edit steps on the detail page.
+              </p>
+              <div class="mt-6 flex flex-wrap items-center gap-2">
+                <span class="inline-flex items-center gap-2 rounded-full bg-leaf/90 px-3 py-1 text-xs font-semibold tabular-nums text-moss">
+                  <i class="fa-solid fa-clipboard-list" aria-hidden="true"></i>
+                  {{count}} definition version{{#unless countSingular}}s{{/unless}}
+                </span>
+              </div>
+            </div>
+
+            <aside
+              class="relative z-10 mt-4 rounded-blob border border-[#d5ddd7] bg-foam/95 p-5 shadow-lift backdrop-blur md:absolute md:-bottom-6 md:right-0 md:mt-0 md:w-[260px]"
+            >
+              <div class="mb-2 flex items-center gap-2">
+                <span class="flex h-8 w-8 items-center justify-center rounded-full bg-leaf text-moss">
+                  <i class="fa-solid fa-bullseye" aria-hidden="true"></i>
+                </span>
+                <h2 class="font-display text-lg font-semibold">Q1 roles</h2>
+              </div>
+              <p class="mb-4 text-sm leading-relaxed text-sage">
+                Goal-step role options live on a separate catalog.
+              </p>
+              <a
+                href="/admin/questionnaire/roles"
+                class="flex w-full items-center justify-center gap-2 rounded-full bg-moss px-4 py-2.5 text-sm font-semibold text-mist transition hover:brightness-110"
+              >
+                <i class="fa-solid fa-user-tag" aria-hidden="true"></i>
+                Manage Q roles
+              </a>
+            </aside>
+          </section>
+
+          <div class="md:w-[94%] md:max-w-5xl">
+            {{#if hasRows}}
+              <div class="overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7]">
+                <div class="overflow-x-auto">
+                  <table class="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Version</th>
+                        <th>Steps</th>
+                        <th>AI enriched</th>
+                        <th>Status</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {{#each rows}}
+                        <tr>
+                          <td>
+                            <a class="font-mono text-[13px] font-medium text-moss underline-offset-2 hover:underline" href="/admin/questionnaire/{{id}}">v{{version}}</a>
+                          </td>
+                          <td class="font-mono text-[12px] text-sage">{{stepCount}}</td>
+                          <td class="font-mono text-[12px] text-sage">{{#if aiEnrichedAt}}{{aiEnrichedAt}}{{else}}—{{/if}}</td>
+                          <td>
+                            {{#if isActive}}
+                              <span class="inline-flex items-center gap-1.5 rounded-full bg-leaf px-2.5 py-0.5 text-[11px] font-semibold text-moss">
+                                <i class="fa-solid fa-circle-check text-[10px]" aria-hidden="true"></i>
+                                Active
+                              </span>
+                            {{else}}
+                              <span class="inline-flex items-center gap-1.5 rounded-full bg-mist px-2.5 py-0.5 text-[11px] font-semibold text-sage">
+                                Inactive
+                              </span>
+                            {{/if}}
+                          </td>
+                          <td>
+                            {{#unless isActive}}
+                              <form method="post" action="/admin/questionnaire/{{id}}/activate" class="m-0">
+                                {{> ui-button label="Activate" variant="secondary" size="sm" }}
+                              </form>
+                            {{/unless}}
+                          </td>
+                        </tr>
+                      {{/each}}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            {{else}}
+              <div class="rounded-blob bg-foam px-6 py-14 text-center shadow-lift ring-1 ring-[#d5ddd7]">
+                <span class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-leaf text-moss">
+                  <i class="fa-solid fa-clipboard-list" aria-hidden="true"></i>
+                </span>
+                <p class="font-display text-xl font-semibold">No questionnaire definitions yet</p>
+                <p class="mt-2 text-sm text-sage">Seed or sync from app bootstrap to create the first version.</p>
+              </div>
+            {{/if}}
+          </div>
         </div>
       </main>
     </div>

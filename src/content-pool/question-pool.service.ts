@@ -25,6 +25,8 @@ export type BattleQuestionSelectInput = {
   userExposureHistory?: string[];
   opponentExposureHistory?: string[];
   mode: 'live' | 'async';
+  /** Bill AI tokens to this user (usually challenger). */
+  userId?: string;
 };
 
 export type BattleQuestionSnapshot = {

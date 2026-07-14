@@ -17,6 +17,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
+    const request = ctx.getRequest<{
+      path?: string;
+      method?: string;
+      headers?: { accept?: string };
+    }>();
 
     if (exception instanceof AdminRedirectException) {
       return response.redirect(exception.url);
@@ -26,24 +31,47 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const status = exception.getStatus();
       const exceptionResponse = exception.getResponse();
 
+      let message: string;
+      let code: string | undefined;
+      let errors: unknown;
       if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
         const body = exceptionResponse as Record<string, unknown>;
-        const message = Array.isArray(body.message)
+        message = Array.isArray(body.message)
           ? body.message.join('; ')
           : (body.message as string) || exception.message;
+        code = body.code as string | undefined;
+        errors = body.errors;
+      } else {
+        message = String(exceptionResponse);
+      }
 
-        return response.status(status).json({
-          statusCode: status,
-          code: (body.code as string) || this.mapStatusToCode(status, body),
-          message,
-          ...(body.errors ? { errors: body.errors } : {}),
+      // Multer field/size errors on admin catalog import → flash redirect.
+      const path = request.path ?? '';
+      if (
+        status < 500 &&
+        request.method === 'POST' &&
+        path === '/admin/skill-graph/import'
+      ) {
+        const q = new URLSearchParams({
+          tab: 'import',
+          err: message,
         });
+        return response.redirect(`/admin/skill-graph?${q.toString()}`);
       }
 
       return response.status(status).json({
         statusCode: status,
-        code: this.mapStatusToCode(status),
-        message: String(exceptionResponse),
+        code:
+          code ||
+          this.mapStatusToCode(
+            status,
+            typeof exceptionResponse === 'object' &&
+              exceptionResponse !== null
+              ? (exceptionResponse as Record<string, unknown>)
+              : undefined,
+          ),
+        message,
+        ...(errors ? { errors } : {}),
       });
     }
 

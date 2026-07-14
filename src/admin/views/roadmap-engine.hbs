@@ -5,230 +5,313 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{title}} · Arc Admin</title>
     {{> layout}}
-    <style>
-      .health-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-        gap: 12px;
-        padding: 16px;
-      }
-      .stat {
-        background: #eef3ef;
-        border-radius: 1rem;
-        padding: 14px 16px;
-      }
-      .stat .k {
-        font-size: 0.7rem;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        color: #5b7c6e;
-        margin: 0 0 6px;
-      }
-      .stat .v {
-        font-size: 1.15rem;
-        font-weight: 600;
-        margin: 0;
-        word-break: break-all;
-      }
-      .stat .v.mono { font-size: 0.95rem; }
-      .panel-pad { padding: 16px; }
-      .panel + .panel { margin-top: 18px; }
-      pre.result {
-        margin: 0;
-        padding: 14px 16px;
-        overflow: auto;
-        max-height: 420px;
-        font-size: 0.78rem;
-        line-height: 1.45;
-        background: #1a2e28;
-        color: #d7e4dc;
-      }
-      .phase-list {
-        margin: 0;
-        padding: 0 16px 16px;
-        list-style: none;
-      }
-      .phase-list li {
-        padding: 8px 0;
-        border-bottom: 1px solid #e4ebe6;
-        font-size: 0.9rem;
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-      }
-      .phase-list li:last-child { border-bottom: none; }
-    </style>
   </head>
-  <body>
-    <div class="shell">
+  <body class="bg-mist text-moss font-sans antialiased">
+    <div class="shell min-h-screen">
       {{> shell-sidebar}}
-      <main class="main">
-        <div class="page-head">
-          <h1>Roadmap Engine</h1>
-          <p class="sub">Health check + dry-run plan against Python planner</p>
-        </div>
+      <main class="relative flex-1 min-w-0 overflow-x-hidden">
+        <div
+          class="pointer-events-none absolute -right-20 top-8 h-64 w-64 rounded-full bg-leaf/70 blur-3xl"
+          aria-hidden="true"
+        ></div>
+        <div
+          class="pointer-events-none absolute left-1/3 top-72 h-48 w-48 rounded-full bg-clay/12 blur-3xl"
+          aria-hidden="true"
+        ></div>
 
-        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
-        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+        <div class="relative px-5 pb-20 pt-6 md:px-10 lg:px-12">
+          {{#if flashOk}}
+            <p class="mb-5 rounded-2xl bg-leaf px-4 py-3 text-sm font-medium text-moss" role="status">{{flashOk}}</p>
+          {{/if}}
+          {{#if flashErr}}
+            <p class="mb-5 rounded-2xl bg-[#fde8e6] px-4 py-3 text-sm font-medium text-coral" role="alert">{{flashErr}}</p>
+          {{/if}}
 
-        <h2 class="section-title">Health</h2>
-        <div class="panel">
-          <div class="health-grid">
-            <div class="stat">
-              <p class="k">Reachable</p>
-              <p class="v">
+          <section class="relative mb-10 md:mb-12">
+            <div
+              class="relative overflow-hidden rounded-blob bg-gradient-to-br from-moss via-[#243f36] to-[#314f44] px-7 py-9 text-mist shadow-soft md:w-[82%] md:px-10 md:py-11"
+            >
+              <div class="absolute -left-8 bottom-0 h-36 w-36 rounded-full bg-leaf/20 blur-2xl" aria-hidden="true"></div>
+              <p class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-leaf/80">Planning</p>
+              <h1 class="font-display max-w-[14ch] text-4xl font-semibold leading-[1.05] tracking-tight md:text-5xl lg:text-6xl">
+                Roadmap Engine
+              </h1>
+              <p class="mt-4 max-w-md text-sm text-mist/60">
+                Health check and dry-run plan against the Python planner — no roadmap rows written.
+              </p>
+              <div class="mt-6 flex flex-wrap items-center gap-2">
                 {{#if health.reachable}}
-                  <span class="badge badge-ok">Yes</span>
+                  <span class="inline-flex items-center gap-2 rounded-full bg-leaf/90 px-3 py-1 text-xs font-semibold text-moss">
+                    <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                    Reachable
+                  </span>
                 {{else}}
-                  <span class="badge badge-off">No</span>
+                  <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-mist/80">
+                    <i class="fa-solid fa-circle-xmark" aria-hidden="true"></i>
+                    Unreachable
+                  </span>
                 {{/if}}
-              </p>
-            </div>
-            <div class="stat">
-              <p class="k">Status</p>
-              <p class="v">{{health.status}}</p>
-            </div>
-            <div class="stat">
-              <p class="k">Engine version</p>
-              <p class="v mono">
-                {{#if health.engineVersion}}{{health.engineVersion}}{{else}}—{{/if}}
-                <span class="muted" style="font-size:0.75rem;font-weight:500">
-                  / nest {{health.nestExpectedVersion}}
+                <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-mist/80">
+                  <i class="fa-solid fa-gauge" aria-hidden="true"></i>
+                  {{health.status}}
                 </span>
-              </p>
+                <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold font-mono text-mist/70">
+                  {{config.mode}}
+                </span>
+              </div>
             </div>
-            <div class="stat">
-              <p class="k">Latency</p>
-              <p class="v mono">
-                {{#if health.latencyMs}}{{health.latencyMs}} ms{{else}}—{{/if}}
-              </p>
-            </div>
-            <div class="stat">
-              <p class="k">Mode</p>
-              <p class="v mono">{{config.mode}}</p>
-            </div>
-            <div class="stat">
-              <p class="k">Redis queue</p>
-              <p class="v">
-                {{#if config.redisConfigured}}
-                  <span class="badge badge-ok">Configured</span>
-                {{else}}
-                  <span class="badge badge-off">In-process</span>
-                {{/if}}
-              </p>
-            </div>
-          </div>
-          <dl class="detail-grid">
-            <dt>Engine URL</dt>
-            <dd class="mono">{{config.baseUrl}}</dd>
-            <dt>Timeout</dt>
-            <dd class="mono">{{config.timeoutMs}} ms</dd>
-            {{#if health.error}}
-              <dt>Error</dt>
-              <dd class="mono" style="color:#b42318">{{health.error}}</dd>
-            {{/if}}
-          </dl>
-          <div class="form-actions">
-            <form method="get" action="/admin/roadmap-engine" style="margin:0">
-              <button type="submit" class="secondary">Refresh health</button>
-            </form>
-          </div>
-        </div>
 
-        <h2 class="section-title">Dry-run plan</h2>
-        <div class="panel">
-          <form method="post" action="/admin/roadmap-engine/test">
-            <div class="form-grid">
-              <div style="grid-column: 1 / -1">
-                <label for="goalId">Active goal</label>
-                <select id="goalId" name="goalId" required>
-                  <option value="">Select a goal…</option>
-                  {{#each goals}}
-                    <option value="{{id}}" {{#if selected}}selected{{/if}}>
-                      {{label}}
-                    </option>
-                  {{/each}}
-                </select>
+            <aside
+              class="relative z-10 mt-4 rounded-blob border border-[#d5ddd7] bg-foam/95 p-5 shadow-lift backdrop-blur md:absolute md:-bottom-6 md:right-0 md:mt-0 md:w-[260px]"
+            >
+              <div class="mb-2 flex items-center gap-2">
+                <span class="flex h-8 w-8 items-center justify-center rounded-full bg-leaf text-moss">
+                  <i class="fa-solid fa-flask" aria-hidden="true"></i>
+                </span>
+                <h2 class="font-display text-lg font-semibold">Quick nav</h2>
               </div>
-              <div style="grid-column: 1 / -1">
-                <label for="goalIdManual">Or paste goal UUID</label>
-                <input
-                  id="goalIdManual"
-                  name="goalIdManual"
-                  type="text"
-                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                  value="{{goalIdManual}}"
-                />
+              <p class="mb-4 text-sm leading-relaxed text-sage">
+                Refresh health, run a dry-run, or open the last result when present.
+              </p>
+              <div class="flex flex-col gap-2">
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-center gap-2 rounded-full bg-moss px-4 py-2.5 text-sm font-semibold text-mist transition hover:brightness-110"
+                  data-jump="dryrun"
+                >
+                  <i class="fa-solid fa-play" aria-hidden="true"></i>
+                  Dry-run
+                </button>
+                <form method="get" action="/admin/roadmap-engine" class="m-0">
+                  <button
+                    type="submit"
+                    class="flex w-full items-center justify-center gap-2 rounded-full border border-leaf bg-leaf/40 px-4 py-2.5 text-sm font-semibold text-moss transition hover:bg-leaf"
+                  >
+                    <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+                    Refresh health
+                  </button>
+                </form>
               </div>
-            </div>
-            <p class="muted panel-pad" style="padding-top:0;margin:0">
-              Calls snapshot builder + <code>POST /v1/plan</code>. Does
-              <strong>not</strong> write a roadmap row.
-            </p>
-            <div class="form-actions">
-              <button type="submit">Run dry-run</button>
-            </div>
-          </form>
-        </div>
+            </aside>
+          </section>
 
-        {{#if hasResult}}
-          <h2 class="section-title">Result</h2>
-          <div class="panel">
-            <div class="health-grid">
-              <div class="stat">
-                <p class="k">Plan OK</p>
-                <p class="v">
-                  {{#if result.ok}}
-                    <span class="badge badge-ok">Yes</span>
-                  {{else}}
-                    <span class="badge badge-off">No</span>
-                  {{/if}}
-                </p>
-              </div>
-              {{#if result.summary}}
-                <div class="stat">
-                  <p class="k">Recipe</p>
-                  <p class="v mono">{{result.summary.recipe}}</p>
-                </div>
-                <div class="stat">
-                  <p class="k">Phases</p>
-                  <p class="v mono">{{result.summary.phaseCount}}</p>
-                </div>
-                <div class="stat">
-                  <p class="k">Lessons</p>
-                  <p class="v mono">{{result.summary.lessonCount}}</p>
-                </div>
-                <div class="stat">
-                  <p class="k">Est. weeks</p>
-                  <p class="v mono">
-                    {{#if result.summary.estimatedWeeks}}{{result.summary.estimatedWeeks}}{{else}}—{{/if}}
-                  </p>
-                </div>
-                <div class="stat">
-                  <p class="k">Seed</p>
-                  <p class="v mono">{{result.summary.seed}}</p>
-                </div>
+          <div
+            class="admin-tabs md:w-[94%] md:max-w-5xl"
+            data-admin-tabs
+            data-default="{{#if hasResult}}result{{else}}{{#if flashErr}}dryrun{{else}}health{{/if}}{{/if}}"
+            data-err-tab="dryrun"
+          >
+            <div class="mb-6 flex gap-0 overflow-x-auto" role="tablist" aria-label="Roadmap engine sections">
+              <button type="button" role="tab" id="tab-health" aria-controls="panel-health" aria-selected="true" data-tab="health" class="shrink-0">
+                <i class="fa-solid fa-heart-pulse mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Health
+              </button>
+              <button type="button" role="tab" id="tab-dryrun" aria-controls="panel-dryrun" aria-selected="false" data-tab="dryrun" class="shrink-0">
+                <i class="fa-solid fa-flask mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Dry-run
+              </button>
+              {{#if hasResult}}
+                <button type="button" role="tab" id="tab-result" aria-controls="panel-result" aria-selected="false" data-tab="result" class="shrink-0">
+                  <i class="fa-solid fa-chart-simple mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                  Result
+                </button>
               {{/if}}
             </div>
-            {{#if result.error}}
-              <p class="flash flash-err" style="margin:0 16px 12px">{{result.error}}</p>
-            {{/if}}
-            {{#if hasPhaseTitles}}
-              <ul class="phase-list">
-                {{#each phaseTitles}}
-                  <li>
-                    <span>{{title}} <span class="muted">({{weekType}})</span></span>
-                    <span class="mono muted">{{milestones}} milestones</span>
-                  </li>
-                {{/each}}
-              </ul>
-            {{/if}}
-            {{#if result.rawJson}}
-              <pre class="result">{{result.rawJson}}</pre>
+
+            {{!-- Health --}}
+            <div id="panel-health" role="tabpanel" aria-labelledby="tab-health" data-panel="health" class="admin-panel">
+              <div class="mb-5 md:ml-2 md:max-w-xl">
+                <h2 class="font-display text-2xl font-semibold">Health</h2>
+                <p class="mt-1 text-sm text-sage">Connectivity, version alignment, latency, and queue mode.</p>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:ml-2 lg:grid-cols-3">
+                <div class="rounded-2xl bg-foam px-4 py-3 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">Reachable</p>
+                  <div class="mt-2">
+                    {{#if health.reachable}}
+                      <span class="inline-flex items-center gap-1.5 rounded-full bg-leaf px-2.5 py-0.5 text-[11px] font-semibold text-moss">Yes</span>
+                    {{else}}
+                      <span class="inline-flex items-center gap-1.5 rounded-full bg-mist px-2.5 py-0.5 text-[11px] font-semibold text-sage">No</span>
+                    {{/if}}
+                  </div>
+                </div>
+                <div class="rounded-2xl bg-foam px-4 py-3 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">Status</p>
+                  <p class="mt-2 text-sm font-semibold">{{health.status}}</p>
+                </div>
+                <div class="rounded-2xl bg-foam px-4 py-3 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">Engine version</p>
+                  <p class="mt-2 font-mono text-sm font-semibold break-all">
+                    {{#if health.engineVersion}}{{health.engineVersion}}{{else}}—{{/if}}
+                    <span class="mt-0.5 block text-[11px] font-medium text-sage">/ nest {{health.nestExpectedVersion}}</span>
+                  </p>
+                </div>
+                <div class="rounded-2xl bg-foam px-4 py-3 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">Latency</p>
+                  <p class="mt-2 font-mono text-sm font-semibold">
+                    {{#if health.latencyMs}}{{health.latencyMs}} ms{{else}}—{{/if}}
+                  </p>
+                </div>
+                <div class="rounded-2xl bg-foam px-4 py-3 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">Mode</p>
+                  <p class="mt-2 font-mono text-sm font-semibold">{{config.mode}}</p>
+                </div>
+                <div class="rounded-2xl bg-foam px-4 py-3 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">Redis queue</p>
+                  <div class="mt-2">
+                    {{#if config.redisConfigured}}
+                      <span class="inline-flex items-center gap-1.5 rounded-full bg-leaf px-2.5 py-0.5 text-[11px] font-semibold text-moss">Configured</span>
+                    {{else}}
+                      <span class="inline-flex items-center gap-1.5 rounded-full bg-mist px-2.5 py-0.5 text-[11px] font-semibold text-sage">In-process</span>
+                    {{/if}}
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-6 rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7] md:ml-2 md:max-w-2xl">
+                <dl class="grid grid-cols-1 gap-4 sm:grid-cols-[140px_1fr]">
+                  <dt class="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-sage">Engine URL</dt>
+                  <dd class="break-all font-mono text-sm">{{config.baseUrl}}</dd>
+                  <dt class="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-sage">Timeout</dt>
+                  <dd class="font-mono text-sm">{{config.timeoutMs}} ms</dd>
+                  {{#if health.error}}
+                    <dt class="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-coral">Error</dt>
+                    <dd class="break-all font-mono text-sm text-coral">{{health.error}}</dd>
+                  {{/if}}
+                </dl>
+                <div class="mt-5">
+                  <form method="get" action="/admin/roadmap-engine" class="m-0">
+                    {{> ui-button label="Refresh health" variant="secondary" icon="fa-solid fa-rotate" }}
+                  </form>
+                </div>
+              </div>
+            </div>
+
+            {{!-- Dry-run --}}
+            <div id="panel-dryrun" role="tabpanel" aria-labelledby="tab-dryrun" data-panel="dryrun" class="admin-panel hidden" hidden>
+              <div class="mb-5 md:ml-2 md:max-w-xl">
+                <h2 class="font-display text-2xl font-semibold">Dry-run plan</h2>
+                <p class="mt-1 text-sm text-sage">
+                  Calls snapshot builder + <code class="rounded bg-leaf/60 px-1">POST /v1/plan</code>. Does
+                  <strong>not</strong> write a roadmap row.
+                </p>
+              </div>
+
+              <form method="post" action="/admin/roadmap-engine/test" class="md:ml-2 md:max-w-2xl">
+                <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <div class="mb-4 flex items-center gap-2">
+                    <span class="flex h-8 w-8 items-center justify-center rounded-full bg-[#f3e0d6] text-clay">
+                      <i class="fa-solid fa-bullseye" aria-hidden="true"></i>
+                    </span>
+                    <h3 class="font-display text-lg font-semibold">Target goal</h3>
+                  </div>
+                  <div class="space-y-4">
+                    <div class="admin-field">
+                      <label for="goalId">Active goal</label>
+                      <select id="goalId" name="goalId" required>
+                        <option value="">Select a goal…</option>
+                        {{#each goals}}
+                          <option value="{{id}}" {{#if selected}}selected{{/if}}>
+                            {{label}}
+                          </option>
+                        {{/each}}
+                      </select>
+                    </div>
+                    <div class="admin-field">
+                      <label for="goalIdManual">Or paste goal UUID</label>
+                      <input
+                        id="goalIdManual"
+                        name="goalIdManual"
+                        type="text"
+                        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                        value="{{goalIdManual}}"
+                      />
+                    </div>
+                  </div>
+                  <div class="mt-5">
+                    {{> ui-button label="Run dry-run" icon="fa-solid fa-play" }}
+                  </div>
+                </div>
+              </form>
+            </div>
+
+            {{!-- Result --}}
+            {{#if hasResult}}
+              <div id="panel-result" role="tabpanel" aria-labelledby="tab-result" data-panel="result" class="admin-panel hidden" hidden>
+                <div class="mb-5 md:ml-2 md:max-w-xl">
+                  <h2 class="font-display text-2xl font-semibold">Result</h2>
+                  <p class="mt-1 text-sm text-sage">Last dry-run summary, phases, and raw planner payload.</p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:ml-2">
+                  <div class="rounded-2xl bg-foam px-4 py-3 shadow-lift ring-1 ring-[#d5ddd7]">
+                    <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">Plan OK</p>
+                    <div class="mt-2">
+                      {{#if result.ok}}
+                        <span class="inline-flex items-center gap-1.5 rounded-full bg-leaf px-2.5 py-0.5 text-[11px] font-semibold text-moss">Yes</span>
+                      {{else}}
+                        <span class="inline-flex items-center gap-1.5 rounded-full bg-mist px-2.5 py-0.5 text-[11px] font-semibold text-sage">No</span>
+                      {{/if}}
+                    </div>
+                  </div>
+                  {{#if result.summary}}
+                    <div class="rounded-2xl bg-foam px-4 py-3 shadow-lift ring-1 ring-[#d5ddd7]">
+                      <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">Recipe</p>
+                      <p class="mt-2 break-all font-mono text-sm font-semibold">{{result.summary.recipe}}</p>
+                    </div>
+                    <div class="rounded-2xl bg-foam px-4 py-3 shadow-lift ring-1 ring-[#d5ddd7]">
+                      <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">Phases</p>
+                      <p class="mt-2 font-mono text-sm font-semibold">{{result.summary.phaseCount}}</p>
+                    </div>
+                    <div class="rounded-2xl bg-foam px-4 py-3 shadow-lift ring-1 ring-[#d5ddd7]">
+                      <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">Lessons</p>
+                      <p class="mt-2 font-mono text-sm font-semibold">{{result.summary.lessonCount}}</p>
+                    </div>
+                    <div class="rounded-2xl bg-foam px-4 py-3 shadow-lift ring-1 ring-[#d5ddd7]">
+                      <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">Est. weeks</p>
+                      <p class="mt-2 font-mono text-sm font-semibold">
+                        {{#if result.summary.estimatedWeeks}}{{result.summary.estimatedWeeks}}{{else}}—{{/if}}
+                      </p>
+                    </div>
+                    <div class="rounded-2xl bg-foam px-4 py-3 shadow-lift ring-1 ring-[#d5ddd7]">
+                      <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">Seed</p>
+                      <p class="mt-2 break-all font-mono text-sm font-semibold">{{result.summary.seed}}</p>
+                    </div>
+                  {{/if}}
+                </div>
+
+                {{#if result.error}}
+                  <p class="mt-5 rounded-2xl bg-[#fde8e6] px-4 py-3 text-sm font-medium text-coral md:ml-2" role="alert">{{result.error}}</p>
+                {{/if}}
+
+                {{#if hasPhaseTitles}}
+                  <div class="mt-6 overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7] md:ml-2">
+                    <ul class="divide-y divide-[#e4ebe6]">
+                      {{#each phaseTitles}}
+                        <li class="flex items-center justify-between gap-3 px-5 py-3 text-sm">
+                          <span>
+                            {{title}}
+                            <span class="text-sage">({{weekType}})</span>
+                          </span>
+                          <span class="shrink-0 font-mono text-[12px] text-sage">{{milestones}} milestones</span>
+                        </li>
+                      {{/each}}
+                    </ul>
+                  </div>
+                {{/if}}
+
+                {{#if result.rawJson}}
+                  <div class="mt-6 overflow-hidden rounded-blob shadow-lift ring-1 ring-[#d5ddd7] md:ml-2">
+                    <pre class="max-h-[420px] overflow-auto bg-moss px-5 py-4 font-mono text-[12px] leading-relaxed text-leaf">{{result.rawJson}}</pre>
+                  </div>
+                {{/if}}
+              </div>
             {{/if}}
           </div>
-        {{/if}}
+        </div>
       </main>
     </div>
+    {{> admin-tabs-script}}
   </body>
 </html>

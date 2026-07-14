@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { LlmUsageService } from '../common/llm/llm-usage.service';
 import { Battle } from '../battles/entities/battle.entity';
 import { RewardCurrency } from '../gamification/entities/reward-ledger-entry.entity';
 import { RewardLedgerEntry } from '../gamification/entities/reward-ledger-entry.entity';
@@ -34,6 +35,7 @@ export class AdminAnalyticsService {
     private readonly battlesRepo: Repository<Battle>,
     @InjectRepository(ReferralAttribution)
     private readonly referralsRepo: Repository<ReferralAttribution>,
+    private readonly llmUsage: LlmUsageService,
   ) {}
 
   async getDashboardAnalytics(days = 30) {
@@ -52,6 +54,7 @@ export class AdminAnalyticsService {
       rankDistribution,
       battlesByDay,
       referralFunnel,
+      aiUsage,
     ] = await Promise.all([
       this.totals(),
       this.signupsByDay(since),
@@ -63,12 +66,14 @@ export class AdminAnalyticsService {
       this.rankDistribution(),
       this.battlesByDay(since),
       this.referralFunnel(),
+      this.llmUsage.reportGlobal(5),
     ]);
 
     return {
       generatedAt: new Date().toISOString(),
       rangeDays: days,
       totals,
+      aiUsage,
       charts: {
         signupsByDay,
         authProviders,

@@ -2,11 +2,17 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { isPlayOutline } from '../lessons/lesson-play.types';
 import { Goal } from '../goals/entities/goal.entity';
+import { TechStack } from '../skill-graph/entities/tech-stack.entity';
+import { SkillNode } from '../skill-graph/entities/skill-node.entity';
+import { LessonTemplate } from '../skill-graph/entities/lesson-template.entity';
 import { Lesson, LessonStatus } from './entities/lesson.entity';
 import { Milestone } from './entities/milestone.entity';
 import { Roadmap, RoadmapStatus } from './entities/roadmap.entity';
 import { RoadmapPhase } from './entities/roadmap-phase.entity';
-import type { RoadmapPlanDto, SelectedPhaseDto } from './dto/roadmap-engine.types';
+import type {
+  RoadmapPlanDto,
+  SelectedPhaseDto,
+} from './dto/roadmap-engine.types';
 
 @Injectable()
 export class RoadmapPersistenceService {
@@ -100,16 +106,45 @@ export class RoadmapPersistenceService {
     this.logger.log(`Swapped active roadmap ${oldId} → ${newId}`);
   }
 
+  private async resolveTechStackRef(
+    manager: EntityManager,
+    techStackId: string | null | undefined,
+    techStackSlug: string | null | undefined,
+  ): Promise<{ id: string | null; slug: string | null }> {
+    const stackRepo = manager.getRepository(TechStack);
+    if (techStackId) {
+      const byId = await stackRepo.findOne({ where: { id: techStackId } });
+      if (byId) return { id: byId.id, slug: byId.slug };
+    }
+    if (techStackSlug) {
+      const bySlug = await stackRepo.findOne({
+        where: { slug: techStackSlug },
+      });
+      if (bySlug) return { id: bySlug.id, slug: bySlug.slug };
+    }
+    if (techStackId || techStackSlug) {
+      this.logger.warn(
+        `Dropping stale tech_stack ref id=${techStackId ?? '-'} slug=${techStackSlug ?? '-'}`,
+      );
+    }
+    return { id: null, slug: techStackSlug ?? null };
+  }
+
   private async savePhase(
     manager: EntityManager,
     roadmapId: string,
     planned: SelectedPhaseDto,
   ): Promise<RoadmapPhase> {
+    const stack = await this.resolveTechStackRef(
+      manager,
+      planned.tech_stack_id,
+      planned.tech_stack_slug,
+    );
     const phase = await manager.save(
       manager.create(RoadmapPhase, {
         roadmapId,
-        techStackId: planned.tech_stack_id,
-        techStackSlug: planned.tech_stack_slug,
+        techStackId: stack.id,
+        techStackSlug: stack.slug,
         title: planned.title,
         orderIndex: planned.order_index,
         locked: planned.locked,
@@ -118,10 +153,20 @@ export class RoadmapPersistenceService {
 
     for (let mi = 0; mi < planned.milestones.length; mi++) {
       const pm = planned.milestones[mi]!;
+      let skillNodeId = pm.skill_node_id || null;
+      if (skillNodeId) {
+        const skillOk = await manager.getRepository(SkillNode).exists({
+          where: { id: skillNodeId },
+        });
+        if (!skillOk) {
+          this.logger.warn(`Dropping stale skill_node_id=${skillNodeId}`);
+          skillNodeId = null;
+        }
+      }
       const milestone = await manager.save(
         manager.create(Milestone, {
           phaseId: phase.id,
-          skillNodeId: pm.skill_node_id || null,
+          skillNodeId,
           title: pm.title,
           type: pm.type,
           orderIndex: pm.order_index ?? mi,
@@ -134,10 +179,22 @@ export class RoadmapPersistenceService {
         const outline = isPlayOutline(pl.content_outline)
           ? pl.content_outline
           : null;
+        let lessonTemplateId = pl.source_template_id || null;
+        if (lessonTemplateId) {
+          const tplOk = await manager.getRepository(LessonTemplate).exists({
+            where: { id: lessonTemplateId },
+          });
+          if (!tplOk) {
+            this.logger.warn(
+              `Dropping stale lesson_template_id=${lessonTemplateId}`,
+            );
+            lessonTemplateId = null;
+          }
+        }
         await manager.save(
           manager.create(Lesson, {
             milestoneId: milestone.id,
-            lessonTemplateId: pl.source_template_id,
+            lessonTemplateId,
             title: pl.title,
             missionName: pl.mission_name,
             lessonType: pl.lesson_type,
@@ -157,9 +214,7 @@ export class RoadmapPersistenceService {
             rewardClassSnapshot: pl.reward_class ?? 'standard',
             materializedWindow: null,
             objective:
-              outline &&
-              typeof outline === 'object' &&
-              'objective' in outline
+              outline && typeof outline === 'object' && 'objective' in outline
                 ? String((outline as { objective: string }).objective)
                 : null,
           }),

@@ -78,6 +78,7 @@ export class BattleQuestionLlmService {
 
     try {
       const generated = await this.callLlm({
+        userId: input.userId,
         subject: stack?.name ?? stackSlug,
         topic: skill?.title ?? input.topic ?? 'general',
         count: input.count,
@@ -195,6 +196,7 @@ export class BattleQuestionLlmService {
   }
 
   private async callLlm(input: {
+    userId?: string;
     subject: string;
     topic: string;
     count: number;
@@ -202,8 +204,7 @@ export class BattleQuestionLlmService {
     secondsHint: number;
     context: string;
   }): Promise<LlmMcQuestion[] | null> {
-    const client = this.llm.createClient();
-    if (!client) return null;
+    if (!this.llm.isConfigured()) return null;
 
     const model = await this.llm.getModel('battle');
     const band =
@@ -211,38 +212,42 @@ export class BattleQuestionLlmService {
         ? input.difficultyMix[0]!
         : `mixed (${input.difficultyMix.join(', ')})`;
 
-    const completion = await client.chat.completions.create({
-      model,
-      temperature: 0.55,
-      max_tokens: Math.min(4000, 400 + input.count * 350),
-      response_format: { type: 'json_object' },
-      messages: [
-        {
-          role: 'system',
-          content: [
-            'You write multiple-choice battle quiz questions for Arc.',
-            'Ground every question in the provided lesson catalog content.',
-            'Do not invent unrelated topics. Prefer definitions, syntax, behavior, and pitfalls from the lessons.',
-            'Each question must be answerable in about the given seconds.',
-            'Return JSON only:',
-            '{"questions":[{"stem":"...","options":[{"id":"a","label":"..."},{"id":"b","label":"..."},{"id":"c","label":"..."},{"id":"d","label":"..."}],"correctOptionId":"a","explanation":"...","difficulty":"medium"}]}',
-            'Rules: exactly 4 options with ids a,b,c,d; one correctOptionId; stems clear and self-contained; no "all of the above".',
-          ].join('\n'),
-        },
-        {
-          role: 'user',
-          content: [
-            `Generate exactly ${input.count} questions.`,
-            `Subject: ${input.subject}`,
-            `Topic: ${input.topic}`,
-            `Difficulty: ${band}`,
-            `Target seconds per question: ${input.secondsHint}`,
-            '',
-            'Lesson catalog grounding:',
-            input.context,
-          ].join('\n'),
-        },
-      ],
+    const completion = await this.llm.chatCompletion({
+      purpose: 'battle',
+      userId: input.userId,
+      request: {
+        model,
+        temperature: 0.55,
+        max_tokens: Math.min(4000, 400 + input.count * 350),
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: [
+              'You write multiple-choice battle quiz questions for Arc.',
+              'Ground every question in the provided lesson catalog content.',
+              'Do not invent unrelated topics. Prefer definitions, syntax, behavior, and pitfalls from the lessons.',
+              'Each question must be answerable in about the given seconds.',
+              'Return JSON only:',
+              '{"questions":[{"stem":"...","options":[{"id":"a","label":"..."},{"id":"b","label":"..."},{"id":"c","label":"..."},{"id":"d","label":"..."}],"correctOptionId":"a","explanation":"...","difficulty":"medium"}]}',
+              'Rules: exactly 4 options with ids a,b,c,d; one correctOptionId; stems clear and self-contained; no "all of the above".',
+            ].join('\n'),
+          },
+          {
+            role: 'user',
+            content: [
+              `Generate exactly ${input.count} questions.`,
+              `Subject: ${input.subject}`,
+              `Topic: ${input.topic}`,
+              `Difficulty: ${band}`,
+              `Target seconds per question: ${input.secondsHint}`,
+              '',
+              'Lesson catalog grounding:',
+              input.context,
+            ].join('\n'),
+          },
+        ],
+      },
     });
 
     const content = completion.choices[0]?.message?.content?.trim();

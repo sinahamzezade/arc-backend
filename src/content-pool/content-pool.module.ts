@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Goal } from '../goals/entities/goal.entity';
+import { LessonBodyAiModule } from '../lessons/lesson-body-ai.module';
 import { Profile } from '../profiles/entities/profile.entity';
 import { Lesson } from '../roadmaps/entities/lesson.entity';
 import { Milestone } from '../roadmaps/entities/milestone.entity';
@@ -47,6 +48,7 @@ import { BattleQuestionSeedService } from './seeds/battle-question.seed';
 @Module({
   imports: [
     SkillGraphModule,
+    LessonBodyAiModule,
     TypeOrmModule.forFeature([
       CareerRole,
       ContentCategory,

@@ -5,11 +5,13 @@ export const SystemFlagKey = {
   INTAKE_DEFAULT_MODE: 'intake_default_mode',
   QUESTIONNAIRE_AI_ENABLED: 'questionnaire_ai_enabled',
   ARLO_AI_ENABLED: 'arlo_ai_enabled',
+  LESSON_BODY_AI_ENABLED: 'lesson_body_ai_enabled',
   SSO_ENABLED: 'sso_enabled',
   AVATAR_STUDIO_ENABLED: 'avatar_studio_enabled',
   LLM_ROADMAP_MODEL: 'llm_roadmap_model',
   LLM_ARLO_MODEL: 'llm_arlo_model',
   LLM_BATTLE_MODEL: 'llm_battle_model',
+  LLM_LESSON_BODY_MODEL: 'llm_lesson_body_model',
 } as const;
 
 export type SystemFlagKeyName =
@@ -32,6 +34,7 @@ export const USER_OVERRIDABLE_FLAG_KEYS = [
   SystemFlagKey.INTAKE_CHAT_ENABLED,
   SystemFlagKey.INTAKE_DEFAULT_MODE,
   SystemFlagKey.ARLO_AI_ENABLED,
+  SystemFlagKey.LESSON_BODY_AI_ENABLED,
   SystemFlagKey.AVATAR_STUDIO_ENABLED,
 ] as const;
 

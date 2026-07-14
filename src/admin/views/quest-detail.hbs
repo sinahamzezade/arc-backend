@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+    <style>
+      .qd-tabs [role='tablist'] { border-bottom: 1px solid #d5ddd7; }
+      .qd-tabs [role='tab'] {
+        position: relative;
+        margin-bottom: -1px;
+        padding: 0.65rem 1rem;
+        border: none;
+        border-bottom: 2px solid transparent;
+        border-radius: 0;
+        background: transparent;
+        color: #5b7c6e;
+        font: inherit;
+        font-size: 0.875rem;
+        font-weight: 600;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: color 180ms ease, border-color 180ms ease;
+      }
+      .qd-tabs [role='tab']:hover { color: #1a2e28; }
+      .qd-tabs [role='tab'][aria-selected='true'] {
+        color: #1a2e28;
+        border-bottom-color: #c4785a;
+      }
+      .qd-tabs [role='tab']:focus-visible {
+        outline: 2px solid #c4785a;
+        outline-offset: 2px;
+      }
+      .qd-panel { animation: qd-in 260ms ease both; }
+      @keyframes qd-in {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .qd-panel { animation: none; }
+      }
+      .qd-field label {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #5b7c6e;
+      }
+      .qd-field input,
+      .qd-field select,
+      .qd-field textarea {
+        width: 100%;
+        margin: 0;
+        padding: 11px 14px;
+        border: 1px solid #d5ddd7;
+        border-radius: 1rem;
+        background: #fffefa;
+        color: #1a2e28;
+        font: inherit;
+        font-size: 0.9rem;
+        box-sizing: border-box;
+        transition: border-color 160ms ease, background 160ms ease;
+      }
+      .qd-field textarea {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.8rem;
+        line-height: 1.45;
+        resize: vertical;
+      }
+      .qd-field input:focus,
+      .qd-field select:focus,
+      .qd-field textarea:focus {
+        outline: none;
+        border-color: #5b7c6e;
+        background: #fff;
+      }
+    </style>
+  </head>
+  <body class="bg-mist text-moss font-sans antialiased">
+    <div class="shell min-h-screen">
+      {{> shell-sidebar}}
+      <main class="relative flex-1 min-w-0 overflow-x-hidden">
+        <div
+          class="pointer-events-none absolute -right-24 top-10 h-72 w-72 rounded-full bg-leaf/60 blur-3xl"
+          aria-hidden="true"
+        ></div>
+
+        <div class="relative px-5 pb-24 pt-6 md:px-10 lg:px-12">
+          <p class="mb-5 text-sm text-sage">
+            <a href="/admin/quests" class="transition hover:text-moss">Quests</a>
+            <span class="mx-2 opacity-40">/</span>
+            <span class="font-mono text-[13px]">{{row.code}}</span>
+          </p>
+
+          {{#if flashOk}}
+            <p class="mb-5 rounded-2xl bg-leaf px-4 py-3 text-sm font-medium text-moss" role="status">{{flashOk}}</p>
+          {{/if}}
+          {{#if flashErr}}
+            <p class="mb-5 rounded-2xl bg-[#fde8e6] px-4 py-3 text-sm font-medium text-coral" role="alert">{{flashErr}}</p>
+          {{/if}}
+
+          <section class="relative mb-10 md:mb-12">
+            <div
+              class="relative overflow-hidden rounded-blob bg-gradient-to-br from-moss via-[#243f36] to-[#314f44] px-7 py-9 text-mist shadow-soft md:w-[85%] md:px-10 md:py-11"
+            >
+              <div class="absolute -right-6 top-4 h-28 w-28 rotate-12 rounded-[1.5rem] border border-white/10" aria-hidden="true"></div>
+              <p class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-leaf/80">Quest definition</p>
+              <h1 class="font-display max-w-[16ch] text-4xl font-semibold leading-[1.05] tracking-tight text-balance md:text-5xl">
+                {{row.name}}
+              </h1>
+              <p class="mt-3 font-mono text-sm text-mist/50">{{row.code}}</p>
+              <div class="mt-6 flex flex-wrap gap-2">
+                <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-mist/85">
+                  <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+                  {{row.cadence}}
+                </span>
+                <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-mist/85">
+                  <i class="fa-solid fa-folder" aria-hidden="true"></i>
+                  {{row.category}}
+                </span>
+                <span class="inline-flex items-center gap-2 rounded-full bg-clay/90 px-3 py-1 text-xs font-semibold text-foam">
+                  <i class="fa-solid fa-code" aria-hidden="true"></i>
+                  {{row.conditionType}}
+                </span>
+                <span class="inline-flex items-center gap-2 rounded-full bg-leaf/90 px-3 py-1 text-xs font-semibold text-moss">
+                  {{row.status}}
+                </span>
+                {{#if row.isOptional}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-mist/80">
+                    Side quest
+                  </span>
+                {{/if}}
+              </div>
+            </div>
+          </section>
+
+          <form method="post" action="/admin/quests/{{row.id}}" class="qd-tabs md:w-[94%] md:max-w-5xl" data-quest-detail-tabs>
+            <div class="mb-6 flex gap-0 overflow-x-auto" role="tablist" aria-label="Quest editor sections">
+              <button type="button" role="tab" id="tab-basics" aria-controls="panel-basics" aria-selected="true" data-tab="basics" class="shrink-0">
+                <i class="fa-solid fa-id-card mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Basics
+              </button>
+              <button type="button" role="tab" id="tab-rules" aria-controls="panel-rules" aria-selected="false" data-tab="rules" class="shrink-0">
+                <i class="fa-solid fa-code mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Rules
+              </button>
+              <button type="button" role="tab" id="tab-schedule" aria-controls="panel-schedule" aria-selected="false" data-tab="schedule" class="shrink-0">
+                <i class="fa-solid fa-calendar mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Schedule
+              </button>
+            </div>
+
+            <div id="panel-basics" role="tabpanel" aria-labelledby="tab-basics" data-panel="basics" class="qd-panel">
+              <div class="mb-4 md:ml-2 md:max-w-lg">
+                <h2 class="font-display text-2xl font-semibold">Basics</h2>
+                <p class="mt-1 text-sm text-sage">Identity, cadence, category, copy shown in-app.</p>
+              </div>
+              <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7] md:ml-2">
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div class="qd-field">
+                    <label for="code">Code</label>
+                    <input id="code" name="code" type="text" value="{{row.code}}" required />
+                  </div>
+                  <div class="qd-field">
+                    <label for="name">Name</label>
+                    <input id="name" name="name" type="text" value="{{row.name}}" required />
+                  </div>
+                  <div class="qd-field">
+                    <label for="cadence">Cadence</label>
+                    <select id="cadence" name="cadence">
+                      {{#each cadences}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </div>
+                  <div class="qd-field">
+                    <label for="category">Category</label>
+                    <select id="category" name="category">
+                      {{#each categories}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </div>
+                  <div class="qd-field">
+                    <label for="status">Status</label>
+                    <select id="status" name="status">
+                      {{#each statuses}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </div>
+                  <div class="qd-field">
+                    <label for="sortOrder">Sort order</label>
+                    <input id="sortOrder" name="sortOrder" type="number" value="{{row.sortOrder}}" />
+                  </div>
+                  <div class="qd-field sm:col-span-2">
+                    <label for="description">Description</label>
+                    <textarea id="description" name="description" rows="2">{{row.description}}</textarea>
+                  </div>
+                  <div class="qd-field sm:col-span-2">
+                    <label for="detail">Detail</label>
+                    <textarea id="detail" name="detail" rows="3">{{row.detail}}</textarea>
+                  </div>
+                </div>
+                <label class="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl bg-mist/70 px-4 py-3 text-sm">
+                  <input id="isOptional" name="isOptional" type="checkbox" value="1" class="h-4 w-4 accent-[#5b7c6e]" {{#if row.isOptional}}checked{{/if}} />
+                  <span>
+                    <span class="font-semibold text-moss">Optional (side quest)</span>
+                    <span class="mt-0.5 block text-xs text-sage">Does not block required progress.</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div id="panel-rules" role="tabpanel" aria-labelledby="tab-rules" data-panel="rules" class="qd-panel hidden" hidden>
+              <div class="mb-4 md:ml-2 md:max-w-xl">
+                <h2 class="font-display text-2xl font-semibold">Rules</h2>
+                <p class="mt-1 text-sm text-sage">Condition type dictates JSON shape. Invalid shapes rejected on save.</p>
+              </div>
+
+              <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 md:ml-2 lg:grid-cols-4">
+                <div class="rounded-2xl bg-foam px-4 py-3 ring-1 ring-[#d5ddd7]">
+                  <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">counter</p>
+                  <p class="mt-1 font-mono text-[11px] leading-snug text-moss">{"counterKey":"…","target":3}</p>
+                </div>
+                <div class="rounded-2xl bg-foam px-4 py-3 ring-1 ring-[#d5ddd7]">
+                  <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">league_xp</p>
+                  <p class="mt-1 font-mono text-[11px] leading-snug text-moss">{"xpSource":"battle","minXp":1}</p>
+                </div>
+                <div class="rounded-2xl bg-foam px-4 py-3 ring-1 ring-[#d5ddd7]">
+                  <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">active_days</p>
+                  <p class="mt-1 font-mono text-[11px] leading-snug text-moss">{"minDays":5}</p>
+                </div>
+                <div class="rounded-2xl bg-foam px-4 py-3 ring-1 ring-[#d5ddd7]">
+                  <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">event_once</p>
+                  <p class="mt-1 font-mono text-[11px] leading-snug text-moss">{"eventType":"roadmap.generated.v1"}</p>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 gap-6 lg:grid-cols-2 md:ml-2">
+                <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <div class="qd-field mb-4">
+                    <label for="conditionType">Condition type</label>
+                    <select id="conditionType" name="conditionType">
+                      {{#each conditionTypes}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </div>
+                  <div class="qd-field">
+                    <label for="conditionJson">Condition JSON</label>
+                    <textarea id="conditionJson" name="conditionJson" rows="10" required>{{{row.conditionJsonText}}}</textarea>
+                  </div>
+                </div>
+                <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7] lg:mt-8">
+                  <div class="mb-3 flex items-center gap-2">
+                    <span class="flex h-8 w-8 items-center justify-center rounded-full bg-[#f3e0d6] text-clay">
+                      <i class="fa-solid fa-gift" aria-hidden="true"></i>
+                    </span>
+                    <h3 class="font-display text-lg font-semibold">Rewards</h3>
+                  </div>
+                  <div class="qd-field">
+                    <label for="rewardJson">Reward JSON</label>
+                    <textarea id="rewardJson" name="rewardJson" rows="8">{{{row.rewardJsonText}}}</textarea>
+                    <p class="mt-1.5 text-xs text-sage">e.g. leagueXp, coins, gems, xp</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="panel-schedule" role="tabpanel" aria-labelledby="tab-schedule" data-panel="schedule" class="qd-panel hidden" hidden>
+              <div class="mb-4 md:ml-2 md:max-w-lg">
+                <h2 class="font-display text-2xl font-semibold">Schedule</h2>
+                <p class="mt-1 text-sm text-sage">Optional availability window. Leave blank for always-on definitions.</p>
+              </div>
+              <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7] md:ml-2 md:max-w-xl">
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div class="qd-field">
+                    <label for="startsAt">Starts at</label>
+                    <input id="startsAt" name="startsAt" type="datetime-local" value="{{row.startsAtInput}}" />
+                  </div>
+                  <div class="qd-field">
+                    <label for="endsAt">Ends at</label>
+                    <input id="endsAt" name="endsAt" type="datetime-local" value="{{row.endsAtInput}}" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="sticky bottom-4 z-20 mt-8 flex flex-wrap items-center gap-3 rounded-blob border border-[#d5ddd7] bg-foam/95 px-5 py-4 shadow-lift backdrop-blur md:ml-2">
+              {{> ui-button label="Save quest" icon="fa-solid fa-floppy-disk" }}
+              <a href="/admin/quests" class="text-sm font-semibold text-sage transition hover:text-moss">Back to catalog</a>
+            </div>
+          </form>
+
+          <section class="mt-12 md:ml-2 md:max-w-xl">
+            <div class="mb-3 flex items-baseline justify-between gap-3">
+              <h2 class="font-display text-xl font-semibold text-coral">Danger</h2>
+              <span class="text-xs font-medium uppercase tracking-[0.14em] text-sage">Irreversible</span>
+            </div>
+            <div class="rounded-blob border border-[#f0c9c5] bg-[#fdf6f5] p-5">
+              <p class="mb-4 text-sm leading-relaxed text-sage">
+                Deletes this definition. User progress (when wired) should keep historical codes separately.
+              </p>
+              <form
+                method="post"
+                action="/admin/quests/{{row.id}}/delete"
+                onsubmit="return confirm('Delete quest {{row.name}} ({{row.code}})?');"
+              >
+                {{> ui-button label="Delete quest" variant="danger" icon="fa-solid fa-trash" }}
+              </form>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      (function () {
+        var root = document.querySelector('[data-quest-detail-tabs]');
+        if (!root) return;
+        var tabs = Array.prototype.slice.call(root.querySelectorAll('[role="tab"]'));
+        var panels = Array.prototype.slice.call(root.querySelectorAll('[role="tabpanel"]'));
+        var valid = { basics: 1, rules: 1, schedule: 1 };
+
+        function activate(id, pushHash) {
+          if (!valid[id]) id = 'basics';
+          tabs.forEach(function (tab) {
+            var on = tab.getAttribute('data-tab') === id;
+            tab.setAttribute('aria-selected', on ? 'true' : 'false');
+            tab.tabIndex = on ? 0 : -1;
+          });
+          panels.forEach(function (panel) {
+            var on = panel.getAttribute('data-panel') === id;
+            panel.hidden = !on;
+            panel.classList.toggle('hidden', !on);
+            if (on) {
+              panel.classList.remove('qd-panel');
+              void panel.offsetWidth;
+              panel.classList.add('qd-panel');
+            }
+          });
+          if (pushHash !== false) {
+            var url = new URL(window.location.href);
+            url.hash = id === 'basics' ? '' : id;
+            history.replaceState(null, '', url.pathname + url.search + url.hash);
+          }
+        }
+
+        function resolveInitial() {
+          var params = new URLSearchParams(window.location.search);
+          if (params.get('err')) return 'rules';
+          var hash = (window.location.hash || '').replace(/^#/, '');
+          if (hash && valid[hash]) return hash;
+          return 'basics';
+        }
+
+        tabs.forEach(function (tab) {
+          tab.addEventListener('click', function (e) {
+            e.preventDefault();
+            activate(tab.getAttribute('data-tab'), true);
+          });
+          tab.addEventListener('keydown', function (e) {
+            var i = tabs.indexOf(tab);
+            var next = -1;
+            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (i + 1) % tabs.length;
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = (i - 1 + tabs.length) % tabs.length;
+            if (e.key === 'Home') next = 0;
+            if (e.key === 'End') next = tabs.length - 1;
+            if (next < 0) return;
+            e.preventDefault();
+            tabs[next].focus();
+            activate(tabs[next].getAttribute('data-tab'), true);
+          });
+        });
+
+        activate(resolveInitial(), false);
+
+        root.addEventListener('submit', function () {
+          panels.forEach(function (panel) {
+            panel.hidden = false;
+            panel.classList.remove('hidden');
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>

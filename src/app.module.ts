@@ -29,6 +29,7 @@ import { LuckyWheelModule } from './lucky-wheel/lucky-wheel.module';
 import { RanksModule } from './ranks/ranks.module';
 import { StudyTogetherModule } from './study-together/study-together.module';
 import { BadgesModule } from './badges/badges.module';
+import { QuestsModule } from './quests/quests.module';
 import { SystemFlagsModule } from './system-flags/system-flags.module';
 
 @Module({
@@ -70,6 +71,7 @@ import { SystemFlagsModule } from './system-flags/system-flags.module';
     RanksModule,
     StudyTogetherModule,
     BadgesModule,
+    QuestsModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

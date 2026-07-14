@@ -31,6 +31,7 @@ export class LessonArloService {
   }
 
   async chat(input: {
+    userId: string;
     lesson: Lesson;
     outline: LessonPlayOutline;
     message: string;
@@ -63,37 +64,40 @@ export class LessonArloService {
   }
 
   private async generateAiReply(
-    input: { lesson: Lesson; outline: LessonPlayOutline },
+    input: { userId: string; lesson: Lesson; outline: LessonPlayOutline },
     message: string,
   ): Promise<string | null> {
-    const client = this.llm.createClient();
-    if (!client) return null;
+    if (!this.llm.isConfigured()) return null;
 
     const model = await this.llm.getModel('arlo');
     const contentSummary = this.summarizeOutline(input.outline);
 
-    const completion = await client.chat.completions.create({
-      model,
-      temperature: 0.6,
-      max_tokens: 280,
-      messages: [
-        {
-          role: 'system',
-          content: [
-            'You are Arlo, a friendly lesson coach in the Arc learning app.',
-            'Stay scoped to this lesson only. Be concise (2-5 short sentences).',
-            'Never reveal quiz or practice correct answers or option letters.',
-            'If asked for answers, give a hint toward the concept instead.',
-            'If asked for a recap, summarize the objective and key ideas in under 60 seconds of reading.',
-            `Lesson title: ${input.lesson.title}`,
-            `Objective: ${input.outline.objective}`,
-            contentSummary
-              ? `Teaching outline:\n${contentSummary}`
-              : 'Teaching outline: (not available — coach from title + objective).',
-          ].join('\n'),
-        },
-        { role: 'user', content: message },
-      ],
+    const completion = await this.llm.chatCompletion({
+      purpose: 'arlo',
+      userId: input.userId,
+      request: {
+        model,
+        temperature: 0.6,
+        max_tokens: 280,
+        messages: [
+          {
+            role: 'system',
+            content: [
+              'You are Arlo, a friendly lesson coach in the Arc learning app.',
+              'Stay scoped to this lesson only. Be concise (2-5 short sentences).',
+              'Never reveal quiz or practice correct answers or option letters.',
+              'If asked for answers, give a hint toward the concept instead.',
+              'If asked for a recap, summarize the objective and key ideas in under 60 seconds of reading.',
+              `Lesson title: ${input.lesson.title}`,
+              `Objective: ${input.outline.objective}`,
+              contentSummary
+                ? `Teaching outline:\n${contentSummary}`
+                : 'Teaching outline: (not available — coach from title + objective).',
+            ].join('\n'),
+          },
+          { role: 'user', content: message },
+        ],
+      },
     });
 
     const content = completion.choices[0]?.message?.content?.trim();

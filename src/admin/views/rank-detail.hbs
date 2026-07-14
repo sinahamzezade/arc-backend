@@ -6,129 +6,220 @@
     <title>{{title}} · Arc Admin</title>
     {{> layout}}
   </head>
-  <body>
-    <div class="shell">
+  <body class="bg-mist text-moss font-sans antialiased">
+    <div class="shell min-h-screen">
       {{> shell-sidebar}}
-      <main class="main">
-        <p class="crumb"><a class="link" href="/admin/ranks">Ranks</a> / {{row.slug}}</p>
-        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
-        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
-        <div class="page-head">
-          <h1>{{row.title}}</h1>
-          <p class="sub">Level {{row.level}} · {{row.slug}} · v{{row.version}}</p>
-        </div>
+      <main class="relative flex-1 min-w-0 overflow-x-hidden">
+        <div
+          class="pointer-events-none absolute -right-24 top-10 h-72 w-72 rounded-full bg-leaf/60 blur-3xl"
+          aria-hidden="true"
+        ></div>
+        <div
+          class="pointer-events-none absolute left-1/4 top-80 h-64 w-64 rounded-full bg-clay/12 blur-3xl"
+          aria-hidden="true"
+        ></div>
 
-        <h2 class="section-title">Rank image</h2>
-        <div class="panel" style="margin-bottom: 18px">
-          <div class="form-grid" style="align-items: start">
-            <div>
-              <label>Preview</label>
-              {{#if iconPreviewUrl}}
-                <img
-                  src="{{iconPreviewUrl}}"
-                  alt="{{row.title}}"
-                  width="96"
-                  height="96"
-                  style="display:block;width:96px;height:96px;object-fit:cover;border-radius:1rem;border:1px solid #d5ddd7;background:#eef3ef"
-                />
-              {{else}}
-                <div
-                  style="width:96px;height:96px;border-radius:1rem;border:1px dashed #d5ddd7;background:#eef3ef;display:flex;align-items:center;justify-content:center;color:#5b7c6e;font-size:0.75rem;text-align:center;padding:8px"
-                >
-                  {{#if row.iconAssetKey}}Key: {{row.iconAssetKey}}{{else}}No image{{/if}}
-                </div>
-              {{/if}}
+        <div class="relative px-5 pb-24 pt-6 md:px-10 lg:px-12">
+          <p class="mb-5 text-sm text-sage">
+            <a href="/admin/ranks" class="transition hover:text-moss">Ranks</a>
+            <span class="mx-2 opacity-40">/</span>
+            <span class="font-mono text-[13px]">{{row.slug}}</span>
+          </p>
+
+          {{#if flashOk}}
+            <p class="mb-5 rounded-2xl bg-leaf px-4 py-3 text-sm font-medium text-moss" role="status">{{flashOk}}</p>
+          {{/if}}
+          {{#if flashErr}}
+            <p class="mb-5 rounded-2xl bg-[#fde8e6] px-4 py-3 text-sm font-medium text-coral" role="alert">{{flashErr}}</p>
+          {{/if}}
+
+          <section class="relative mb-10 md:mb-12">
+            <div
+              class="relative overflow-hidden rounded-blob bg-gradient-to-br from-moss via-[#243f36] to-[#314f44] px-7 py-9 text-mist shadow-soft md:w-[85%] md:px-10 md:py-11"
+            >
+              <div class="absolute -right-6 top-4 h-28 w-28 rotate-12 rounded-[1.5rem] border border-white/10" aria-hidden="true"></div>
+              <p class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-leaf/80">Rank definition</p>
+              <h1 class="font-display max-w-[16ch] text-4xl font-semibold leading-[1.05] tracking-tight text-balance md:text-5xl">
+                {{row.title}}
+              </h1>
+              <p class="mt-3 text-sm text-mist/55">Level {{row.level}} · {{row.slug}} · v{{row.version}}</p>
+              <div class="mt-6 flex flex-wrap gap-2">
+                <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-mist/85">
+                  <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
+                  Level {{row.level}}
+                </span>
+                <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold tabular-nums text-mist/85">
+                  <i class="fa-solid fa-bolt" aria-hidden="true"></i>
+                  {{row.xpThreshold}} XP
+                </span>
+                {{#if row.isActive}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-leaf/90 px-3 py-1 text-xs font-semibold text-moss">
+                    <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                    Active
+                  </span>
+                {{else}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-mist/80">
+                    Off
+                  </span>
+                {{/if}}
+              </div>
             </div>
-            <div style="grid-column: span 2">
-              <form
-                method="post"
-                action="/admin/ranks/{{row.id}}/icon"
-                enctype="multipart/form-data"
-              >
-                <label for="icon">Upload image</label>
-                <input
-                  id="icon"
-                  name="icon"
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
-                  required
-                />
-                <p class="muted" style="margin:0 0 12px;font-size:0.8rem">
-                  PNG, JPEG, WebP, GIF, or SVG · max 2MB. Replaces current upload.
-                </p>
-                <div class="form-actions" style="padding-left:0">
-                  <button type="submit">Upload image</button>
+          </section>
+
+          <div
+            class="admin-tabs md:w-[94%] md:max-w-5xl"
+            data-admin-tabs
+            data-default="image"
+            data-err-tab="details"
+          >
+            <div class="mb-6 flex gap-0 overflow-x-auto" role="tablist" aria-label="Rank editor sections">
+              <button type="button" role="tab" id="tab-image" aria-controls="panel-image" aria-selected="true" data-tab="image" class="shrink-0">
+                <i class="fa-solid fa-image mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Image
+              </button>
+              <button type="button" role="tab" id="tab-details" aria-controls="panel-details" aria-selected="false" data-tab="details" class="shrink-0">
+                <i class="fa-solid fa-pen-to-square mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Details
+              </button>
+            </div>
+
+            <div id="panel-image" role="tabpanel" aria-labelledby="tab-image" data-panel="image" class="admin-panel">
+              <div class="mb-4 md:ml-2 md:max-w-lg">
+                <h2 class="font-display text-2xl font-semibold">Rank image</h2>
+                <p class="mt-1 text-sm text-sage">Upload replaces the current file. Or set a bundled key in Details.</p>
+              </div>
+
+              <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7] md:ml-2">
+                <div class="grid grid-cols-1 gap-6 sm:grid-cols-[auto_1fr] sm:items-start">
+                  <div>
+                    <p class="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-sage">Preview</p>
+                    {{#if iconPreviewUrl}}
+                      <img
+                        src="{{iconPreviewUrl}}"
+                        alt="{{row.title}}"
+                        width="96"
+                        height="96"
+                        class="block h-24 w-24 rounded-2xl border border-[#d5ddd7] bg-[#eef3ef] object-cover"
+                      />
+                    {{else}}
+                      <div
+                        class="flex h-24 w-24 items-center justify-center rounded-2xl border border-dashed border-[#d5ddd7] bg-[#eef3ef] px-2 text-center text-xs text-sage"
+                      >
+                        {{#if row.iconAssetKey}}Key: {{row.iconAssetKey}}{{else}}No image{{/if}}
+                      </div>
+                    {{/if}}
+                  </div>
+                  <div class="space-y-4">
+                    <form
+                      method="post"
+                      action="/admin/ranks/{{row.id}}/icon"
+                      enctype="multipart/form-data"
+                      class="space-y-3"
+                    >
+                      <div class="admin-field">
+                        <label for="icon">Upload image</label>
+                        <input
+                          id="icon"
+                          name="icon"
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+                          required
+                        />
+                        <p class="mt-1.5 text-xs text-sage">
+                          PNG, JPEG, WebP, GIF, or SVG · max 2MB. Replaces current upload.
+                        </p>
+                      </div>
+                      {{> ui-button label="Upload image" icon="fa-solid fa-upload" }}
+                    </form>
+                    {{#if hasUpload}}
+                      <form method="post" action="/admin/ranks/{{row.id}}/icon/clear">
+                        {{> ui-button label="Remove uploaded image" variant="secondary" }}
+                      </form>
+                    {{/if}}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="panel-details" role="tabpanel" aria-labelledby="tab-details" data-panel="details" class="admin-panel hidden" hidden>
+              <div class="mb-4 md:ml-2 md:max-w-lg">
+                <h2 class="font-display text-2xl font-semibold">Details</h2>
+                <p class="mt-1 text-sm text-sage">Level, slug, thresholds, and icon asset key.</p>
+              </div>
+
+              <form method="post" action="/admin/ranks/{{row.id}}" class="space-y-6 md:ml-2" id="rank-details-form">
+                <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div class="admin-field">
+                      <label for="level">Level</label>
+                      <input id="level" name="level" type="number" min="1" value="{{row.level}}" required />
+                    </div>
+                    <div class="admin-field">
+                      <label for="slug">Slug</label>
+                      <input id="slug" name="slug" type="text" value="{{row.slug}}" required />
+                    </div>
+                    <div class="admin-field sm:col-span-2">
+                      <label for="title">Title</label>
+                      <input id="title" name="title" type="text" value="{{row.title}}" required />
+                    </div>
+                    <div class="admin-field">
+                      <label for="xpThreshold">XP threshold</label>
+                      <input id="xpThreshold" name="xpThreshold" type="number" min="0" value="{{row.xpThreshold}}" required />
+                    </div>
+                    <div class="admin-field">
+                      <label for="minimumActiveDays">Min active days</label>
+                      <input id="minimumActiveDays" name="minimumActiveDays" type="number" min="0" value="{{row.minimumActiveDays}}" required />
+                    </div>
+                    <div class="admin-field">
+                      <label for="displayOrder">Display order</label>
+                      <input id="displayOrder" name="displayOrder" type="number" value="{{row.displayOrder}}" required />
+                    </div>
+                    <div class="admin-field sm:col-span-2">
+                      <label for="iconAssetKey">Icon asset key</label>
+                      <input id="iconAssetKey" name="iconAssetKey" type="text" value="{{row.iconAssetKey}}" placeholder="bundled key or /uploads/ranks/…" />
+                      <p class="mt-1.5 text-xs text-sage">
+                        Leave as upload path after image upload, or set a bundled key like <code class="rounded bg-leaf/60 px-1">rank-curious-egg</code>.
+                      </p>
+                    </div>
+                  </div>
+                  <label class="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl bg-mist/70 px-4 py-3 text-sm">
+                    <input id="isActive" name="isActive" type="checkbox" value="1" {{#if row.isActive}}checked{{/if}} class="h-4 w-4 accent-[#5b7c6e]" />
+                    <span>
+                      <span class="font-semibold text-moss">Active</span>
+                      <span class="mt-0.5 block text-xs text-sage">Included in ladder evaluation when checked.</span>
+                    </span>
+                  </label>
+                </div>
+
+                <div class="sticky bottom-4 z-20 flex flex-wrap items-center gap-3 rounded-blob border border-[#d5ddd7] bg-foam/95 px-4 py-3 shadow-lift backdrop-blur">
+                  {{> ui-button label="Save rank" icon="fa-solid fa-floppy-disk" }}
+                  <span class="text-xs text-sage">Changes apply on next rank evaluation.</span>
                 </div>
               </form>
-              {{#if hasUpload}}
-                <form method="post" action="/admin/ranks/{{row.id}}/icon/clear" style="margin-top:8px">
-                  <button type="submit" class="secondary">Remove uploaded image</button>
-                </form>
-              {{/if}}
             </div>
           </div>
-        </div>
 
-        <h2 class="section-title">Details</h2>
-        <div class="panel">
-          <form method="post" action="/admin/ranks/{{row.id}}">
-            <div class="form-grid">
-              <div>
-                <label for="level">Level</label>
-                <input id="level" name="level" type="number" min="1" value="{{row.level}}" required />
-              </div>
-              <div>
-                <label for="slug">Slug</label>
-                <input id="slug" name="slug" type="text" value="{{row.slug}}" required />
-              </div>
-              <div>
-                <label for="title">Title</label>
-                <input id="title" name="title" type="text" value="{{row.title}}" required />
-              </div>
-              <div>
-                <label for="xpThreshold">XP threshold</label>
-                <input id="xpThreshold" name="xpThreshold" type="number" min="0" value="{{row.xpThreshold}}" required />
-              </div>
-              <div>
-                <label for="minimumActiveDays">Min active days</label>
-                <input id="minimumActiveDays" name="minimumActiveDays" type="number" min="0" value="{{row.minimumActiveDays}}" required />
-              </div>
-              <div>
-                <label for="displayOrder">Display order</label>
-                <input id="displayOrder" name="displayOrder" type="number" value="{{row.displayOrder}}" required />
-              </div>
-              <div>
-                <label for="iconAssetKey">Icon asset key</label>
-                <input id="iconAssetKey" name="iconAssetKey" type="text" value="{{row.iconAssetKey}}" placeholder="bundled key or /uploads/ranks/…" />
-                <p class="muted" style="margin:6px 0 0;font-size:0.75rem">
-                  Leave as upload path after image upload, or set a bundled key like <code>rank-curious-egg</code>.
-                </p>
-              </div>
-              <div class="check-row">
-                <input id="isActive" name="isActive" type="checkbox" value="1" {{#if row.isActive}}checked{{/if}} />
-                <label for="isActive">Active</label>
-              </div>
+          <section class="mt-12 md:ml-2 md:w-[94%] md:max-w-5xl">
+            <div class="mb-4">
+              <h2 class="font-display text-2xl font-semibold text-coral">Danger</h2>
+              <p class="mt-1 text-sm text-sage">
+                Deletes this definition. Users still carrying this level/slug keep denormalized state until next evaluation.
+              </p>
             </div>
-            <div class="form-actions">
-              <button type="submit">Save rank</button>
+            <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+              <form
+                method="post"
+                action="/admin/ranks/{{row.id}}/delete"
+                onsubmit="return confirm('Delete rank {{row.title}} (level {{row.level}})?');"
+              >
+                {{> ui-button label="Delete rank" variant="danger" icon="fa-solid fa-trash" }}
+              </form>
             </div>
-          </form>
-        </div>
-
-        <h2 class="section-title">Danger</h2>
-        <div class="panel">
-          <p class="muted" style="margin-top:0">
-            Deletes this definition. Users still carrying this level/slug keep denormalized state until next evaluation.
-          </p>
-          <form
-            method="post"
-            action="/admin/ranks/{{row.id}}/delete"
-            onsubmit="return confirm('Delete rank {{row.title}} (level {{row.level}})?');"
-          >
-            <button type="submit" class="btn-danger">Delete rank</button>
-          </form>
+          </section>
         </div>
       </main>
     </div>
+
+    {{> admin-tabs-script}}
   </body>
 </html>

@@ -58,8 +58,7 @@ export class QuestionnaireAiService {
       return null;
     }
 
-    const client = this.llm.createClient();
-    if (!client) {
+    if (!this.llm.isConfigured()) {
       return null;
     }
 
@@ -67,14 +66,18 @@ export class QuestionnaireAiService {
     const promptVersion = this.getPromptVersion();
 
     try {
-      const completion = await client.chat.completions.create({
-        model,
-        temperature: 0.7,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: buildQuestionnaireAiSystemPrompt() },
-          { role: 'user', content: buildQuestionnaireAiUserPrompt(base) },
-        ],
+      const completion = await this.llm.chatCompletion({
+        purpose: 'questionnaire_copy',
+        userId: null,
+        request: {
+          model,
+          temperature: 0.7,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: buildQuestionnaireAiSystemPrompt() },
+            { role: 'user', content: buildQuestionnaireAiUserPrompt(base) },
+          ],
+        },
       });
 
       const content = completion.choices[0]?.message?.content;

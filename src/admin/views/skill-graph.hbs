@@ -6,112 +6,261 @@
     <title>{{title}} · Arc Admin</title>
     {{> layout}}
   </head>
-  <body>
-    <div class="shell">
+  <body class="bg-mist text-moss font-sans antialiased">
+    <div class="shell min-h-screen">
       {{> shell-sidebar}}
-      <main class="main">
-        <div class="page-head">
-          <h1>Skill graph</h1>
-          <p class="sub">{{count}} tech stack{{#unless countSingular}}s{{/unless}} · learning catalog from seed / DB</p>
-        </div>
-        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
-        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
+      <main class="relative flex-1 min-w-0 overflow-x-hidden">
+        <div
+          class="pointer-events-none absolute -right-20 top-8 h-64 w-64 rounded-full bg-leaf/70 blur-3xl"
+          aria-hidden="true"
+        ></div>
+        <div
+          class="pointer-events-none absolute left-1/3 top-72 h-48 w-48 rounded-full bg-clay/12 blur-3xl"
+          aria-hidden="true"
+        ></div>
 
-        <h2 class="section-title">Import JSON</h2>
-        <div class="panel" style="margin-bottom:18px">
-          <form method="post" action="/admin/skill-graph/import" enctype="multipart/form-data">
-            <div class="form-grid">
-              <div style="grid-column:1/-1">
-                <label for="file">Catalog file (`*-learning-data.json`)</label>
-                <input id="file" name="file" type="file" accept="application/json,.json" required />
-                <p class="muted" style="margin:8px 0 0;font-size:0.82rem">
-                  Same shape as seed packs: <span class="mono">stacks[]</span>, optional
-                  <span class="mono">resources[]</span> + <span class="mono">recipes[]</span>.
-                  Lesson <span class="mono">content</span> mapped into play outlines.
+        <div class="relative px-5 pb-20 pt-6 md:px-10 lg:px-12">
+          {{#if flashOk}}
+            <p class="mb-5 rounded-2xl bg-leaf px-4 py-3 text-sm font-medium text-moss" role="status">{{flashOk}}</p>
+          {{/if}}
+          {{#if flashErr}}
+            <p class="mb-5 rounded-2xl bg-[#fde8e6] px-4 py-3 text-sm font-medium text-coral" role="alert">{{flashErr}}</p>
+          {{/if}}
+
+          <section class="relative mb-10 md:mb-12">
+            <div
+              class="relative overflow-hidden rounded-blob bg-gradient-to-br from-moss via-[#243f36] to-[#314f44] px-7 py-9 text-mist shadow-soft md:w-[82%] md:px-10 md:py-11"
+            >
+              <div class="absolute -left-8 bottom-0 h-36 w-36 rounded-full bg-leaf/20 blur-2xl" aria-hidden="true"></div>
+              <p class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-leaf/80">Learning catalog</p>
+              <h1 class="font-display max-w-[12ch] text-4xl font-semibold leading-[1.05] tracking-tight md:text-5xl lg:text-6xl">
+                Skill graph
+              </h1>
+              <p class="mt-4 max-w-md text-sm text-mist/60">
+                Tech stacks, skills, and lessons — from seed packs or manual entry.
+              </p>
+              <div class="mt-6 flex flex-wrap items-center gap-2">
+                <span class="inline-flex items-center gap-2 rounded-full bg-leaf/90 px-3 py-1 text-xs font-semibold tabular-nums text-moss">
+                  <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
+                  {{count}} stack{{#unless countSingular}}s{{/unless}}
+                </span>
+              </div>
+            </div>
+
+            <aside
+              class="relative z-10 mt-4 rounded-blob border border-[#d5ddd7] bg-foam/95 p-5 shadow-lift backdrop-blur md:absolute md:-bottom-6 md:right-0 md:mt-0 md:w-[260px]"
+            >
+              <div class="mb-2 flex items-center gap-2">
+                <span class="flex h-8 w-8 items-center justify-center rounded-full bg-leaf text-moss">
+                  <i class="fa-solid fa-sitemap" aria-hidden="true"></i>
+                </span>
+                <h2 class="font-display text-lg font-semibold">Quick nav</h2>
+              </div>
+              <p class="mb-4 text-sm leading-relaxed text-sage">
+                Browse stacks, create one by hand, or import a seed JSON pack.
+              </p>
+              <div class="flex flex-col gap-2">
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-center gap-2 rounded-full bg-moss px-4 py-2.5 text-sm font-semibold text-mist transition hover:brightness-110"
+                  data-jump="create"
+                >
+                  <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                  New stack
+                </button>
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-center gap-2 rounded-full border border-leaf bg-leaf/40 px-4 py-2.5 text-sm font-semibold text-moss transition hover:bg-leaf"
+                  data-jump="import"
+                >
+                  <i class="fa-solid fa-file-import" aria-hidden="true"></i>
+                  Import JSON
+                </button>
+              </div>
+            </aside>
+          </section>
+
+          <div
+            class="admin-tabs md:w-[94%] md:max-w-5xl"
+            data-admin-tabs
+            data-default="catalog"
+            data-err-tab="create"
+            data-ok-map='{"imported":"import","created":"catalog"}'
+          >
+            <div class="mb-6 flex gap-0 overflow-x-auto" role="tablist" aria-label="Skill graph sections">
+              <button type="button" role="tab" id="tab-catalog" aria-controls="panel-catalog" aria-selected="true" data-tab="catalog" class="shrink-0">
+                <i class="fa-solid fa-list mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Catalog
+              </button>
+              <button type="button" role="tab" id="tab-create" aria-controls="panel-create" aria-selected="false" data-tab="create" class="shrink-0">
+                <i class="fa-solid fa-plus mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Create
+              </button>
+              <button type="button" role="tab" id="tab-import" aria-controls="panel-import" aria-selected="false" data-tab="import" class="shrink-0">
+                <i class="fa-solid fa-file-import mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Import
+              </button>
+            </div>
+
+            {{!-- Catalog --}}
+            <div id="panel-catalog" role="tabpanel" aria-labelledby="tab-catalog" data-panel="catalog" class="admin-panel">
+              {{#if hasRows}}
+                <div class="overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7]">
+                  <div class="overflow-x-auto">
+                    <table class="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Slug</th>
+                          <th>Category</th>
+                          <th>Skills</th>
+                          <th>Status</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {{#each rows}}
+                          <tr>
+                            <td>
+                              <a class="font-medium text-moss underline-offset-2 hover:underline" href="/admin/skill-graph/stacks/{{id}}">{{name}}</a>
+                            </td>
+                            <td class="font-mono text-[12px] text-sage">{{slug}}</td>
+                            <td>{{category}}</td>
+                            <td class="font-mono text-[12px] text-sage">{{skillCount}}</td>
+                            <td>
+                              {{#if isActive}}
+                                <span class="inline-flex items-center gap-1.5 rounded-full bg-leaf px-2.5 py-0.5 text-[11px] font-semibold text-moss">
+                                  <i class="fa-solid fa-circle-check text-[10px]" aria-hidden="true"></i>
+                                  Active
+                                </span>
+                              {{else}}
+                                <span class="inline-flex items-center gap-1.5 rounded-full bg-mist px-2.5 py-0.5 text-[11px] font-semibold text-sage">
+                                  Off
+                                </span>
+                              {{/if}}
+                            </td>
+                            <td>
+                              <form method="post" action="/admin/skill-graph/stacks/{{id}}/delete" class="m-0" onsubmit="return confirm('Delete stack {{name}} and all skills/lessons?');">
+                                {{> ui-button label="Delete" variant="danger" size="sm" icon="fa-solid fa-trash" }}
+                              </form>
+                            </td>
+                          </tr>
+                        {{/each}}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              {{else}}
+                <div class="rounded-blob bg-foam px-6 py-14 text-center shadow-lift ring-1 ring-[#d5ddd7]">
+                  <span class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-leaf text-moss">
+                    <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
+                  </span>
+                  <p class="font-display text-xl font-semibold">No tech stacks yet</p>
+                  <p class="mt-2 text-sm text-sage">Seed on boot, create one, or import a catalog JSON.</p>
+                  <button
+                    type="button"
+                    class="mt-5 inline-flex items-center gap-2 rounded-full bg-moss px-5 py-2.5 text-sm font-semibold text-mist transition hover:brightness-110"
+                    data-jump="create"
+                  >
+                    <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                    Create first stack
+                  </button>
+                </div>
+              {{/if}}
+            </div>
+
+            {{!-- Create --}}
+            <div id="panel-create" role="tabpanel" aria-labelledby="tab-create" data-panel="create" class="admin-panel hidden" hidden>
+              <div class="mb-5 md:ml-2 md:max-w-xl">
+                <h2 class="font-display text-2xl font-semibold">Add stack</h2>
+                <p class="mt-1 text-sm text-sage">
+                  A tech stack groups skills (and their lessons) under one catalog slug.
                 </p>
               </div>
-              <div class="check-row">
-                <input id="overwrite" name="overwrite" type="checkbox" value="1" checked />
-                <label for="overwrite">Overwrite existing rows (match by slug)</label>
-              </div>
-            </div>
-            <div class="form-actions">
-              {{> ui-button label="Import catalog" icon="fa-solid fa-file-import" }}
-            </div>
-          </form>
-        </div>
 
-        <h2 class="section-title">Add stack</h2>
-        <div class="panel" style="margin-bottom:18px">
-          <form method="post" action="/admin/skill-graph/stacks">
-            <div class="form-grid">
-              <div>
-                <label for="name">Name</label>
-                <input id="name" name="name" type="text" placeholder="Web Foundations" required />
-              </div>
-              <div>
-                <label for="slug">Slug (optional)</label>
-                <input id="slug" name="slug" type="text" placeholder="web-foundations" />
-              </div>
-              <div>
-                <label for="category">Category</label>
-                <input id="category" name="category" type="text" value="frontend" />
-              </div>
-              <div style="grid-column:1/-1">
-                <label for="description">Description</label>
-                <textarea id="description" name="description"></textarea>
-              </div>
+              <form method="post" action="/admin/skill-graph/stacks" class="md:ml-2 md:max-w-2xl">
+                <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <div class="mb-4 flex items-center gap-2">
+                    <span class="flex h-8 w-8 items-center justify-center rounded-full bg-leaf text-moss">
+                      <i class="fa-solid fa-tag" aria-hidden="true"></i>
+                    </span>
+                    <h3 class="font-display text-lg font-semibold">Stack identity</h3>
+                  </div>
+                  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div class="admin-field">
+                      <label for="name">Name</label>
+                      <input id="name" name="name" type="text" placeholder="Web Foundations" required />
+                    </div>
+                    <div class="admin-field">
+                      <label for="slug">Slug (optional)</label>
+                      <input id="slug" name="slug" type="text" placeholder="web-foundations" />
+                    </div>
+                    <div class="admin-field sm:col-span-2">
+                      <label for="category">Category</label>
+                      <input id="category" name="category" type="text" value="frontend" />
+                    </div>
+                    <div class="admin-field sm:col-span-2">
+                      <label for="description">Description</label>
+                      <textarea id="description" name="description" rows="3"></textarea>
+                    </div>
+                  </div>
+                  <div class="mt-5 flex flex-wrap items-center gap-3">
+                    {{> ui-button label="Create stack" icon="fa-solid fa-plus" }}
+                    <button
+                      type="button"
+                      class="text-sm font-semibold text-sage transition hover:text-moss"
+                      data-jump="import"
+                    >
+                      Prefer bulk import?
+                    </button>
+                  </div>
+                </div>
+              </form>
             </div>
-            <div class="form-actions">
-              {{> ui-button label="Create stack" icon="fa-solid fa-plus" }}
-            </div>
-          </form>
-        </div>
 
-        <h2 class="section-title">Stacks</h2>
-        <div class="panel">
-          {{#if hasRows}}
-            <div class="table-wrap">
-              <table class="data">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Slug</th>
-                    <th>Category</th>
-                    <th>Skills</th>
-                    <th>Status</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {{#each rows}}
-                    <tr>
-                      <td><a class="link" href="/admin/skill-graph/stacks/{{id}}">{{name}}</a></td>
-                      <td class="mono">{{slug}}</td>
-                      <td>{{category}}</td>
-                      <td class="mono">{{skillCount}}</td>
-                      <td>
-                        {{#if isActive}}
-                          <span class="badge badge-ok">Active</span>
-                        {{else}}
-                          <span class="badge badge-off">Off</span>
-                        {{/if}}
-                      </td>
-                      <td>
-                        <form method="post" action="/admin/skill-graph/stacks/{{id}}/delete" style="margin:0" onsubmit="return confirm('Delete stack {{name}} and all skills/lessons?');">
-                          {{> ui-button label="Delete" variant="danger" size="sm" icon="fa-solid fa-trash" }}
-                        </form>
-                      </td>
-                    </tr>
-                  {{/each}}
-                </tbody>
-              </table>
+            {{!-- Import --}}
+            <div id="panel-import" role="tabpanel" aria-labelledby="tab-import" data-panel="import" class="admin-panel hidden" hidden>
+              <div class="mb-5 md:ml-2 md:max-w-xl">
+                <h2 class="font-display text-2xl font-semibold">Import JSON</h2>
+                <p class="mt-1 text-sm text-sage">
+                  Upload a <code class="rounded bg-leaf/60 px-1">*-learning-data.json</code> seed pack.
+                </p>
+              </div>
+
+              <form method="post" action="/admin/skill-graph/import" enctype="multipart/form-data" class="md:ml-2 md:max-w-2xl">
+                <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <div class="mb-4 flex items-center gap-2">
+                    <span class="flex h-8 w-8 items-center justify-center rounded-full bg-[#f3e0d6] text-clay">
+                      <i class="fa-solid fa-file-import" aria-hidden="true"></i>
+                    </span>
+                    <h3 class="font-display text-lg font-semibold">Catalog file</h3>
+                  </div>
+                  <div class="admin-field mb-4">
+                    <label for="file">Catalog file (`*-learning-data.json`)</label>
+                    <input id="file" name="file" type="file" accept="application/json,.json" required />
+                    <p class="mt-2 text-xs leading-relaxed text-sage">
+                      Same shape as seed packs: <span class="font-mono">stacks[]</span>, optional
+                      <span class="font-mono">resources[]</span> + <span class="font-mono">recipes[]</span>.
+                      Lesson <span class="font-mono">content</span> mapped into play outlines.
+                    </p>
+                  </div>
+                  <label class="mb-5 flex cursor-pointer items-center gap-3 rounded-2xl bg-mist/70 px-4 py-3 text-sm">
+                    <input id="overwrite" name="overwrite" type="checkbox" value="1" class="h-4 w-4 accent-[#5b7c6e]" checked />
+                    <span>
+                      <span class="font-semibold text-moss">Overwrite existing rows</span>
+                      <span class="mt-0.5 block text-xs text-sage">Match by slug when updating.</span>
+                    </span>
+                  </label>
+                  <div class="flex flex-wrap items-center gap-3">
+                    {{> ui-button label="Import catalog" icon="fa-solid fa-file-import" }}
+                  </div>
+                </div>
+              </form>
             </div>
-          {{else}}
-            <div class="empty">No tech stacks yet. Seed on boot or create one above.</div>
-          {{/if}}
+          </div>
         </div>
       </main>
     </div>
+    {{> admin-tabs-script}}
   </body>
 </html>

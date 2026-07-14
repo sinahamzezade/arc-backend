@@ -6,169 +6,320 @@
     <title>{{title}} · Arc Admin</title>
     {{> layout}}
   </head>
-  <body>
-    <div class="shell">
+  <body class="bg-mist text-moss font-sans antialiased">
+    <div class="shell min-h-screen">
       {{> shell-sidebar}}
-      <main class="main">
-        <p class="crumb">
-          <a class="link" href="/admin/skill-graph">Skill graph</a> /
-          <a class="link" href="/admin/skill-graph/stacks/{{stack.id}}">{{stack.slug}}</a> /
-          {{skill.slug}}
-        </p>
-        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
-        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
-        <div class="page-head">
-          <h1>{{skill.title}}</h1>
-          <p class="sub">{{skill.slug}} · {{stack.name}}</p>
-        </div>
+      <main class="relative flex-1 min-w-0 overflow-x-hidden">
+        <div
+          class="pointer-events-none absolute -right-24 top-10 h-72 w-72 rounded-full bg-leaf/60 blur-3xl"
+          aria-hidden="true"
+        ></div>
+        <div
+          class="pointer-events-none absolute left-1/4 top-80 h-48 w-48 rounded-full bg-clay/12 blur-3xl"
+          aria-hidden="true"
+        ></div>
 
-        <div class="panel" style="margin-bottom:18px">
-          <form method="post" action="/admin/skill-graph/skills/{{skill.id}}">
-            <div class="form-grid">
-              <div>
-                <label for="title">Title</label>
-                <input id="title" name="title" type="text" value="{{skill.title}}" required />
-              </div>
-              <div>
-                <label for="orderHint">Order</label>
-                <input id="orderHint" name="orderHint" type="number" value="{{skill.orderHint}}" />
-              </div>
-              <div>
-                <label for="estimatedHours">Hours</label>
-                <input id="estimatedHours" name="estimatedHours" type="number" step="0.5" value="{{skill.estimatedHoursNum}}" />
-              </div>
-              <div>
-                <label for="tags">Tags (comma)</label>
-                <input id="tags" name="tags" type="text" value="{{skill.tagsCsv}}" />
-              </div>
-              <div style="grid-column:1/-1">
-                <label for="description">Description</label>
-                <textarea id="description" name="description">{{skill.description}}</textarea>
-              </div>
-              {{#if hasPrereqOptions}}
-              <div style="grid-column:1/-1">
-                <label>Prerequisites</label>
-                <div style="display:flex;flex-wrap:wrap;gap:10px 16px;padding:4px 0 8px">
-                  {{#each prereqOptions}}
-                    <label class="check-row" style="margin:0">
-                      <input type="checkbox" name="prereqIds" value="{{id}}" {{#if selected}}checked{{/if}} />
-                      <span>{{title}} <span class="mono muted">({{slug}})</span></span>
-                    </label>
-                  {{/each}}
-                </div>
-              </div>
-              {{/if}}
-              <div class="check-row">
-                <input id="isActive" name="isActive" type="checkbox" value="1" {{#if skill.isActive}}checked{{/if}} />
-                <label for="isActive">Active</label>
-              </div>
-            </div>
-            <div class="form-actions">
-              {{> ui-button label="Save skill" icon="fa-solid fa-floppy-disk" }}
-            </div>
-          </form>
-          <div class="form-actions" style="padding-top:0">
-            <form method="post" action="/admin/skill-graph/skills/{{skill.id}}/delete" style="margin:0" onsubmit="return confirm('Delete this skill and its lessons?');">
-              {{> ui-button label="Delete skill" variant="danger" icon="fa-solid fa-trash" }}
-            </form>
-          </div>
-        </div>
+        <div class="relative px-5 pb-24 pt-6 md:px-10 lg:px-12">
+          <p class="mb-5 text-sm text-sage">
+            <a href="/admin/skill-graph" class="transition hover:text-moss">Skill graph</a>
+            <span class="mx-2 opacity-40">/</span>
+            <a href="/admin/skill-graph/stacks/{{stack.id}}" class="transition hover:text-moss">{{stack.slug}}</a>
+            <span class="mx-2 opacity-40">/</span>
+            <span class="font-mono text-[13px]">{{skill.slug}}</span>
+          </p>
 
-        <h2 class="section-title">Add lesson</h2>
-        <div class="panel" style="margin-bottom:18px">
-          <form method="post" action="/admin/skill-graph/skills/{{skill.id}}/lessons">
-            <div class="form-grid">
-              <div>
-                <label for="lessonTitle">Title</label>
-                <input id="lessonTitle" name="title" type="text" placeholder="HTTP basics" required />
-              </div>
-              <div>
-                <label for="lessonSlug">Slug (optional)</label>
-                <input id="lessonSlug" name="slug" type="text" placeholder="http-basics" />
-              </div>
-              <div>
-                <label for="lessonType">Type</label>
-                <select id="lessonType" name="lessonType">
-                  {{#each lessonTypes}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </div>
-              <div>
-                <label for="estimatedMinutes">Minutes</label>
-                <input id="estimatedMinutes" name="estimatedMinutes" type="number" value="20" />
-              </div>
-              <div>
-                <label for="xpReward">XP</label>
-                <input id="xpReward" name="xpReward" type="number" value="20" />
-              </div>
-              <div>
-                <label for="lessonOrder">Order</label>
-                <input id="lessonOrder" name="orderHint" type="number" value="0" />
-              </div>
-              <div>
-                <label for="missionNameTemplate">Mission name</label>
-                <input id="missionNameTemplate" name="missionNameTemplate" type="text" />
-              </div>
-              <div>
-                <label for="learningStyleTags">Style tags (comma)</label>
-                <input id="learningStyleTags" name="learningStyleTags" type="text" placeholder="reading, visual" />
-              </div>
-            </div>
-            <div class="form-actions">
-              {{> ui-button label="Create lesson" icon="fa-solid fa-plus" }}
-            </div>
-          </form>
-        </div>
-
-        <h2 class="section-title">Lessons</h2>
-        <div class="panel">
-          {{#if hasLessons}}
-            <div class="table-wrap">
-              <table class="data">
-                <thead>
-                  <tr>
-                    <th>Order</th>
-                    <th>Title</th>
-                    <th>Slug</th>
-                    <th>Type</th>
-                    <th>Min</th>
-                    <th>XP</th>
-                    <th>Status</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {{#each lessons}}
-                    <tr>
-                      <td class="mono">{{orderHint}}</td>
-                      <td><a class="link" href="/admin/skill-graph/lessons/{{id}}">{{title}}</a></td>
-                      <td class="mono">{{slug}}</td>
-                      <td class="mono">{{lessonType}}</td>
-                      <td class="mono">{{estimatedMinutes}}</td>
-                      <td class="mono">{{xpReward}}</td>
-                      <td>
-                        {{#if isActive}}
-                          <span class="badge badge-ok">Active</span>
-                        {{else}}
-                          <span class="badge badge-off">Off</span>
-                        {{/if}}
-                      </td>
-                      <td>
-                        <form method="post" action="/admin/skill-graph/lessons/{{id}}/delete" style="margin:0" onsubmit="return confirm('Delete lesson {{title}}?');">
-                          {{> ui-button label="Delete" variant="danger" size="sm" }}
-                        </form>
-                      </td>
-                    </tr>
-                  {{/each}}
-                </tbody>
-              </table>
-            </div>
-          {{else}}
-            <div class="empty">No lessons on this skill.</div>
+          {{#if flashOk}}
+            <p class="mb-5 rounded-2xl bg-leaf px-4 py-3 text-sm font-medium text-moss" role="status">{{flashOk}}</p>
           {{/if}}
+          {{#if flashErr}}
+            <p class="mb-5 rounded-2xl bg-[#fde8e6] px-4 py-3 text-sm font-medium text-coral" role="alert">{{flashErr}}</p>
+          {{/if}}
+
+          <section class="relative mb-10 md:mb-12">
+            <div
+              class="relative overflow-hidden rounded-blob bg-gradient-to-br from-moss via-[#243f36] to-[#314f44] px-7 py-9 text-mist shadow-soft md:w-[85%] md:px-10 md:py-11"
+            >
+              <div class="absolute -left-10 bottom-0 h-40 w-40 rounded-full bg-leaf/20 blur-2xl" aria-hidden="true"></div>
+              <p class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-leaf/80">Skill node</p>
+              <h1 class="font-display max-w-[18ch] text-4xl font-semibold leading-[1.05] tracking-tight text-balance md:text-5xl">
+                {{skill.title}}
+              </h1>
+              <p class="mt-3 font-mono text-sm text-mist/50">{{skill.slug}}</p>
+              <p class="mt-1 text-sm text-mist/45">{{stack.name}}</p>
+              <div class="mt-6 flex flex-wrap gap-2">
+                <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold tabular-nums text-mist/85">
+                  <i class="fa-solid fa-clock" aria-hidden="true"></i>
+                  {{skill.estimatedHoursNum}} h
+                </span>
+                <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold tabular-nums text-mist/85">
+                  <i class="fa-solid fa-sort" aria-hidden="true"></i>
+                  Order {{skill.orderHint}}
+                </span>
+                {{#if skill.isActive}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-leaf/90 px-3 py-1 text-xs font-semibold text-moss">
+                    <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                    Active
+                  </span>
+                {{else}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-mist/80">
+                    Off
+                  </span>
+                {{/if}}
+              </div>
+            </div>
+
+            <aside
+              class="relative z-10 mt-4 rounded-blob border border-[#d5ddd7] bg-foam/95 p-5 shadow-lift backdrop-blur md:absolute md:-bottom-6 md:right-0 md:mt-0 md:w-[260px]"
+            >
+              <div class="mb-2 flex items-center gap-2">
+                <span class="flex h-8 w-8 items-center justify-center rounded-full bg-leaf text-moss">
+                  <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                </span>
+                <h2 class="font-display text-lg font-semibold">Actions</h2>
+              </div>
+              <p class="mb-4 text-sm leading-relaxed text-sage">
+                Update skill metadata, or add lessons attached to this node.
+              </p>
+              <div class="flex flex-col gap-2">
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-center gap-2 rounded-full bg-moss px-4 py-2.5 text-sm font-semibold text-mist transition hover:brightness-110"
+                  data-jump="lessons"
+                >
+                  <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                  Add lesson
+                </button>
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-center gap-2 rounded-full border border-leaf bg-leaf/40 px-4 py-2.5 text-sm font-semibold text-moss transition hover:bg-leaf"
+                  data-jump="details"
+                >
+                  <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                  Edit details
+                </button>
+              </div>
+            </aside>
+          </section>
+
+          <div
+            class="admin-tabs md:w-[94%] md:max-w-5xl"
+            data-admin-tabs
+            data-default="details"
+            data-err-tab="details"
+          >
+            <div class="mb-6 flex gap-0 overflow-x-auto" role="tablist" aria-label="Skill editor sections">
+              <button type="button" role="tab" id="tab-details" aria-controls="panel-details" aria-selected="true" data-tab="details" class="shrink-0">
+                <i class="fa-solid fa-id-card mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Details
+              </button>
+              <button type="button" role="tab" id="tab-lessons" aria-controls="panel-lessons" aria-selected="false" data-tab="lessons" class="shrink-0">
+                <i class="fa-solid fa-book-open mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Lessons
+              </button>
+            </div>
+
+            <div id="panel-details" role="tabpanel" aria-labelledby="tab-details" data-panel="details" class="admin-panel">
+              <div class="mb-4 md:ml-2 md:max-w-lg">
+                <h2 class="font-display text-2xl font-semibold">Skill details</h2>
+                <p class="mt-1 text-sm text-sage">Title, order, hours, tags, prereqs, and active flag.</p>
+              </div>
+              <form method="post" action="/admin/skill-graph/skills/{{skill.id}}" class="md:ml-2 md:max-w-2xl">
+                <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div class="admin-field">
+                      <label for="title">Title</label>
+                      <input id="title" name="title" type="text" value="{{skill.title}}" required />
+                    </div>
+                    <div class="admin-field">
+                      <label for="orderHint">Order</label>
+                      <input id="orderHint" name="orderHint" type="number" value="{{skill.orderHint}}" />
+                    </div>
+                    <div class="admin-field">
+                      <label for="estimatedHours">Hours</label>
+                      <input id="estimatedHours" name="estimatedHours" type="number" step="0.5" value="{{skill.estimatedHoursNum}}" />
+                    </div>
+                    <div class="admin-field">
+                      <label for="tags">Tags (comma)</label>
+                      <input id="tags" name="tags" type="text" value="{{skill.tagsCsv}}" />
+                    </div>
+                    <div class="admin-field sm:col-span-2">
+                      <label for="description">Description</label>
+                      <textarea id="description" name="description" rows="4">{{skill.description}}</textarea>
+                    </div>
+                    {{#if hasPrereqOptions}}
+                      <div class="sm:col-span-2">
+                        <p class="mb-3 text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-sage">Prerequisites</p>
+                        <div class="flex flex-wrap gap-x-4 gap-y-2 rounded-2xl bg-mist/70 px-4 py-3">
+                          {{#each prereqOptions}}
+                            <label class="flex cursor-pointer items-center gap-2 text-sm">
+                              <input type="checkbox" name="prereqIds" value="{{id}}" class="h-4 w-4 accent-[#5b7c6e]" {{#if selected}}checked{{/if}} />
+                              <span>
+                                {{title}}
+                                <span class="font-mono text-[11px] text-sage">({{slug}})</span>
+                              </span>
+                            </label>
+                          {{/each}}
+                        </div>
+                      </div>
+                    {{/if}}
+                  </div>
+                  <label class="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl bg-mist/70 px-4 py-3 text-sm">
+                    <input id="isActive" name="isActive" type="checkbox" value="1" class="h-4 w-4 accent-[#5b7c6e]" {{#if skill.isActive}}checked{{/if}} />
+                    <span>
+                      <span class="font-semibold text-moss">Active</span>
+                      <span class="mt-0.5 block text-xs text-sage">Inactive skills stay out of roadmaps.</span>
+                    </span>
+                  </label>
+                  <div class="mt-5">
+                    {{> ui-button label="Save skill" icon="fa-solid fa-floppy-disk" }}
+                  </div>
+                </div>
+              </form>
+            </div>
+
+            <div id="panel-lessons" role="tabpanel" aria-labelledby="tab-lessons" data-panel="lessons" class="admin-panel hidden" hidden>
+              <div class="mb-5 md:ml-2 md:max-w-xl">
+                <h2 class="font-display text-2xl font-semibold">Lessons</h2>
+                <p class="mt-1 text-sm text-sage">Create a lesson template, then open it to edit outline JSON.</p>
+              </div>
+
+              <form method="post" action="/admin/skill-graph/skills/{{skill.id}}/lessons" class="mb-8 md:ml-2 md:max-w-3xl">
+                <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <div class="mb-4 flex items-center gap-2">
+                    <span class="flex h-8 w-8 items-center justify-center rounded-full bg-leaf text-moss">
+                      <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                    </span>
+                    <h3 class="font-display text-lg font-semibold">Add lesson</h3>
+                  </div>
+                  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div class="admin-field">
+                      <label for="lessonTitle">Title</label>
+                      <input id="lessonTitle" name="title" type="text" placeholder="HTTP basics" required />
+                    </div>
+                    <div class="admin-field">
+                      <label for="lessonSlug">Slug (optional)</label>
+                      <input id="lessonSlug" name="slug" type="text" placeholder="http-basics" />
+                    </div>
+                    <div class="admin-field">
+                      <label for="lessonType">Type</label>
+                      <select id="lessonType" name="lessonType">
+                        {{#each lessonTypes}}
+                          <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </div>
+                    <div class="admin-field">
+                      <label for="estimatedMinutes">Minutes</label>
+                      <input id="estimatedMinutes" name="estimatedMinutes" type="number" value="20" />
+                    </div>
+                    <div class="admin-field">
+                      <label for="xpReward">XP</label>
+                      <input id="xpReward" name="xpReward" type="number" value="20" />
+                    </div>
+                    <div class="admin-field">
+                      <label for="lessonOrder">Order</label>
+                      <input id="lessonOrder" name="orderHint" type="number" value="0" />
+                    </div>
+                    <div class="admin-field">
+                      <label for="missionNameTemplate">Mission name</label>
+                      <input id="missionNameTemplate" name="missionNameTemplate" type="text" />
+                    </div>
+                    <div class="admin-field">
+                      <label for="learningStyleTags">Style tags (comma)</label>
+                      <input id="learningStyleTags" name="learningStyleTags" type="text" placeholder="reading, visual" />
+                    </div>
+                  </div>
+                  <div class="mt-5">
+                    {{> ui-button label="Create lesson" icon="fa-solid fa-plus" }}
+                  </div>
+                </div>
+              </form>
+
+              <div class="md:ml-2">
+                {{#if hasLessons}}
+                  <div class="overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7]">
+                    <div class="overflow-x-auto">
+                      <table class="admin-table">
+                        <thead>
+                          <tr>
+                            <th>Order</th>
+                            <th>Title</th>
+                            <th>Slug</th>
+                            <th>Type</th>
+                            <th>Min</th>
+                            <th>XP</th>
+                            <th>Status</th>
+                            <th></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {{#each lessons}}
+                            <tr>
+                              <td class="font-mono text-[12px] text-sage">{{orderHint}}</td>
+                              <td>
+                                <a class="font-medium text-moss underline-offset-2 hover:underline" href="/admin/skill-graph/lessons/{{id}}">{{title}}</a>
+                              </td>
+                              <td class="font-mono text-[12px] text-sage">{{slug}}</td>
+                              <td class="font-mono text-[12px] text-sage">{{lessonType}}</td>
+                              <td class="font-mono text-[12px] text-sage">{{estimatedMinutes}}</td>
+                              <td class="font-mono text-[12px] text-sage">{{xpReward}}</td>
+                              <td>
+                                {{#if isActive}}
+                                  <span class="inline-flex items-center gap-1.5 rounded-full bg-leaf px-2.5 py-0.5 text-[11px] font-semibold text-moss">
+                                    <i class="fa-solid fa-circle-check text-[10px]" aria-hidden="true"></i>
+                                    Active
+                                  </span>
+                                {{else}}
+                                  <span class="inline-flex items-center gap-1.5 rounded-full bg-mist px-2.5 py-0.5 text-[11px] font-semibold text-sage">
+                                    Off
+                                  </span>
+                                {{/if}}
+                              </td>
+                              <td>
+                                <form method="post" action="/admin/skill-graph/lessons/{{id}}/delete" class="m-0" onsubmit="return confirm('Delete lesson {{title}}?');">
+                                  {{> ui-button label="Delete" variant="danger" size="sm" }}
+                                </form>
+                              </td>
+                            </tr>
+                          {{/each}}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                {{else}}
+                  <div class="rounded-blob bg-foam px-6 py-12 text-center shadow-lift ring-1 ring-[#d5ddd7]">
+                    <span class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-leaf text-moss">
+                      <i class="fa-solid fa-book-open" aria-hidden="true"></i>
+                    </span>
+                    <p class="font-display text-xl font-semibold">No lessons on this skill</p>
+                    <p class="mt-2 text-sm text-sage">Use the form above to add the first lesson.</p>
+                  </div>
+                {{/if}}
+              </div>
+            </div>
+          </div>
+
+          <section class="mt-12 md:ml-2 md:max-w-xl">
+            <div class="mb-3 flex items-baseline justify-between gap-3">
+              <h2 class="font-display text-xl font-semibold text-coral">Danger</h2>
+              <span class="text-xs font-medium uppercase tracking-[0.14em] text-sage">Irreversible</span>
+            </div>
+            <div class="rounded-blob border border-[#f0c9c5] bg-[#fdf6f5] p-5">
+              <p class="mb-4 text-sm leading-relaxed text-sage">
+                Deletes this skill and all of its lessons.
+              </p>
+              <form
+                method="post"
+                action="/admin/skill-graph/skills/{{skill.id}}/delete"
+                onsubmit="return confirm('Delete this skill and its lessons?');"
+              >
+                {{> ui-button label="Delete skill" variant="danger" icon="fa-solid fa-trash" }}
+              </form>
+            </div>
+          </section>
         </div>
       </main>
     </div>
+    {{> admin-tabs-script}}
   </body>
 </html>

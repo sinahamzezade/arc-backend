@@ -6,26 +6,31 @@ import {
   SystemFlagKey,
 } from '../../system-flags/system-flag.keys';
 import { SystemFlagsService } from '../../system-flags/system-flags.service';
+import { LlmUsageService } from './llm-usage.service';
+import type { LlmPurpose } from './llm.types';
 
-export type LlmPurpose =
-  | 'intake'
-  | 'enrich'
-  | 'questionnaire_copy'
-  | 'arlo'
-  | 'battle';
+export type { LlmPurpose } from './llm.types';
+export { LLM_PURPOSE_LABELS } from './llm.types';
+
+export type LlmChatCompletionRequest =
+  OpenAI.Chat.ChatCompletionCreateParamsNonStreaming & {
+    /** OpenRouter failover list */
+    models?: string[];
+  };
 
 /**
  * Provider-agnostic OpenAI-compatible client.
  * Groq: LLM_BASE_URL=https://api.groq.com/openai/v1
  * OpenRouter: LLM_BASE_URL=https://openrouter.ai/api/v1
  *
- * Model picks for roadmap / arlo / battle live in admin Feature flags.
+ * Model picks for roadmap / arlo / battle / lesson body live in admin Feature flags.
  */
 @Injectable()
 export class LlmService {
   constructor(
     private readonly config: ConfigService,
     private readonly systemFlags: SystemFlagsService,
+    private readonly usage: LlmUsageService,
   ) {}
 
   isConfigured(): boolean {
@@ -82,6 +87,11 @@ export class LlmService {
           SystemFlagKey.LLM_BATTLE_MODEL,
           DEFAULT_LLM_MODEL,
         );
+      case 'lesson_body':
+        return this.systemFlags.getString(
+          SystemFlagKey.LLM_LESSON_BODY_MODEL,
+          DEFAULT_LLM_MODEL,
+        );
       default:
         return DEFAULT_LLM_MODEL;
     }
@@ -116,6 +126,28 @@ export class LlmService {
       ...(baseURL ? { baseURL } : {}),
       ...(defaultHeaders ? { defaultHeaders } : {}),
     });
+  }
+
+  /**
+   * Preferred chat entry — records token usage when provider returns it.
+   */
+  async chatCompletion(input: {
+    purpose: LlmPurpose;
+    userId?: string | null;
+    request: LlmChatCompletionRequest;
+  }): Promise<OpenAI.Chat.ChatCompletion> {
+    const client = this.createClient();
+    if (!client) {
+      throw new Error('LLM not configured');
+    }
+    const completion = await client.chat.completions.create(input.request);
+    await this.usage.recordFromCompletion({
+      userId: input.userId,
+      purpose: input.purpose,
+      requestedModel: input.request.model,
+      completion,
+    });
+    return completion;
   }
 
   /**

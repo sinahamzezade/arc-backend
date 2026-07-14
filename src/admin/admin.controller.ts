@@ -25,6 +25,14 @@ import {
   type BadgeCriteriaJson,
   type BadgeRewardJson,
 } from '../badges/badge.constants';
+import {
+  QuestCadence,
+  QuestCategory,
+  QuestConditionType,
+  QuestDefinitionStatus,
+  type QuestConditionJson,
+  type QuestRewardJson,
+} from '../quests/quest.constants';
 import { ContentPublicationStatus } from '../content-pool/content-pool.constants';
 import { RewardCurrency } from '../gamification/entities/reward-ledger-entry.entity';
 import { StoreItemType } from '../gamification/entities/store-item.entity';
@@ -49,9 +57,20 @@ import { AuthService } from '../auth/auth.service';
 import { AppException } from '../common/errors/app.exception';
 import { SystemFlagsService } from '../system-flags/system-flags.service';
 import { SystemFlagKey } from '../system-flags/system-flag.keys';
+import { RewardLedgerService } from '../gamification/reward-ledger.service';
+import { LlmUsageService } from '../common/llm/llm-usage.service';
 
 function checked(v: unknown): boolean {
   return v === '1' || v === 'on' || v === true || v === 'true';
+}
+
+/**
+ * Express already URL-decodes query values. Calling decodeURIComponent again
+ * throws URIError when the value contains a literal `%` (e.g. "50% done").
+ */
+function flashQuery(v: string | undefined | null): string | null {
+  if (v == null || v === '') return null;
+  return v;
 }
 
 function num(v: unknown, fallback = 0): number {
@@ -63,6 +82,12 @@ function optNum(v: unknown): number | null {
   if (v === '' || v === undefined || v === null) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+function optDate(v: unknown): Date | null {
+  if (v === '' || v === undefined || v === null) return null;
+  const d = new Date(String(v));
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 function selectOpts(
@@ -248,6 +273,8 @@ export class AdminController {
     private readonly roadmapsService: RoadmapsService,
     private readonly authService: AuthService,
     private readonly systemFlags: SystemFlagsService,
+    private readonly rewardLedger: RewardLedgerService,
+    private readonly llmUsage: LlmUsageService,
   ) {}
 
   @Get()
@@ -315,6 +342,7 @@ export class AdminController {
         'Questionnaire + roadmap reset. User can start questionnaire again.',
       password: 'Password updated. Active sessions revoked.',
       flags: 'User feature flags saved.',
+      wallet: 'XP / coins / gems updated.',
     };
     const errMap: Record<string, string> = {
       self: 'Cannot change your own account from here.',
@@ -323,6 +351,7 @@ export class AdminController {
 
     const { job, roadmap } = await this.roadmapsService.getCurrent(row.id);
     const roadmapView = roadmap ? toAdminRoadmapView(roadmap) : null;
+    const aiUsage = await this.llmUsage.reportForUser(row.id);
     const userFlags = await this.systemFlags.listForUser(row.id);
     const flagRows = userFlags.map((f) => ({
       ...f,
@@ -371,11 +400,12 @@ export class AdminController {
       user: toAdminUserView(row),
       isSelf: req.session.adminUserId === row.id,
       flashOk: ok ? (flashMap[ok] ?? null) : null,
-      flashErr: err ? (errMap[err] ?? decodeURIComponent(err)) : null,
+      flashErr: err ? (errMap[err] ?? flashQuery(err) ?? err) : null,
       hasRoadmap: Boolean(roadmapView),
       roadmap: roadmapView,
       job: toAdminJobView(job),
       userFlags: flagRows,
+      aiUsage,
     });
   }
 
@@ -419,6 +449,50 @@ export class AdminController {
       return res.redirect(`/admin/users/${id}?ok=reset`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Reset failed';
+      return res.redirect(
+        `/admin/users/${id}?err=${encodeURIComponent(msg)}`,
+      );
+    }
+  }
+
+  @Post('users/:id/wallet')
+  @UseGuards(AdminSessionGuard)
+  async setUserWallet(
+    @Param('id') id: string,
+    @Body() body: Record<string, string>,
+    @Req() req: AdminRequest,
+    @Res() res: Response,
+  ) {
+    const row = await this.usersService.findById(id);
+    if (!row) {
+      return res.redirect('/admin/users');
+    }
+    const lifetimeXp = Number(body.totalXp);
+    const coins = Number(body.coins);
+    const gems = Number(body.gems);
+    if (
+      !Number.isFinite(lifetimeXp) ||
+      !Number.isFinite(coins) ||
+      !Number.isFinite(gems) ||
+      lifetimeXp < 0 ||
+      coins < 0 ||
+      gems < 0
+    ) {
+      return res.redirect(
+        `/admin/users/${id}?err=${encodeURIComponent(
+          'XP, coins, and gems must be non-negative numbers.',
+        )}`,
+      );
+    }
+    try {
+      await this.rewardLedger.adminSetBalances(
+        id,
+        { lifetimeXp, coins, gems },
+        { adminUserId: req.session.adminUserId },
+      );
+      return res.redirect(`/admin/users/${id}?ok=wallet`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Wallet update failed';
       return res.redirect(
         `/admin/users/${id}?err=${encodeURIComponent(msg)}`,
       );
@@ -530,7 +604,7 @@ export class AdminController {
       count: rows.length,
       countSingular: rows.length === 1,
       flashOk: ok ? (flashMap[ok] ?? null) : null,
-      flashErr: err ? decodeURIComponent(err) : null,
+      flashErr: flashQuery(err),
     };
   }
 
@@ -599,7 +673,7 @@ export class AdminController {
         hasUpload,
         iconPreviewUrl: hasUpload ? iconKey : null,
         flashOk: ok ? (flashMap[ok] ?? null) : null,
-        flashErr: err ? decodeURIComponent(err) : null,
+        flashErr: flashQuery(err),
       });
     } catch {
       return res.redirect('/admin/ranks');
@@ -734,7 +808,7 @@ export class AdminController {
         StoreItemType.Consumable,
       ),
       flashOk: ok ? (flashMap[ok] ?? null) : null,
-      flashErr: err ? decodeURIComponent(err) : null,
+      flashErr: flashQuery(err),
     };
   }
 
@@ -800,7 +874,7 @@ export class AdminController {
         currencies: selectOpts(Object.values(RewardCurrency), row.currency),
         itemTypes: selectOpts(Object.values(StoreItemType), row.itemType),
         flashOk: ok ? (flashMap[ok] ?? null) : null,
-        flashErr: err ? decodeURIComponent(err) : null,
+        flashErr: flashQuery(err),
       });
     } catch {
       return res.redirect('/admin/store');
@@ -897,7 +971,7 @@ export class AdminController {
         BadgeCriteriaType.Counter,
       ),
       flashOk: ok ? (flashMap[ok] ?? null) : null,
-      flashErr: err ? decodeURIComponent(err) : null,
+      flashErr: flashQuery(err),
     };
   }
 
@@ -982,7 +1056,7 @@ export class AdminController {
           row.criteriaType,
         ),
         flashOk: ok ? (flashMap[ok] ?? null) : null,
-        flashErr: err ? decodeURIComponent(err) : null,
+        flashErr: flashQuery(err),
       });
     } catch {
       return res.redirect('/admin/badges');
@@ -1080,6 +1154,191 @@ export class AdminController {
     } catch {
       return res.redirect(
         `/admin/badges/${id}?err=${encodeURIComponent('Clear failed')}`,
+      );
+    }
+  }
+
+  @Get('quests')
+  @UseGuards(AdminSessionGuard)
+  @Render('quests')
+  async quests(
+    @Req() req: AdminRequest,
+    @Query('ok') ok?: string,
+    @Query('err') err?: string,
+  ) {
+    const rows = (await this.catalog.listQuests()).map((q) => ({
+      ...q,
+      isActiveStatus: q.status === QuestDefinitionStatus.Active,
+    }));
+    const flashMap: Record<string, string> = {
+      deleted: 'Quest deleted.',
+    };
+    return {
+      title: 'Quests',
+      email: req.session.adminEmail ?? '',
+      navQuests: true,
+      rows,
+      hasRows: rows.length > 0,
+      count: rows.length,
+      countSingular: rows.length === 1,
+      cadences: selectOpts(Object.values(QuestCadence), QuestCadence.Weekly),
+      categories: selectOpts(
+        Object.values(QuestCategory),
+        QuestCategory.League,
+      ),
+      statuses: selectOpts(
+        Object.values(QuestDefinitionStatus),
+        QuestDefinitionStatus.Active,
+      ),
+      conditionTypes: selectOpts(
+        Object.values(QuestConditionType),
+        QuestConditionType.Counter,
+      ),
+      flashOk: ok ? (flashMap[ok] ?? null) : null,
+      flashErr: flashQuery(err),
+    };
+  }
+
+  @Post('quests')
+  @UseGuards(AdminSessionGuard)
+  async questCreate(
+    @Body() body: Record<string, string>,
+    @Res() res: Response,
+  ) {
+    try {
+      const conditionJson = parseJsonObject<QuestConditionJson>(
+        body.conditionJson,
+        'conditionJson',
+      );
+      const rewardJson = parseJsonObject<QuestRewardJson>(
+        body.rewardJson ?? '{}',
+        'rewardJson',
+      );
+      const row = await this.catalog.createQuest({
+        code: String(body.code ?? '').trim(),
+        name: String(body.name ?? '').trim(),
+        description: String(body.description ?? ''),
+        detail: String(body.detail ?? ''),
+        cadence: (body.cadence as QuestCadence) || QuestCadence.Weekly,
+        category: (body.category as QuestCategory) || QuestCategory.League,
+        status:
+          (body.status as QuestDefinitionStatus) ||
+          QuestDefinitionStatus.Active,
+        conditionType:
+          (body.conditionType as QuestConditionType) ||
+          QuestConditionType.Counter,
+        conditionJson,
+        rewardJson,
+        sortOrder: num(body.sortOrder),
+        isOptional: checked(body.isOptional),
+        startsAt: optDate(body.startsAt),
+        endsAt: optDate(body.endsAt),
+      });
+      return res.redirect(`/admin/quests/${row.id}?ok=created`);
+    } catch (e) {
+      return res.redirect(
+        `/admin/quests?err=${encodeURIComponent(adminErrMessage(e, 'Create failed'))}`,
+      );
+    }
+  }
+
+  @Get('quests/:id')
+  @UseGuards(AdminSessionGuard)
+  async questDetail(
+    @Param('id') id: string,
+    @Req() req: AdminRequest,
+    @Res() res: Response,
+    @Query('ok') ok?: string,
+    @Query('err') err?: string,
+  ) {
+    try {
+      const row = await this.catalog.getQuest(id);
+      const flashMap: Record<string, string> = {
+        '1': 'Quest saved.',
+        created: 'Quest created.',
+      };
+      return res.render('quest-detail', {
+        title: row.name,
+        email: req.session.adminEmail ?? '',
+        navQuests: true,
+        row: {
+          ...row,
+          conditionJsonText: JSON.stringify(row.conditionJson ?? {}, null, 2),
+          rewardJsonText: JSON.stringify(row.rewardJson ?? {}, null, 2),
+          startsAtInput: row.startsAt
+            ? row.startsAt.toISOString().slice(0, 16)
+            : '',
+          endsAtInput: row.endsAt
+            ? row.endsAt.toISOString().slice(0, 16)
+            : '',
+        },
+        cadences: selectOpts(Object.values(QuestCadence), row.cadence),
+        categories: selectOpts(Object.values(QuestCategory), row.category),
+        statuses: selectOpts(
+          Object.values(QuestDefinitionStatus),
+          row.status,
+        ),
+        conditionTypes: selectOpts(
+          Object.values(QuestConditionType),
+          row.conditionType,
+        ),
+        flashOk: ok ? (flashMap[ok] ?? null) : null,
+        flashErr: flashQuery(err),
+      });
+    } catch {
+      return res.redirect('/admin/quests');
+    }
+  }
+
+  @Post('quests/:id')
+  @UseGuards(AdminSessionGuard)
+  async questSave(
+    @Param('id') id: string,
+    @Body() body: Record<string, string>,
+    @Res() res: Response,
+  ) {
+    try {
+      const conditionJson = parseJsonObject<QuestConditionJson>(
+        body.conditionJson,
+        'conditionJson',
+      );
+      const rewardJson = parseJsonObject<QuestRewardJson>(
+        body.rewardJson ?? '{}',
+        'rewardJson',
+      );
+      await this.catalog.updateQuest(id, {
+        code: String(body.code ?? '').trim(),
+        name: String(body.name ?? '').trim(),
+        description: String(body.description ?? ''),
+        detail: String(body.detail ?? ''),
+        cadence: body.cadence as QuestCadence,
+        category: body.category as QuestCategory,
+        status: body.status as QuestDefinitionStatus,
+        conditionType: body.conditionType as QuestConditionType,
+        conditionJson,
+        rewardJson,
+        sortOrder: num(body.sortOrder),
+        isOptional: checked(body.isOptional),
+        startsAt: optDate(body.startsAt),
+        endsAt: optDate(body.endsAt),
+      });
+      return res.redirect(`/admin/quests/${id}?ok=1`);
+    } catch (e) {
+      return res.redirect(
+        `/admin/quests/${id}?err=${encodeURIComponent(adminErrMessage(e, 'Save failed'))}`,
+      );
+    }
+  }
+
+  @Post('quests/:id/delete')
+  @UseGuards(AdminSessionGuard)
+  async questDelete(@Param('id') id: string, @Res() res: Response) {
+    try {
+      await this.catalog.deleteQuest(id);
+      return res.redirect('/admin/quests?ok=deleted');
+    } catch (e) {
+      return res.redirect(
+        `/admin/quests/${id}?err=${encodeURIComponent(adminErrMessage(e, 'Delete failed'))}`,
       );
     }
   }
@@ -1190,7 +1449,7 @@ export class AdminController {
       count: rows.length,
       countSingular: rows.length === 1,
       flashOk: ok === 'created' ? 'Course created.' : null,
-      flashErr: err ? decodeURIComponent(err) : null,
+      flashErr: flashQuery(err),
     };
   }
 
@@ -1249,7 +1508,7 @@ export class AdminController {
         })),
         hasModules: modules.length > 0,
         flashOk: ok ? (flashMap[ok] ?? null) : null,
-        flashErr: err ? decodeURIComponent(err) : null,
+        flashErr: flashQuery(err),
       });
     } catch {
       return res.redirect('/admin/courses');
@@ -1328,7 +1587,7 @@ export class AdminController {
       count: rows.length,
       countSingular: rows.length === 1,
       flashOk: ok === '1' ? 'Dataset created.' : null,
-      flashErr: err ? decodeURIComponent(err) : null,
+      flashErr: flashQuery(err),
     };
   }
 
@@ -1389,7 +1648,7 @@ export class AdminController {
       countSingular: rows.length === 1,
       icons: this.rolesAdmin.iconChoices(),
       flashOk: ok ? (flashMap[ok] ?? null) : null,
-      flashErr: err ? decodeURIComponent(err) : null,
+      flashErr: flashQuery(err),
     };
   }
 
@@ -1498,7 +1757,7 @@ export class AdminController {
       countSingular: rows.length === 1,
       icons: this.rolesAdmin.iconChoices(),
       flashOk: ok ? (flashMap[ok] ?? null) : null,
-      flashErr: err ? decodeURIComponent(err) : null,
+      flashErr: flashQuery(err),
     };
   }
 
@@ -1548,7 +1807,7 @@ export class AdminController {
         },
         icons: this.rolesAdmin.iconChoices(row.icon),
         flashOk: ok === 'saved' ? 'Saved.' : null,
-        flashErr: err ? decodeURIComponent(err) : null,
+        flashErr: flashQuery(err),
       });
     } catch {
       return res.redirect('/admin/questionnaire/roles');
@@ -1634,7 +1893,7 @@ export class AdminController {
         stepCount: steps.length,
         stepCountSingular: steps.length === 1,
         flashOk: ok ? (flashMap[ok] ?? null) : null,
-        flashErr: err ? decodeURIComponent(err) : null,
+        flashErr: flashQuery(err),
       });
     } catch {
       return res.redirect('/admin/questionnaire');
@@ -1748,7 +2007,7 @@ export class AdminController {
         optionIcons: this.questionnaireAdmin.iconChoices(),
         backHref: `/admin/questionnaire/${defId}`,
         flashOk: ok ? (flashMap[ok] ?? null) : null,
-        flashErr: err ? decodeURIComponent(err) : null,
+        flashErr: flashQuery(err),
       });
     } catch {
       return res.redirect(`/admin/questionnaire/${defId}`);
@@ -1867,7 +2126,7 @@ export class AdminController {
         icons: this.questionnaireAdmin.iconChoices(opt.icon),
         backHref: `/admin/questionnaire/${defId}/steps/${stepId}`,
         flashOk: ok === 'saved' ? 'Option saved.' : null,
-        flashErr: err ? decodeURIComponent(err) : null,
+        flashErr: flashQuery(err),
       });
     } catch {
       return res.redirect(`/admin/questionnaire/${defId}/steps/${stepId}`);
@@ -1958,7 +2217,7 @@ export class AdminController {
       navFeatureFlags: true,
       flags,
       flashOk: ok === '1' ? 'Feature flags saved.' : null,
-      flashErr: err ? decodeURIComponent(err) : null,
+      flashErr: flashQuery(err),
     };
   }
 
@@ -2101,7 +2360,7 @@ export class AdminController {
       created: 'Stack created.',
       deleted: 'Stack deleted.',
       imported: msg
-        ? decodeURIComponent(msg)
+        ? (flashQuery(msg) ?? msg)
         : 'Catalog JSON imported.',
     };
     return {
@@ -2113,7 +2372,7 @@ export class AdminController {
       count: rows.length,
       countSingular: rows.length === 1,
       flashOk: ok ? (flashMap[ok] ?? null) : null,
-      flashErr: err ? decodeURIComponent(err) : null,
+      flashErr: flashQuery(err),
     };
   }
 
@@ -2149,7 +2408,7 @@ export class AdminController {
         `+${stats.recipesAdded}/~${stats.recipesUpdated} recipes`,
       ].join(', ');
       return res.redirect(
-        `/admin/skill-graph?ok=imported&msg=${encodeURIComponent(`Imported: ${summary}`)}`,
+        `/admin/skill-graph?tab=import&ok=imported&msg=${encodeURIComponent(`Imported: ${summary}`)}`,
       );
     } catch (e) {
       const msg =
@@ -2162,7 +2421,7 @@ export class AdminController {
             ? e.message
             : 'Import failed';
       return res.redirect(
-        `/admin/skill-graph?err=${encodeURIComponent(Array.isArray(msg) ? msg.join(', ') : msg)}`,
+        `/admin/skill-graph?tab=import&err=${encodeURIComponent(Array.isArray(msg) ? msg.join(', ') : msg)}`,
       );
     }
   }
@@ -2183,7 +2442,7 @@ export class AdminController {
       return res.redirect(`/admin/skill-graph/stacks/${row.id}?ok=created`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Create failed';
-      return res.redirect(`/admin/skill-graph?err=${encodeURIComponent(msg)}`);
+      return res.redirect(`/admin/skill-graph?tab=create&err=${encodeURIComponent(msg)}`);
     }
   }
 
@@ -2212,7 +2471,7 @@ export class AdminController {
         skills,
         hasSkills: skills.length > 0,
         flashOk: ok ? (flashMap[ok] ?? null) : null,
-        flashErr: err ? decodeURIComponent(err) : null,
+        flashErr: flashQuery(err),
       });
     } catch {
       return res.redirect('/admin/skill-graph');
@@ -2304,7 +2563,7 @@ export class AdminController {
         ...data,
         hasLessons: data.lessons.length > 0,
         flashOk: ok ? (flashMap[ok] ?? null) : null,
-        flashErr: err ? decodeURIComponent(err) : null,
+        flashErr: flashQuery(err),
         lessonTypes: this.skillGraphAdmin.lessonTypeChoices('reading'),
       });
     } catch {
@@ -2406,7 +2665,7 @@ export class AdminController {
         navSkillGraph: true,
         ...data,
         flashOk: ok ? (flashMap[ok] ?? null) : null,
-        flashErr: err ? decodeURIComponent(err) : null,
+        flashErr: flashQuery(err),
       });
     } catch {
       return res.redirect('/admin/skill-graph');

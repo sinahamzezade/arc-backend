@@ -15,6 +15,7 @@ import {
   LessonProgressStatus,
 } from '../roadmaps/entities/lesson-progress.entity';
 import { User } from '../users/entities/user.entity';
+import { RankAvatarService } from '../ranks/rank-avatar.service';
 import { Follow } from './entities/follow.entity';
 import {
   FriendRequest,
@@ -85,6 +86,7 @@ export class SocialService {
     private readonly usersRepo: Repository<User>,
     @InjectRepository(UserLeagueState)
     private readonly leagueStateRepo: Repository<UserLeagueState>,
+    private readonly rankAvatars: RankAvatarService,
   ) {}
 
   async heartbeat(userId: string) {
@@ -1231,10 +1233,11 @@ export class SocialService {
 
   private async mapUserCards(userIds: string[]) {
     if (!userIds.length) return [];
-    const [profiles, users, leagues] = await Promise.all([
+    const [profiles, users, leagues, rankIcons] = await Promise.all([
       this.profilesRepo.find({ where: { userId: In(userIds) } }),
       this.usersRepo.find({ where: { id: In(userIds) } }),
       this.leagueStateRepo.find({ where: { userId: In(userIds) } }),
+      this.rankAvatars.iconKeysByUserIds(userIds),
     ]);
     const profileBy = new Map(profiles.map((p) => [p.userId, p]));
     const userBy = new Map(users.map((u) => [u.id, u]));
@@ -1253,7 +1256,7 @@ export class SocialService {
         name,
         initial,
         color: AVATAR_COLORS[i % AVATAR_COLORS.length],
-        avatarUrl: profile?.avatarUrl ?? null,
+        avatarUrl: rankIcons.get(id) ?? profile?.avatarUrl ?? null,
         level: league?.rankLevel ?? 1,
         league: league?.tier
           ? String(league.tier).charAt(0).toUpperCase() +

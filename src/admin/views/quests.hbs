@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+    <style>
+      .q-tabs [role='tablist'] { border-bottom: 1px solid #d5ddd7; }
+      .q-tabs [role='tab'] {
+        position: relative;
+        margin-bottom: -1px;
+        padding: 0.65rem 1rem;
+        border: none;
+        border-bottom: 2px solid transparent;
+        border-radius: 0;
+        background: transparent;
+        color: #5b7c6e;
+        font: inherit;
+        font-size: 0.875rem;
+        font-weight: 600;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: color 180ms ease, border-color 180ms ease;
+      }
+      .q-tabs [role='tab']:hover { color: #1a2e28; }
+      .q-tabs [role='tab'][aria-selected='true'] {
+        color: #1a2e28;
+        border-bottom-color: #c4785a;
+      }
+      .q-tabs [role='tab']:focus-visible {
+        outline: 2px solid #c4785a;
+        outline-offset: 2px;
+      }
+      .q-panel { animation: q-in 260ms ease both; }
+      @keyframes q-in {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .q-panel { animation: none; }
+      }
+      .q-field label {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #5b7c6e;
+      }
+      .q-field input,
+      .q-field select,
+      .q-field textarea {
+        width: 100%;
+        margin: 0;
+        padding: 11px 14px;
+        border: 1px solid #d5ddd7;
+        border-radius: 1rem;
+        background: #fffefa;
+        color: #1a2e28;
+        font: inherit;
+        font-size: 0.9rem;
+        box-sizing: border-box;
+        transition: border-color 160ms ease, background 160ms ease;
+      }
+      .q-field textarea {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.8rem;
+        line-height: 1.45;
+        resize: vertical;
+      }
+      .q-field input:focus,
+      .q-field select:focus,
+      .q-field textarea:focus {
+        outline: none;
+        border-color: #5b7c6e;
+        background: #fff;
+      }
+    </style>
+  </head>
+  <body class="bg-mist text-moss font-sans antialiased">
+    <div class="shell min-h-screen">
+      {{> shell-sidebar}}
+      <main class="relative flex-1 min-w-0 overflow-x-hidden">
+        <div
+          class="pointer-events-none absolute -right-20 top-8 h-64 w-64 rounded-full bg-leaf/70 blur-3xl"
+          aria-hidden="true"
+        ></div>
+        <div
+          class="pointer-events-none absolute left-1/3 top-72 h-48 w-48 rounded-full bg-clay/12 blur-3xl"
+          aria-hidden="true"
+        ></div>
+
+        <div class="relative px-5 pb-20 pt-6 md:px-10 lg:px-12">
+          {{#if flashOk}}
+            <p class="mb-5 rounded-2xl bg-leaf px-4 py-3 text-sm font-medium text-moss" role="status">{{flashOk}}</p>
+          {{/if}}
+          {{#if flashErr}}
+            <p class="mb-5 rounded-2xl bg-[#fde8e6] px-4 py-3 text-sm font-medium text-coral" role="alert">{{flashErr}}</p>
+          {{/if}}
+
+          <section class="relative mb-10 md:mb-12">
+            <div
+              class="relative overflow-hidden rounded-blob bg-gradient-to-br from-moss via-[#243f36] to-[#314f44] px-7 py-9 text-mist shadow-soft md:w-[82%] md:px-10 md:py-11"
+            >
+              <div class="absolute -left-8 bottom-0 h-36 w-36 rounded-full bg-leaf/20 blur-2xl" aria-hidden="true"></div>
+              <p class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-leaf/80">Catalog</p>
+              <h1 class="font-display max-w-[10ch] text-4xl font-semibold leading-[1.05] tracking-tight md:text-5xl lg:text-6xl">
+                Quests
+              </h1>
+              <p class="mt-4 max-w-md text-sm text-mist/60">
+                Condition types, JSON rules, optional rewards. Draft while testing — activate when shapes validate.
+              </p>
+              <div class="mt-6 flex flex-wrap items-center gap-2">
+                <span class="inline-flex items-center gap-2 rounded-full bg-leaf/90 px-3 py-1 text-xs font-semibold tabular-nums text-moss">
+                  <i class="fa-solid fa-scroll" aria-hidden="true"></i>
+                  {{count}} definition{{#unless countSingular}}s{{/unless}}
+                </span>
+              </div>
+            </div>
+
+            <aside
+              class="relative z-10 mt-4 rounded-blob border border-[#d5ddd7] bg-foam/95 p-5 shadow-lift backdrop-blur md:absolute md:-bottom-6 md:right-0 md:mt-0 md:w-[260px]"
+            >
+              <div class="mb-2 flex items-center gap-2">
+                <span class="flex h-8 w-8 items-center justify-center rounded-full bg-leaf text-moss">
+                  <i class="fa-solid fa-book-open" aria-hidden="true"></i>
+                </span>
+                <h2 class="font-display text-lg font-semibold">Quick nav</h2>
+              </div>
+              <p class="mb-4 text-sm leading-relaxed text-sage">
+                Browse catalog, spawn a definition, or open the condition cheat sheet.
+              </p>
+              <div class="flex flex-col gap-2">
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-center gap-2 rounded-full bg-moss px-4 py-2.5 text-sm font-semibold text-mist transition hover:brightness-110"
+                  data-jump="create"
+                >
+                  <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                  New quest
+                </button>
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-center gap-2 rounded-full border border-leaf bg-leaf/40 px-4 py-2.5 text-sm font-semibold text-moss transition hover:bg-leaf"
+                  data-jump="guide"
+                >
+                  <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                  Open guide
+                </button>
+              </div>
+            </aside>
+          </section>
+
+          <div class="q-tabs md:w-[94%] md:max-w-5xl" data-quest-tabs>
+            <div class="mb-6 flex gap-0 overflow-x-auto" role="tablist" aria-label="Quests sections">
+              <button type="button" role="tab" id="tab-catalog" aria-controls="panel-catalog" aria-selected="true" data-tab="catalog" class="shrink-0">
+                <i class="fa-solid fa-list mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Catalog
+              </button>
+              <button type="button" role="tab" id="tab-create" aria-controls="panel-create" aria-selected="false" data-tab="create" class="shrink-0">
+                <i class="fa-solid fa-plus mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Create
+              </button>
+              <button type="button" role="tab" id="tab-guide" aria-controls="panel-guide" aria-selected="false" data-tab="guide" class="shrink-0">
+                <i class="fa-solid fa-compass mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Guide
+              </button>
+            </div>
+
+            {{!-- Catalog --}}
+            <div id="panel-catalog" role="tabpanel" aria-labelledby="tab-catalog" data-panel="catalog" class="q-panel">
+              {{#if hasRows}}
+                <div class="overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7]">
+                  <div class="overflow-x-auto">
+                    <table class="w-full min-w-[640px] text-left text-sm">
+                      <thead>
+                        <tr class="border-b border-[#e4ebe6] bg-[#eef3ef] text-xs uppercase tracking-wide text-sage">
+                          <th class="px-5 py-3 font-semibold">Code</th>
+                          <th class="px-3 py-3 font-semibold">Name</th>
+                          <th class="px-3 py-3 font-semibold">Cadence</th>
+                          <th class="px-3 py-3 font-semibold">Category</th>
+                          <th class="px-3 py-3 font-semibold">Condition</th>
+                          <th class="px-5 py-3 font-semibold">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-[#e4ebe6]">
+                        {{#each rows}}
+                          <tr class="transition hover:bg-mist/50">
+                            <td class="px-5 py-3">
+                              <a class="font-mono text-[13px] font-medium text-moss underline-offset-2 hover:underline" href="/admin/quests/{{id}}">{{code}}</a>
+                            </td>
+                            <td class="px-3 py-3 font-medium">{{name}}</td>
+                            <td class="px-3 py-3 font-mono text-[12px] text-sage">{{cadence}}</td>
+                            <td class="px-3 py-3 font-mono text-[12px] text-sage">{{category}}</td>
+                            <td class="px-3 py-3 font-mono text-[12px] text-sage">{{conditionType}}</td>
+                            <td class="px-5 py-3">
+                              {{#if isActiveStatus}}
+                                <span class="inline-flex items-center gap-1.5 rounded-full bg-leaf px-2.5 py-0.5 text-[11px] font-semibold text-moss">
+                                  <i class="fa-solid fa-circle-check text-[10px]" aria-hidden="true"></i>
+                                  {{status}}
+                                </span>
+                              {{else}}
+                                <span class="inline-flex items-center gap-1.5 rounded-full bg-mist px-2.5 py-0.5 text-[11px] font-semibold text-sage">
+                                  {{status}}
+                                </span>
+                              {{/if}}
+                            </td>
+                          </tr>
+                        {{/each}}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              {{else}}
+                <div class="rounded-blob bg-foam px-6 py-14 text-center shadow-lift ring-1 ring-[#d5ddd7]">
+                  <span class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-leaf text-moss">
+                    <i class="fa-solid fa-scroll" aria-hidden="true"></i>
+                  </span>
+                  <p class="font-display text-xl font-semibold">No quests yet</p>
+                  <p class="mt-2 text-sm text-sage">Create one from the Create tab, or skim Guide for shapes.</p>
+                  <button
+                    type="button"
+                    class="mt-5 inline-flex items-center gap-2 rounded-full bg-moss px-5 py-2.5 text-sm font-semibold text-mist transition hover:brightness-110"
+                    data-jump="create"
+                  >
+                    <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                    Create first quest
+                  </button>
+                </div>
+              {{/if}}
+            </div>
+
+            {{!-- Create --}}
+            <div id="panel-create" role="tabpanel" aria-labelledby="tab-create" data-panel="create" class="q-panel hidden" hidden>
+              <div class="mb-5 md:ml-2 md:max-w-xl">
+                <h2 class="font-display text-2xl font-semibold">Add quest</h2>
+                <p class="mt-1 text-sm text-sage">
+                  Prefills a weekly counter example. Adjust JSON to match condition type — see Guide.
+                </p>
+              </div>
+
+              <form method="post" action="/admin/quests" class="space-y-6 md:ml-2">
+                <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <div class="mb-4 flex items-center gap-2">
+                    <span class="flex h-8 w-8 items-center justify-center rounded-full bg-leaf text-moss">
+                      <i class="fa-solid fa-tag" aria-hidden="true"></i>
+                    </span>
+                    <h3 class="font-display text-lg font-semibold">Identity</h3>
+                  </div>
+                  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div class="q-field">
+                      <label for="code">Code</label>
+                      <input id="code" name="code" type="text" placeholder="three-lessons" required />
+                    </div>
+                    <div class="q-field">
+                      <label for="name">Name</label>
+                      <input id="name" name="name" type="text" placeholder="Three lessons" required />
+                    </div>
+                    <div class="q-field sm:col-span-2">
+                      <label for="description">Description</label>
+                      <textarea id="description" name="description" rows="2" placeholder="Short summary"></textarea>
+                    </div>
+                    <div class="q-field sm:col-span-2">
+                      <label for="detail">Detail</label>
+                      <textarea id="detail" name="detail" rows="2" placeholder="Earn League XP from any 3 lessons this week"></textarea>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+                    <div class="mb-4 flex items-center gap-2">
+                      <span class="flex h-8 w-8 items-center justify-center rounded-full bg-leaf text-moss">
+                        <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                      </span>
+                      <h3 class="font-display text-lg font-semibold">Classification</h3>
+                    </div>
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div class="q-field">
+                        <label for="cadence">Cadence</label>
+                        <select id="cadence" name="cadence">
+                          {{#each cadences}}
+                            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                          {{/each}}
+                        </select>
+                      </div>
+                      <div class="q-field">
+                        <label for="category">Category</label>
+                        <select id="category" name="category">
+                          {{#each categories}}
+                            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                          {{/each}}
+                        </select>
+                      </div>
+                      <div class="q-field">
+                        <label for="status">Status</label>
+                        <select id="status" name="status">
+                          {{#each statuses}}
+                            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                          {{/each}}
+                        </select>
+                      </div>
+                      <div class="q-field">
+                        <label for="sortOrder">Sort order</label>
+                        <input id="sortOrder" name="sortOrder" type="number" value="100" />
+                      </div>
+                      <div class="q-field sm:col-span-2">
+                        <label for="startsAt">Starts at (optional)</label>
+                        <input id="startsAt" name="startsAt" type="datetime-local" />
+                      </div>
+                      <div class="q-field sm:col-span-2">
+                        <label for="endsAt">Ends at (optional)</label>
+                        <input id="endsAt" name="endsAt" type="datetime-local" />
+                      </div>
+                    </div>
+                    <label class="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl bg-mist/70 px-4 py-3 text-sm">
+                      <input id="isOptional" name="isOptional" type="checkbox" value="1" class="h-4 w-4 accent-[#5b7c6e]" />
+                      <span>
+                        <span class="font-semibold text-moss">Optional (side quest)</span>
+                        <span class="mt-0.5 block text-xs text-sage">Won’t block required progress.</span>
+                      </span>
+                    </label>
+                  </div>
+
+                  <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+                    <div class="mb-4 flex items-center gap-2">
+                      <span class="flex h-8 w-8 items-center justify-center rounded-full bg-[#f3e0d6] text-clay">
+                        <i class="fa-solid fa-code" aria-hidden="true"></i>
+                      </span>
+                      <h3 class="font-display text-lg font-semibold">Rules JSON</h3>
+                    </div>
+                    <div class="space-y-4">
+                      <div class="q-field">
+                        <label for="conditionType">Condition type</label>
+                        <select id="conditionType" name="conditionType">
+                          {{#each conditionTypes}}
+                            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                          {{/each}}
+                        </select>
+                      </div>
+                      <div class="q-field">
+                        <label for="conditionJson">Condition JSON</label>
+                        <textarea id="conditionJson" name="conditionJson" rows="5" required>{"counterKey":"lessons_completed","target":3}</textarea>
+                        <p class="mt-1.5 text-xs text-sage">Must match selected type. Invalid shapes rejected on save.</p>
+                      </div>
+                      <div class="q-field">
+                        <label for="rewardJson">Reward JSON</label>
+                        <textarea id="rewardJson" name="rewardJson" rows="3">{"leagueXp":40}</textarea>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-3">
+                  {{> ui-button label="Create quest" icon="fa-solid fa-plus" }}
+                  <button
+                    type="button"
+                    class="text-sm font-semibold text-sage transition hover:text-moss"
+                    data-jump="guide"
+                  >
+                    Need the cheat sheet?
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {{!-- Guide --}}
+            <div id="panel-guide" role="tabpanel" aria-labelledby="tab-guide" data-panel="guide" class="q-panel hidden" hidden>
+              <div class="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-12">
+                <div class="lg:col-span-5 lg:pt-2">
+                  <h2 class="font-display text-2xl font-semibold">How to add a quest</h2>
+                  <p class="mt-2 text-sm leading-relaxed text-sage">
+                    Catalog definition = condition type + JSON rules + optional rewards.
+                    Progress engine wires later — this page stores and validates shapes.
+                  </p>
+                  <ol class="mt-5 space-y-3 text-sm text-moss">
+                    <li class="flex gap-3">
+                      <span class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-leaf text-xs font-bold">1</span>
+                      <span><strong>Code</strong> — unique slug, e.g. <code class="rounded bg-leaf/60 px-1">three-lessons</code></span>
+                    </li>
+                    <li class="flex gap-3">
+                      <span class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-leaf text-xs font-bold">2</span>
+                      <span><strong>Name / detail</strong> — title + instructional copy</span>
+                    </li>
+                    <li class="flex gap-3">
+                      <span class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-leaf text-xs font-bold">3</span>
+                      <span><strong>Cadence</strong> — daily / weekly / seasonal / one_time</span>
+                    </li>
+                    <li class="flex gap-3">
+                      <span class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-leaf text-xs font-bold">4</span>
+                      <span><strong>Condition type</strong> — then match JSON below</span>
+                    </li>
+                    <li class="flex gap-3">
+                      <span class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-leaf text-xs font-bold">5</span>
+                      <span><strong>Reward JSON</strong> — e.g. <code class="rounded bg-leaf/60 px-1">{"leagueXp":40}</code></span>
+                    </li>
+                    <li class="flex gap-3">
+                      <span class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-leaf text-xs font-bold">6</span>
+                      <span>Keep <code class="rounded bg-leaf/60 px-1">draft</code> while testing; flip to <code class="rounded bg-leaf/60 px-1">active</code> when ready</span>
+                    </li>
+                  </ol>
+                </div>
+
+                <div class="lg:col-span-7">
+                  <div class="overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7] lg:-mt-2">
+                    <div class="border-b border-[#e4ebe6] bg-[#eef3ef] px-5 py-3">
+                      <p class="text-xs font-semibold uppercase tracking-[0.14em] text-sage">Worked example — three lessons</p>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 p-5 sm:grid-cols-4">
+                      <div>
+                        <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">Code</p>
+                        <p class="mt-1 font-mono text-sm font-medium">three-lessons</p>
+                      </div>
+                      <div>
+                        <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">Name</p>
+                        <p class="mt-1 text-sm font-medium">Three lessons</p>
+                      </div>
+                      <div>
+                        <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">Cadence</p>
+                        <p class="mt-1 font-mono text-sm">weekly</p>
+                      </div>
+                      <div>
+                        <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">Type</p>
+                        <p class="mt-1 font-mono text-sm">counter</p>
+                      </div>
+                    </div>
+                    <div class="space-y-3 border-t border-[#e4ebe6] px-5 pb-5 pt-4">
+                      <div>
+                        <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">Condition</p>
+                        <pre class="mt-1 overflow-x-auto rounded-2xl bg-mist/80 px-3 py-2 font-mono text-[12px] text-moss">{"counterKey":"lessons_completed","target":3}</pre>
+                      </div>
+                      <div>
+                        <p class="text-[10px] font-semibold uppercase tracking-wider text-sage">Reward</p>
+                        <pre class="mt-1 overflow-x-auto rounded-2xl bg-mist/80 px-3 py-2 font-mono text-[12px] text-moss">{"leagueXp":40}</pre>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mb-6 overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7]">
+                <div class="border-b border-[#e4ebe6] bg-[#eef3ef] px-5 py-3">
+                  <p class="text-xs font-semibold uppercase tracking-[0.14em] text-sage">League trio (reference)</p>
+                </div>
+                <div class="overflow-x-auto">
+                  <table class="w-full min-w-[560px] text-left text-sm">
+                    <thead>
+                      <tr class="border-b border-[#e4ebe6] text-xs uppercase tracking-wide text-sage">
+                        <th class="px-5 py-3 font-semibold">Quest</th>
+                        <th class="px-3 py-3 font-semibold">Type</th>
+                        <th class="px-3 py-3 font-semibold">Condition JSON</th>
+                        <th class="px-5 py-3 font-semibold">Reward</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-[#e4ebe6]">
+                      <tr>
+                        <td class="px-5 py-3 font-medium">Three lessons</td>
+                        <td class="px-3 py-3 font-mono text-[12px] text-sage">counter</td>
+                        <td class="px-3 py-3 font-mono text-[11px] text-sage">{"counterKey":"lessons_completed","target":3}</td>
+                        <td class="px-5 py-3 font-mono text-[11px]">{"leagueXp":40}</td>
+                      </tr>
+                      <tr>
+                        <td class="px-5 py-3 font-medium">Battle once</td>
+                        <td class="px-3 py-3 font-mono text-[12px] text-sage">league_xp</td>
+                        <td class="px-3 py-3 font-mono text-[11px] text-sage">{"xpSource":"battle","minXp":1}</td>
+                        <td class="px-5 py-3 font-mono text-[11px]">{"leagueXp":25}</td>
+                      </tr>
+                      <tr>
+                        <td class="px-5 py-3 font-medium">Weekly commit</td>
+                        <td class="px-3 py-3 font-mono text-[12px] text-sage">active_days</td>
+                        <td class="px-3 py-3 font-mono text-[11px] text-sage">{"minDays":5}</td>
+                        <td class="px-5 py-3 font-mono text-[11px]">{"leagueXp":50}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7]">
+                <div class="border-b border-[#e4ebe6] bg-[#eef3ef] px-5 py-3">
+                  <p class="text-xs font-semibold uppercase tracking-[0.14em] text-sage">Condition cheat sheet</p>
+                </div>
+                <div class="overflow-x-auto">
+                  <table class="w-full min-w-[640px] text-left text-sm">
+                    <thead>
+                      <tr class="border-b border-[#e4ebe6] text-xs uppercase tracking-wide text-sage">
+                        <th class="px-5 py-3 font-semibold">Type</th>
+                        <th class="px-3 py-3 font-semibold">Condition JSON</th>
+                        <th class="px-5 py-3 font-semibold">Live keys / notes</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-[#e4ebe6]">
+                      <tr>
+                        <td class="px-5 py-3 align-top font-mono text-[12px] font-semibold">counter</td>
+                        <td class="px-3 py-3 align-top font-mono text-[11px] text-sage">{"counterKey":"lessons_completed","target":5}</td>
+                        <td class="px-5 py-3 align-top text-xs leading-relaxed text-sage">lessons_completed, quizzes_passed, practices_completed, battle_wins, weeks_completed, perfect_quizzes, deep_lessons, challenges_passed, study_sessions_qualified</td>
+                      </tr>
+                      <tr>
+                        <td class="px-5 py-3 align-top font-mono text-[12px] font-semibold">league_xp</td>
+                        <td class="px-3 py-3 align-top font-mono text-[11px] text-sage">{"xpSource":"lesson","minXp":60}</td>
+                        <td class="px-5 py-3 align-top text-xs leading-relaxed text-sage">xpSource = lesson | battle | any · minXp &gt;= 1</td>
+                      </tr>
+                      <tr>
+                        <td class="px-5 py-3 align-top font-mono text-[12px] font-semibold">active_days</td>
+                        <td class="px-3 py-3 align-top font-mono text-[11px] text-sage">{"minDays":5}</td>
+                        <td class="px-5 py-3 align-top text-xs leading-relaxed text-sage">Distinct learning days in current season/week</td>
+                      </tr>
+                      <tr>
+                        <td class="px-5 py-3 align-top font-mono text-[12px] font-semibold">event_once</td>
+                        <td class="px-3 py-3 align-top font-mono text-[11px] text-sage">{"eventType":"roadmap.generated.v1"}</td>
+                        <td class="px-5 py-3 align-top text-xs leading-relaxed text-sage">roadmap.generated.v1, weekly_plan.activated.v1, comeback.completed.v1</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <p class="mt-4 text-sm text-sage md:ml-1">
+                Tip: leave status <span class="font-mono text-moss">draft</span> while testing JSON.
+                Mark optional for side quests that must not block required progress.
+              </p>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      (function () {
+        var root = document.querySelector('[data-quest-tabs]');
+        if (!root) return;
+        var tabs = Array.prototype.slice.call(root.querySelectorAll('[role="tab"]'));
+        var panels = Array.prototype.slice.call(root.querySelectorAll('[role="tabpanel"]'));
+        var valid = { catalog: 1, create: 1, guide: 1 };
+
+        function activate(id, pushHash) {
+          if (!valid[id]) id = 'catalog';
+          tabs.forEach(function (tab) {
+            var on = tab.getAttribute('data-tab') === id;
+            tab.setAttribute('aria-selected', on ? 'true' : 'false');
+            tab.tabIndex = on ? 0 : -1;
+          });
+          panels.forEach(function (panel) {
+            var on = panel.getAttribute('data-panel') === id;
+            panel.hidden = !on;
+            panel.classList.toggle('hidden', !on);
+            if (on) {
+              panel.classList.remove('q-panel');
+              void panel.offsetWidth;
+              panel.classList.add('q-panel');
+            }
+          });
+          if (pushHash !== false) {
+            var url = new URL(window.location.href);
+            url.hash = id === 'catalog' ? '' : id;
+            history.replaceState(null, '', url.pathname + url.search + url.hash);
+          }
+        }
+
+        function resolveInitial() {
+          var params = new URLSearchParams(window.location.search);
+          if (params.get('err')) return 'create';
+          var hash = (window.location.hash || '').replace(/^#/, '');
+          if (hash && valid[hash]) return hash;
+          return 'catalog';
+        }
+
+        tabs.forEach(function (tab) {
+          tab.addEventListener('click', function () {
+            activate(tab.getAttribute('data-tab'), true);
+          });
+          tab.addEventListener('keydown', function (e) {
+            var i = tabs.indexOf(tab);
+            var next = -1;
+            if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (i + 1) % tabs.length;
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = (i - 1 + tabs.length) % tabs.length;
+            if (e.key === 'Home') next = 0;
+            if (e.key === 'End') next = tabs.length - 1;
+            if (next < 0) return;
+            e.preventDefault();
+            tabs[next].focus();
+            activate(tabs[next].getAttribute('data-tab'), true);
+          });
+        });
+
+        document.querySelectorAll('[data-jump]').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            activate(btn.getAttribute('data-jump'), true);
+          });
+        });
+
+        activate(resolveInitial(), false);
+      })();
+    </script>
+  </body>
+</html>

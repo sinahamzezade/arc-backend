@@ -24,6 +24,16 @@ import { WheelCampaign } from '../lucky-wheel/entities/wheel-campaign.entity';
 import { WheelSegmentRule } from '../lucky-wheel/entities/wheel-segment-rule.entity';
 import { QuestionnaireDefinition } from '../questionnaire/entities/questionnaire-definition.entity';
 import { RankDefinition } from '../ranks/entities/rank-definition.entity';
+import { QuestDefinition } from '../quests/entities/quest-definition.entity';
+import {
+  QuestCadence,
+  QuestCategory,
+  QuestConditionType,
+  QuestDefinitionStatus,
+  QUEST_XP_SOURCES,
+  type QuestConditionJson,
+  type QuestRewardJson,
+} from '../quests/quest.constants';
 
 @Injectable()
 export class AdminCatalogService {
@@ -34,6 +44,8 @@ export class AdminCatalogService {
     private readonly store: Repository<StoreItem>,
     @InjectRepository(BadgeDefinition)
     private readonly badges: Repository<BadgeDefinition>,
+    @InjectRepository(QuestDefinition)
+    private readonly quests: Repository<QuestDefinition>,
     @InjectRepository(WheelCampaign)
     private readonly wheels: Repository<WheelCampaign>,
     @InjectRepository(WheelSegmentRule)
@@ -439,6 +451,218 @@ export class AdminCatalogService {
     const row = await this.getBadge(id);
     await this.badges.remove(row);
     return true;
+  }
+
+  listQuests() {
+    return this.quests.find({ order: { sortOrder: 'ASC', code: 'ASC' } });
+  }
+
+  async getQuest(id: string) {
+    const row = await this.quests.findOne({ where: { id } });
+    if (!row) throw new NotFoundException('Quest not found');
+    return row;
+  }
+
+  async createQuest(data: {
+    code: string;
+    name: string;
+    description: string;
+    detail: string;
+    cadence: QuestCadence;
+    category: QuestCategory;
+    status: QuestDefinitionStatus;
+    conditionType: QuestConditionType;
+    conditionJson: QuestConditionJson;
+    rewardJson: QuestRewardJson;
+    sortOrder: number;
+    isOptional: boolean;
+    startsAt?: Date | null;
+    endsAt?: Date | null;
+  }) {
+    const code = data.code.trim().toLowerCase().replace(/\s+/g, '-');
+    const name = data.name.trim();
+    if (!code || !name) {
+      throw new BadRequestException('Code and name are required');
+    }
+    if (!/^[a-z0-9][a-z0-9_-]{0,62}$/.test(code)) {
+      throw new BadRequestException(
+        'Code must be lowercase letters, numbers, _ or -',
+      );
+    }
+    this.assertQuestEnums(data);
+    this.assertQuestCondition(data.conditionType, data.conditionJson);
+
+    const taken = await this.quests.exists({ where: { code } });
+    if (taken) {
+      throw new BadRequestException(`Code "${code}" already exists`);
+    }
+
+    const row = this.quests.create({
+      code,
+      name,
+      description: data.description.trim() || name,
+      detail: data.detail.trim(),
+      cadence: data.cadence,
+      category: data.category,
+      status: data.status,
+      conditionType: data.conditionType,
+      conditionJson: data.conditionJson,
+      rewardJson: data.rewardJson ?? {},
+      sortOrder: data.sortOrder,
+      isOptional: data.isOptional,
+      startsAt: data.startsAt ?? null,
+      endsAt: data.endsAt ?? null,
+    });
+    return this.quests.save(row);
+  }
+
+  async updateQuest(
+    id: string,
+    patch: Partial<
+      Pick<
+        QuestDefinition,
+        | 'code'
+        | 'name'
+        | 'description'
+        | 'detail'
+        | 'cadence'
+        | 'category'
+        | 'status'
+        | 'conditionType'
+        | 'conditionJson'
+        | 'rewardJson'
+        | 'sortOrder'
+        | 'isOptional'
+        | 'startsAt'
+        | 'endsAt'
+      >
+    >,
+  ) {
+    const row = await this.getQuest(id);
+
+    if (patch.code !== undefined) {
+      const code = patch.code.trim().toLowerCase().replace(/\s+/g, '-');
+      if (!code) throw new BadRequestException('Code is required');
+      if (!/^[a-z0-9][a-z0-9_-]{0,62}$/.test(code)) {
+        throw new BadRequestException(
+          'Code must be lowercase letters, numbers, _ or -',
+        );
+      }
+      if (code !== row.code) {
+        const taken = await this.quests.exists({ where: { code } });
+        if (taken) {
+          throw new BadRequestException(`Code "${code}" already exists`);
+        }
+      }
+      patch.code = code;
+    }
+
+    if (patch.name !== undefined) {
+      const name = patch.name.trim();
+      if (!name) throw new BadRequestException('Name is required');
+      patch.name = name;
+    }
+
+    const nextType = patch.conditionType ?? row.conditionType;
+    const nextCondition = patch.conditionJson ?? row.conditionJson;
+    if (patch.conditionType !== undefined || patch.conditionJson !== undefined) {
+      if (
+        patch.conditionType !== undefined &&
+        !Object.values(QuestConditionType).includes(patch.conditionType)
+      ) {
+        throw new BadRequestException('Invalid condition type');
+      }
+      this.assertQuestCondition(nextType, nextCondition);
+    }
+
+    if (patch.cadence !== undefined) {
+      if (!Object.values(QuestCadence).includes(patch.cadence)) {
+        throw new BadRequestException('Invalid cadence');
+      }
+    }
+    if (patch.category !== undefined) {
+      if (!Object.values(QuestCategory).includes(patch.category)) {
+        throw new BadRequestException('Invalid category');
+      }
+    }
+    if (patch.status !== undefined) {
+      if (!Object.values(QuestDefinitionStatus).includes(patch.status)) {
+        throw new BadRequestException('Invalid status');
+      }
+    }
+
+    Object.assign(row, patch);
+    return this.quests.save(row);
+  }
+
+  async deleteQuest(id: string) {
+    const row = await this.getQuest(id);
+    await this.quests.remove(row);
+    return true;
+  }
+
+  private assertQuestEnums(data: {
+    cadence: QuestCadence;
+    category: QuestCategory;
+    status: QuestDefinitionStatus;
+    conditionType: QuestConditionType;
+  }) {
+    if (!Object.values(QuestCadence).includes(data.cadence)) {
+      throw new BadRequestException('Invalid cadence');
+    }
+    if (!Object.values(QuestCategory).includes(data.category)) {
+      throw new BadRequestException('Invalid category');
+    }
+    if (!Object.values(QuestDefinitionStatus).includes(data.status)) {
+      throw new BadRequestException('Invalid status');
+    }
+    if (!Object.values(QuestConditionType).includes(data.conditionType)) {
+      throw new BadRequestException('Invalid condition type');
+    }
+  }
+
+  private assertQuestCondition(
+    type: QuestConditionType,
+    json: QuestConditionJson,
+  ) {
+    switch (type) {
+      case QuestConditionType.Counter:
+        if (!json.counterKey?.trim()) {
+          throw new BadRequestException('conditionJson.counterKey required');
+        }
+        if (!Number.isFinite(json.target) || (json.target ?? 0) < 1) {
+          throw new BadRequestException('conditionJson.target must be >= 1');
+        }
+        break;
+      case QuestConditionType.LeagueXp:
+        if (!json.xpSource || !QUEST_XP_SOURCES.includes(json.xpSource)) {
+          throw new BadRequestException(
+            'conditionJson.xpSource must be lesson, battle, or any',
+          );
+        }
+        if (!Number.isFinite(json.minXp) || (json.minXp ?? 0) < 1) {
+          throw new BadRequestException('conditionJson.minXp must be >= 1');
+        }
+        if (
+          json.unitXp !== undefined &&
+          (!Number.isFinite(json.unitXp) || (json.unitXp ?? 0) < 1)
+        ) {
+          throw new BadRequestException('conditionJson.unitXp must be >= 1');
+        }
+        break;
+      case QuestConditionType.ActiveDays:
+        if (!Number.isFinite(json.minDays) || (json.minDays ?? 0) < 1) {
+          throw new BadRequestException('conditionJson.minDays must be >= 1');
+        }
+        break;
+      case QuestConditionType.EventOnce:
+        if (!json.eventType?.trim()) {
+          throw new BadRequestException('conditionJson.eventType required');
+        }
+        break;
+      default:
+        throw new BadRequestException('Invalid condition type');
+    }
   }
 
   private assertBadgeEnums(data: {

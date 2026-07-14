@@ -485,7 +485,12 @@ export class LessonsService {
       lesson.lessonTemplate,
       pinned,
     );
-    return this.arlo.chat({ lesson, outline: resolved.outline, message });
+    return this.arlo.chat({
+      userId,
+      lesson,
+      outline: resolved.outline,
+      message,
+    });
   }
 
   private async ensureActiveAttempt(

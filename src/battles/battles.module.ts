@@ -8,6 +8,7 @@ import { LeaguesModule } from '../leagues/leagues.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { Profile } from '../profiles/entities/profile.entity';
 import { ProfilesModule } from '../profiles/profiles.module';
+import { RankAvatarModule } from '../ranks/rank-avatar.module';
 import { SocialModule } from '../social/social.module';
 import { UsersModule } from '../users/users.module';
 import { BattlesController } from './battles.controller';
@@ -39,6 +40,7 @@ import { Battle } from './entities/battle.entity';
     NotificationsModule,
     LeaguesModule,
     SocialModule,
+    RankAvatarModule,
     forwardRef(() => GamificationModule),
     forwardRef(() => BadgesModule),
   ],

@@ -15,6 +15,7 @@ import { LessonCompletionResult } from './entities/lesson-completion-result.enti
 import { RemediationEvent } from './entities/remediation-event.entity';
 import { UserBadge } from '../badges/entities/user-badge.entity';
 import { LessonArloService } from './lesson-arlo.service';
+import { LessonBodyAiModule } from './lesson-body-ai.module';
 import { LessonCompletionOrchestrator } from './lesson-completion.orchestrator';
 import { LessonContentService } from './lesson-content.service';
 import { LessonRemediationService } from './lesson-remediation.service';
@@ -40,6 +41,7 @@ import { LessonsService } from './lessons.service';
     ContentPoolModule,
     CourseTimingModule,
     SystemFlagsModule,
+    LessonBodyAiModule,
     forwardRef(() => WeeksModule),
   ],
   controllers: [LessonsController],
@@ -52,6 +54,6 @@ import { LessonsService } from './lessons.service';
     LessonCompletionOrchestrator,
     LessonArloService,
   ],
-  exports: [LessonsService],
+  exports: [LessonsService, LessonBodyAiModule],
 })
 export class LessonsModule {}

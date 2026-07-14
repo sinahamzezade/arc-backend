@@ -100,6 +100,7 @@ export class RoadmapLlmPlannerService {
     });
 
     const draft = await this.callLlmDraft({
+      userId: input.goal.userId,
       user,
       catalog,
       recipeTitle: input.snapshot.recipe.title,
@@ -298,13 +299,13 @@ export class RoadmapLlmPlannerService {
   }
 
   private async callLlmDraft(input: {
+    userId: string;
     user: ReturnType<typeof buildCompactUserPacket>;
     catalog: RelatedCatalog;
     recipeTitle: string;
     roleSlug: string;
   }): Promise<{ draft: LlmPlannerDraft; model: string } | null> {
-    const client = this.llm.createClient();
-    if (!client) {
+    if (!this.llm.isConfigured()) {
       this.logger.warn('LLM planner skipped — client not configured');
       return null;
     }
@@ -332,15 +333,19 @@ export class RoadmapLlmPlannerService {
     for (let i = 0; i < attempts.length; i++) {
       const attempt = attempts[i]!;
       try {
-        const completion = await client.chat.completions.create({
-          model,
-          temperature: attempt.temperature,
-          max_tokens: 1400,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: system },
-            { role: 'user', content: attempt.user },
-          ],
+        const completion = await this.llm.chatCompletion({
+          purpose: 'enrich',
+          userId: input.userId,
+          request: {
+            model,
+            temperature: attempt.temperature,
+            max_tokens: 1400,
+            response_format: { type: 'json_object' },
+            messages: [
+              { role: 'system', content: system },
+              { role: 'user', content: attempt.user },
+            ],
+          },
         });
         const content = completion.choices[0]?.message?.content;
         if (!content) continue;

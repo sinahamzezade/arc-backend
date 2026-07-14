@@ -6,164 +6,296 @@
     <title>{{title}} · Arc Admin</title>
     {{> layout}}
   </head>
-  <body>
-    <div class="shell">
+  <body class="bg-mist text-moss font-sans antialiased">
+    <div class="shell min-h-screen">
       {{> shell-sidebar}}
-      <main class="main">
-        <p class="crumb">
-          <a class="link" href="/admin/questionnaire">Questionnaire</a>
-          /
-          <a class="link" href="/admin/questionnaire/{{defId}}">v{{step.stepNumber}}</a>
-          / {{step.fieldKey}}
-        </p>
-        {{#if flashOk}}<p class="flash flash-ok">{{flashOk}}</p>{{/if}}
-        {{#if flashErr}}<p class="flash flash-err">{{flashErr}}</p>{{/if}}
-        <div class="page-head">
-          <h1>{{step.title}}</h1>
-          <p class="sub">Edit step · <span class="mono">{{step.fieldKey}}</span></p>
-        </div>
+      <main class="relative flex-1 min-w-0 overflow-x-hidden">
+        <div
+          class="pointer-events-none absolute -right-24 top-10 h-72 w-72 rounded-full bg-leaf/60 blur-3xl"
+          aria-hidden="true"
+        ></div>
 
-        <div class="panel">
-          <form method="post" action="/admin/questionnaire/{{defId}}/steps/{{step.id}}">
-            <div class="form-grid">
-              <div>
-                <label for="fieldKey">Field key</label>
-                <input id="fieldKey" name="fieldKey" type="text" value="{{step.fieldKey}}" required />
-              </div>
-              <div>
-                <label for="stepNumber">Step #</label>
-                <input id="stepNumber" name="stepNumber" type="number" min="1" value="{{step.stepNumber}}" required />
-              </div>
-              <div>
-                <label for="title">Title</label>
-                <input id="title" name="title" type="text" value="{{step.title}}" required />
-              </div>
-              <div>
-                <label for="subtitle">Subtitle</label>
-                <input id="subtitle" name="subtitle" type="text" value="{{step.subtitle}}" />
-              </div>
-              <div>
-                <label for="selection">Selection</label>
-                <select id="selection" name="selection">
-                  <option value="multi" {{#if step.selectionMulti}}selected{{/if}}>multi</option>
-                  <option value="single" {{#if step.selectionSingle}}selected{{/if}}>single</option>
-                </select>
-              </div>
-              <div>
-                <label for="uiKind">UI kind</label>
-                <select id="uiKind" name="uiKind">
-                  <option value="options" {{#if step.isOptions}}selected{{/if}}>options</option>
-                  <option value="schedule" {{#if step.isSchedule}}selected{{/if}}>schedule</option>
-                </select>
-              </div>
-              <div>
-                <label for="reviewLabel">Review label</label>
-                <input id="reviewLabel" name="reviewLabel" type="text" value="{{step.reviewLabel}}" />
-              </div>
-              <div>
-                <label for="reviewIcon">Review icon</label>
-                <input id="reviewIcon" name="reviewIcon" type="text" value="{{step.reviewIcon}}" />
-              </div>
-              <div>
-                <label><input type="checkbox" name="allowOther" value="1" {{#if step.allowOther}}checked{{/if}} /> Allow other</label>
+        <div class="relative px-5 pb-24 pt-6 md:px-10 lg:px-12">
+          <p class="mb-5 text-sm text-sage">
+            <a href="/admin/questionnaire" class="transition hover:text-moss">Questionnaire</a>
+            <span class="mx-2 opacity-40">/</span>
+            <a href="/admin/questionnaire/{{defId}}" class="transition hover:text-moss">v{{step.stepNumber}}</a>
+            <span class="mx-2 opacity-40">/</span>
+            <span class="font-mono text-[13px]">{{step.fieldKey}}</span>
+          </p>
+
+          {{#if flashOk}}
+            <p class="mb-5 rounded-2xl bg-leaf px-4 py-3 text-sm font-medium text-moss" role="status">{{flashOk}}</p>
+          {{/if}}
+          {{#if flashErr}}
+            <p class="mb-5 rounded-2xl bg-[#fde8e6] px-4 py-3 text-sm font-medium text-coral" role="alert">{{flashErr}}</p>
+          {{/if}}
+
+          <section class="relative mb-10 md:mb-12">
+            <div
+              class="relative overflow-hidden rounded-blob bg-gradient-to-br from-moss via-[#243f36] to-[#314f44] px-7 py-9 text-mist shadow-soft md:w-[85%] md:px-10 md:py-11"
+            >
+              <div class="absolute -right-6 top-4 h-28 w-28 rotate-12 rounded-[1.5rem] border border-white/10" aria-hidden="true"></div>
+              <p class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-leaf/80">Questionnaire step</p>
+              <h1 class="font-display max-w-[18ch] text-4xl font-semibold leading-[1.05] tracking-tight text-balance md:text-5xl">
+                {{step.title}}
+              </h1>
+              <p class="mt-3 font-mono text-sm text-mist/50">{{step.fieldKey}}</p>
+              <div class="mt-6 flex flex-wrap gap-2">
+                <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-mist/85">
+                  <i class="fa-solid fa-hashtag" aria-hidden="true"></i>
+                  Step {{step.stepNumber}}
+                </span>
+                <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-mist/85">
+                  {{step.uiKind}}
+                </span>
+                <span class="inline-flex items-center gap-2 rounded-full bg-clay/90 px-3 py-1 text-xs font-semibold text-foam">
+                  {{step.selection}}
+                </span>
               </div>
             </div>
 
-            {{#if step.isSchedule}}
-              <div class="form-grid" style="margin-top:12px">
-                <div>
-                  <label for="scheduleDays">Schedule days (comma-separated)</label>
-                  <input id="scheduleDays" name="scheduleDays" type="text" value="{{step.scheduleDays}}" />
+            {{#if step.isOptions}}
+              <aside
+                class="relative z-10 mt-4 rounded-blob border border-[#d5ddd7] bg-foam/95 p-5 shadow-lift backdrop-blur md:absolute md:-bottom-6 md:right-0 md:mt-0 md:w-[260px]"
+              >
+                <div class="mb-2 flex items-center gap-2">
+                  <span class="flex h-8 w-8 items-center justify-center rounded-full bg-leaf text-moss">
+                    <i class="fa-solid fa-list-check" aria-hidden="true"></i>
+                  </span>
+                  <h2 class="font-display text-lg font-semibold">Options</h2>
                 </div>
-                <div style="grid-column:1/-1">
-                  <label for="scheduleTimesJson">Schedule times (JSON array)</label>
-                  <textarea id="scheduleTimesJson" name="scheduleTimesJson" rows="6" style="width:100%;font-family:ui-monospace,monospace;font-size:12px">{{step.scheduleTimesJson}}</textarea>
-                </div>
-              </div>
-            {{else}}
-              <input type="hidden" name="scheduleDays" value="{{step.scheduleDays}}" />
-              <input type="hidden" name="scheduleTimesJson" value="{{step.scheduleTimesJson}}" />
+                <p class="mb-4 text-sm leading-relaxed text-sage">
+                  Manage selectable answers for this options step.
+                </p>
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-center gap-2 rounded-full bg-moss px-4 py-2.5 text-sm font-semibold text-mist transition hover:brightness-110"
+                  data-jump="options"
+                >
+                  <i class="fa-solid fa-list" aria-hidden="true"></i>
+                  Open options
+                </button>
+              </aside>
             {{/if}}
+          </section>
 
-            <div class="form-actions">
-              {{> ui-button label="Save step" }}
-              {{> ui-button label="Back" href=backHref variant="secondary" }}
+          <div
+            class="admin-tabs md:w-[94%] md:max-w-5xl"
+            data-admin-tabs
+            data-default="edit"
+            data-err-tab="edit"
+          >
+            <div class="mb-6 flex gap-0 overflow-x-auto" role="tablist" aria-label="Step editor sections">
+              <button type="button" role="tab" id="tab-edit" aria-controls="panel-edit" aria-selected="true" data-tab="edit" class="shrink-0">
+                <i class="fa-solid fa-pen mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Edit
+              </button>
+              {{#if step.isOptions}}
+                <button type="button" role="tab" id="tab-options" aria-controls="panel-options" aria-selected="false" data-tab="options" class="shrink-0">
+                  <i class="fa-solid fa-list-check mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                  Options
+                </button>
+              {{/if}}
+              <button type="button" role="tab" id="tab-danger" aria-controls="panel-danger" aria-selected="false" data-tab="danger" class="shrink-0">
+                <i class="fa-solid fa-trash mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Delete
+              </button>
             </div>
-          </form>
-        </div>
 
-        {{#if step.isOptions}}
-          <div class="panel" style="margin-top:16px">
-            <h2 style="margin:0 0 12px;font-size:1rem">Options</h2>
-            {{#if hasOptions}}
-              <div class="table-wrap">
-                <table class="data">
-                  <thead>
-                    <tr>
-                      <th>Sort</th>
-                      <th>Value</th>
-                      <th>Label</th>
-                      <th>Icon</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {{#each options}}
-                      <tr>
-                        <td class="mono">{{sortOrder}}</td>
-                        <td class="mono">{{value}}</td>
-                        <td>{{label}}</td>
-                        <td class="mono">{{icon}}</td>
-                        <td>
-                          <a class="link" href="/admin/questionnaire/{{../defId}}/steps/{{../step.id}}/options/{{id}}">Edit</a>
-                        </td>
-                      </tr>
-                    {{/each}}
-                  </tbody>
-                </table>
+            <div id="panel-edit" role="tabpanel" aria-labelledby="tab-edit" data-panel="edit" class="admin-panel">
+              <div class="mb-5 md:ml-2 md:max-w-lg">
+                <h2 class="font-display text-2xl font-semibold">Edit step</h2>
+                <p class="mt-1 text-sm text-sage">Identity, selection mode, and review metadata.</p>
               </div>
-            {{else}}
-              <div class="empty">No options yet.</div>
+
+              <form method="post" action="/admin/questionnaire/{{defId}}/steps/{{step.id}}" class="space-y-6 md:ml-2">
+                <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+                  <div class="mb-4 flex items-center gap-2">
+                    <span class="flex h-8 w-8 items-center justify-center rounded-full bg-leaf text-moss">
+                      <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                    </span>
+                    <h3 class="font-display text-lg font-semibold">Step fields</h3>
+                  </div>
+                  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div class="admin-field">
+                      <label for="fieldKey">Field key</label>
+                      <input id="fieldKey" name="fieldKey" type="text" value="{{step.fieldKey}}" required />
+                    </div>
+                    <div class="admin-field">
+                      <label for="stepNumber">Step #</label>
+                      <input id="stepNumber" name="stepNumber" type="number" min="1" value="{{step.stepNumber}}" required />
+                    </div>
+                    <div class="admin-field sm:col-span-2">
+                      <label for="title">Title</label>
+                      <input id="title" name="title" type="text" value="{{step.title}}" required />
+                    </div>
+                    <div class="admin-field sm:col-span-2">
+                      <label for="subtitle">Subtitle</label>
+                      <input id="subtitle" name="subtitle" type="text" value="{{step.subtitle}}" />
+                    </div>
+                    <div class="admin-field">
+                      <label for="selection">Selection</label>
+                      <select id="selection" name="selection">
+                        <option value="multi" {{#if step.selectionMulti}}selected{{/if}}>multi</option>
+                        <option value="single" {{#if step.selectionSingle}}selected{{/if}}>single</option>
+                      </select>
+                    </div>
+                    <div class="admin-field">
+                      <label for="uiKind">UI kind</label>
+                      <select id="uiKind" name="uiKind">
+                        <option value="options" {{#if step.isOptions}}selected{{/if}}>options</option>
+                        <option value="schedule" {{#if step.isSchedule}}selected{{/if}}>schedule</option>
+                      </select>
+                    </div>
+                    <div class="admin-field">
+                      <label for="reviewLabel">Review label</label>
+                      <input id="reviewLabel" name="reviewLabel" type="text" value="{{step.reviewLabel}}" />
+                    </div>
+                    <div class="admin-field">
+                      <label for="reviewIcon">Review icon</label>
+                      <input id="reviewIcon" name="reviewIcon" type="text" value="{{step.reviewIcon}}" />
+                    </div>
+                  </div>
+                  <label class="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl bg-mist/70 px-4 py-3 text-sm">
+                    <input name="allowOther" type="checkbox" value="1" {{#if step.allowOther}}checked{{/if}} class="h-4 w-4 accent-[#5b7c6e]" />
+                    <span class="font-semibold text-moss">Allow other</span>
+                  </label>
+                </div>
+
+                {{#if step.isSchedule}}
+                  <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+                    <div class="mb-4 flex items-center gap-2">
+                      <span class="flex h-8 w-8 items-center justify-center rounded-full bg-[#f3e0d6] text-clay">
+                        <i class="fa-solid fa-calendar" aria-hidden="true"></i>
+                      </span>
+                      <h3 class="font-display text-lg font-semibold">Schedule</h3>
+                    </div>
+                    <div class="grid grid-cols-1 gap-4">
+                      <div class="admin-field">
+                        <label for="scheduleDays">Schedule days (comma-separated)</label>
+                        <input id="scheduleDays" name="scheduleDays" type="text" value="{{step.scheduleDays}}" />
+                      </div>
+                      <div class="admin-field">
+                        <label for="scheduleTimesJson">Schedule times (JSON array)</label>
+                        <textarea id="scheduleTimesJson" name="scheduleTimesJson" rows="6">{{step.scheduleTimesJson}}</textarea>
+                      </div>
+                    </div>
+                  </div>
+                {{else}}
+                  <input type="hidden" name="scheduleDays" value="{{step.scheduleDays}}" />
+                  <input type="hidden" name="scheduleTimesJson" value="{{step.scheduleTimesJson}}" />
+                {{/if}}
+
+                <div class="flex flex-wrap items-center gap-3">
+                  {{> ui-button label="Save step" icon="fa-solid fa-floppy-disk" }}
+                  {{> ui-button label="Back" href=backHref variant="secondary" }}
+                </div>
+              </form>
+            </div>
+
+            {{#if step.isOptions}}
+              <div id="panel-options" role="tabpanel" aria-labelledby="tab-options" data-panel="options" class="admin-panel hidden" hidden>
+                <div class="mb-5 md:ml-2 md:max-w-lg">
+                  <h2 class="font-display text-2xl font-semibold">Options</h2>
+                  <p class="mt-1 text-sm text-sage">Selectable answers for this step.</p>
+                </div>
+
+                {{#if hasOptions}}
+                  <div class="mb-6 overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7] md:ml-2">
+                    <div class="overflow-x-auto">
+                      <table class="admin-table">
+                        <thead>
+                          <tr>
+                            <th>Sort</th>
+                            <th>Value</th>
+                            <th>Label</th>
+                            <th>Icon</th>
+                            <th></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {{#each options}}
+                            <tr>
+                              <td class="font-mono text-[13px] text-sage">{{sortOrder}}</td>
+                              <td class="font-mono text-[13px]">{{value}}</td>
+                              <td class="font-medium">{{label}}</td>
+                              <td class="font-mono text-[12px] text-sage">{{icon}}</td>
+                              <td>
+                                <a class="text-sm font-semibold text-moss underline-offset-2 hover:underline" href="/admin/questionnaire/{{../defId}}/steps/{{../step.id}}/options/{{id}}">Edit</a>
+                              </td>
+                            </tr>
+                          {{/each}}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                {{else}}
+                  <div class="mb-6 rounded-blob bg-foam px-6 py-10 text-center shadow-lift ring-1 ring-[#d5ddd7] md:ml-2">
+                    <p class="font-display text-lg font-semibold">No options yet</p>
+                    <p class="mt-1 text-sm text-sage">Add the first option below.</p>
+                  </div>
+                {{/if}}
+
+                <form method="post" action="/admin/questionnaire/{{defId}}/steps/{{step.id}}/options" class="space-y-6 md:ml-2">
+                  <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7]">
+                    <div class="mb-4 flex items-center gap-2">
+                      <span class="flex h-8 w-8 items-center justify-center rounded-full bg-leaf text-moss">
+                        <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                      </span>
+                      <h3 class="font-display text-lg font-semibold">Add option</h3>
+                    </div>
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div class="admin-field">
+                        <label for="label">Label</label>
+                        <input id="label" name="label" type="text" required />
+                      </div>
+                      <div class="admin-field">
+                        <label for="value">Value / slug</label>
+                        <input id="value" name="value" type="text" placeholder="auto from label" />
+                      </div>
+                      <div class="admin-field">
+                        <label for="icon">Icon</label>
+                        <select id="icon" name="icon">
+                          <option value="">— none —</option>
+                          {{#each optionIcons}}
+                            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                          {{/each}}
+                        </select>
+                      </div>
+                      <div class="admin-field">
+                        <label for="sortOrder">Sort order</label>
+                        <input id="sortOrder" name="sortOrder" type="number" />
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-3">
+                    {{> ui-button label="Add option" icon="fa-solid fa-plus" }}
+                  </div>
+                </form>
+              </div>
             {{/if}}
 
-            <h3 style="margin:20px 0 12px;font-size:0.95rem">Add option</h3>
-            <form method="post" action="/admin/questionnaire/{{defId}}/steps/{{step.id}}/options">
-              <div class="form-grid">
-                <div>
-                  <label for="label">Label</label>
-                  <input id="label" name="label" type="text" required />
+            <div id="panel-danger" role="tabpanel" aria-labelledby="tab-danger" data-panel="danger" class="admin-panel hidden" hidden>
+              <div class="rounded-blob bg-foam p-5 shadow-lift ring-1 ring-[#d5ddd7] md:ml-2 md:max-w-lg">
+                <div class="mb-4 flex items-center gap-2">
+                  <span class="flex h-8 w-8 items-center justify-center rounded-full bg-[#fde8e6] text-coral">
+                    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                  </span>
+                  <h3 class="font-display text-lg font-semibold">Delete step</h3>
                 </div>
-                <div>
-                  <label for="value">Value / slug</label>
-                  <input id="value" name="value" type="text" placeholder="auto from label" />
-                </div>
-                <div>
-                  <label for="icon">Icon</label>
-                  <select id="icon" name="icon">
-                    <option value="">— none —</option>
-                    {{#each optionIcons}}
-                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                    {{/each}}
-                  </select>
-                </div>
-                <div>
-                  <label for="sortOrder">Sort order</label>
-                  <input id="sortOrder" name="sortOrder" type="number" />
-                </div>
+                <p class="mb-5 text-sm text-sage">
+                  Deletes this step and all of its options. This cannot be undone.
+                </p>
+                <form method="post" action="/admin/questionnaire/{{defId}}/steps/{{step.id}}/delete" onsubmit="return confirm('Delete this step and all options?');">
+                  {{> ui-button label="Delete step" variant="danger" icon="fa-solid fa-trash" }}
+                </form>
               </div>
-              <div class="form-actions">
-                {{> ui-button label="Add option" }}
-              </div>
-            </form>
+            </div>
           </div>
-        {{/if}}
-
-        <div style="margin-top:16px">
-          <form method="post" action="/admin/questionnaire/{{defId}}/steps/{{step.id}}/delete" onsubmit="return confirm('Delete this step and all options?');">
-            {{> ui-button label="Delete step" variant="danger" }}
-          </form>
         </div>
       </main>
     </div>
+    {{> admin-tabs-script}}
   </body>
 </html>

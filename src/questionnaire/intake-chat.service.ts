@@ -143,7 +143,7 @@ export class IntakeChatService {
     const schema = this.schemaService.getSchema();
     const row = await this.responsesRepo.findOne({ where: { userId } });
     const answers = normalizeDraftAnswers(row?.answers ?? {}, schema);
-    const pending = await this.suggestionsFor(answers);
+    const pending = await this.suggestionsFor(userId, answers);
     if (pending?.fieldId === 'goal') {
       throw new AppException(
         AuthErrorCode.VALIDATION_ERROR,
@@ -177,7 +177,7 @@ export class IntakeChatService {
         missingFields: missing,
         answers,
         transcript: row.chatTranscript ?? [],
-        suggestions: await this.suggestionsFor(answers),
+        suggestions: await this.suggestionsFor(userId, answers),
       };
     }
 
@@ -210,7 +210,7 @@ export class IntakeChatService {
       done: missing.length === 0,
       promptVersion: INTAKE_CHAT_PROMPT_VERSION,
       model: null,
-      suggestions: await this.suggestionsFor(answers),
+      suggestions: await this.suggestionsFor(userId, answers),
     };
   }
 
@@ -381,13 +381,15 @@ export class IntakeChatService {
       answers: QuestionnaireAnswers,
     ): Promise<ChatTurnResponse> => ({
       ...partial,
-      suggestions: partial.done ? null : await this.suggestionsFor(answers),
+      suggestions: partial.done
+        ? null
+        : await this.suggestionsFor(userId, answers),
     });
 
-    const client = this.llm.createClient();
+    const clientConfigured = this.llm.isConfigured();
     let model = await this.llm.getModel('intake');
 
-    if (!client) {
+    if (!clientConfigured) {
       const fallback =
         'LLM is not configured. Switch to form intake, or set LLM_API_KEY / LLM_BASE_URL.';
       transcript.push({ role: 'assistant', content: fallback });
@@ -440,7 +442,7 @@ export class IntakeChatService {
 
     try {
       const { content, modelUsed } = await this.completeWithFallback(
-        client,
+        userId,
         model,
         system,
         user,
@@ -501,6 +503,7 @@ export class IntakeChatService {
   }
 
   private async suggestionsFor(
+    userId: string,
     answers: QuestionnaireAnswers,
   ): Promise<IntakeSuggestions | null> {
     const schema = this.schemaService.getSchema();
@@ -530,7 +533,7 @@ export class IntakeChatService {
     }
 
     if (base.fieldId === 'skills') {
-      return this.aiSkillSuggestions(base, answers);
+      return this.aiSkillSuggestions(userId, base, answers);
     }
 
     return base;
@@ -538,6 +541,7 @@ export class IntakeChatService {
 
   /** Exactly 8 AI skill chips for the chosen goal — not from DB/schema catalog. */
   private async aiSkillSuggestions(
+    userId: string,
     base: IntakeSuggestions,
     answers: QuestionnaireAnswers,
   ): Promise<IntakeSuggestions> {
@@ -560,7 +564,7 @@ export class IntakeChatService {
       return { ...base, options: [...cached.options, ...sentinels] };
     }
 
-    const generated = await this.generateSkillSuggestionsWithAi(goal);
+    const generated = await this.generateSkillSuggestionsWithAi(userId, goal);
     let options = generated;
     if (options.length < 8) {
       const pad = this.fallbackSkillSuggestions(goal).filter(
@@ -576,10 +580,10 @@ export class IntakeChatService {
   }
 
   private async generateSkillSuggestionsWithAi(
+    userId: string,
     goal: string,
   ): Promise<IntakeSuggestionOption[]> {
-    const client = this.llm.createClient();
-    if (!client) return [];
+    if (!this.llm.isConfigured()) return [];
 
     const model = await this.llm.getModel('intake');
     const system = [
@@ -591,15 +595,19 @@ export class IntakeChatService {
     const user = JSON.stringify({ goal, count: 8 });
 
     try {
-      const completion = await client.chat.completions.create({
-        model,
-        temperature: 0.5,
-        max_tokens: 350,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
-        ],
+      const completion = await this.llm.chatCompletion({
+        purpose: 'intake',
+        userId,
+        request: {
+          model,
+          temperature: 0.5,
+          max_tokens: 350,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user },
+          ],
+        },
       });
       const raw = completion.choices[0]?.message?.content;
       if (!raw) return [];
@@ -714,7 +722,7 @@ export class IntakeChatService {
   }
 
   private async completeWithFallback(
-    primary: OpenAI,
+    userId: string,
     model: string,
     system: string,
     user: string,
@@ -724,7 +732,7 @@ export class IntakeChatService {
       : [];
 
     try {
-      return await this.callChat(primary, model, system, user, fallbacks);
+      return await this.callChat(userId, model, system, user, fallbacks);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (this.isRateLimited(msg) || /quota/i.test(msg)) {
@@ -737,13 +745,15 @@ export class IntakeChatService {
   }
 
   private async callChat(
-    client: OpenAI,
+    userId: string,
     model: string,
     system: string,
     user: string,
     fallbackModels: string[] = [],
   ): Promise<{ content: string; modelUsed: string }> {
-    const body: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming = {
+    const body: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming & {
+      models?: string[];
+    } = {
       model,
       temperature: 0.4,
       max_tokens: 450,
@@ -754,14 +764,14 @@ export class IntakeChatService {
       ],
     };
     if (fallbackModels.length) {
-      (
-        body as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming & {
-          models?: string[];
-        }
-      ).models = fallbackModels;
+      body.models = fallbackModels;
     }
 
-    const completion = await client.chat.completions.create(body);
+    const completion = await this.llm.chatCompletion({
+      purpose: 'intake',
+      userId,
+      request: body,
+    });
     const content = completion.choices[0]?.message?.content;
     if (!content) throw new Error('empty_response');
     const modelUsed =

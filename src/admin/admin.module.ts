@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { BadgeDefinition } from '../badges/entities/badge-definition.entity';
+import { QuestDefinition } from '../quests/entities/quest-definition.entity';
 import { Battle } from '../battles/entities/battle.entity';
 import { ContentPoolModule } from '../content-pool/content-pool.module';
 import { CareerRole } from '../content-pool/entities/career-role.entity';
@@ -40,6 +41,7 @@ import { AdminSeedService } from './admin-seed.service';
 import { AdminSessionGuard } from './guards/admin-session.guard';
 import { SkillGraphModule } from '../skill-graph/skill-graph.module';
 import { SystemFlagsModule } from '../system-flags/system-flags.module';
+import { GamificationModule } from '../gamification/gamification.module';
 
 @Module({
   imports: [
@@ -50,6 +52,7 @@ import { SystemFlagsModule } from '../system-flags/system-flags.module';
     QuestionnaireModule,
     SkillGraphModule,
     SystemFlagsModule,
+    GamificationModule,
     TypeOrmModule.forFeature([
       Profile,
       User,
@@ -62,6 +65,7 @@ import { SystemFlagsModule } from '../system-flags/system-flags.module';
       RankDefinition,
       StoreItem,
       BadgeDefinition,
+      QuestDefinition,
       WheelCampaign,
       WheelSegmentRule,
       CourseTemplate,

@@ -62,8 +62,7 @@ export class RoadmapAiService {
     phases: PlannedPhase[];
     allowedResourceIds: string[];
   }): Promise<RoadmapAiEnrichResult | RoadmapAiSkipResult> {
-    const client = this.llm.createClient();
-    if (!client) {
+    if (!this.llm.isConfigured()) {
       return { enrich: null, reason: 'LLM_API_KEY unset' };
     }
 
@@ -72,17 +71,21 @@ export class RoadmapAiService {
     const promptVersion = this.getPromptVersion();
 
     try {
-      const completion = await client.chat.completions.create({
-        model,
-        temperature: 0.4,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: buildRoadmapAiSystemPrompt() },
-          {
-            role: 'user',
-            content: buildRoadmapAiUserPrompt(input),
-          },
-        ],
+      const completion = await this.llm.chatCompletion({
+        purpose: 'enrich',
+        userId: input.goal.userId,
+        request: {
+          model,
+          temperature: 0.4,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: buildRoadmapAiSystemPrompt() },
+            {
+              role: 'user',
+              content: buildRoadmapAiUserPrompt(input),
+            },
+          ],
+        },
       });
 
       const content = completion.choices[0]?.message?.content;
@@ -110,8 +113,7 @@ export class RoadmapAiService {
     recipeTitle: string;
     plan: RoadmapPlanDto;
   }): Promise<{ enrich: PlanTitleEnrich; model: string } | RoadmapAiSkipResult> {
-    const client = this.llm.createClient();
-    if (!client) {
+    if (!this.llm.isConfigured()) {
       return { enrich: null, reason: 'LLM_API_KEY unset' };
     }
 
@@ -122,31 +124,35 @@ export class RoadmapAiService {
       .join('\n');
 
     try {
-      const completion = await client.chat.completions.create({
-        model,
-        temperature: 0.4,
-        response_format: { type: 'json_object' },
-        messages: [
-          {
-            role: 'system',
-            content: [
-              'You enrich learning roadmap titles only.',
-              'Return JSON: { "pathTitle": string, "phaseTitles": { "<phaseKey>": string } }.',
-              'Only rename; do not invent phases. Use only the given phase keys.',
-              'Keep titles concise and motivating (max 60 chars).',
-            ].join(' '),
-          },
-          {
-            role: 'user',
-            content: [
-              `Goal roles: ${(input.goal.targetRoles ?? []).join(', ')}`,
-              `Recipe: ${input.recipeTitle}`,
-              `Current path title: ${input.plan.title}`,
-              `Phases:\n${phaseList}`,
-              `Allowed phase keys: ${phaseKeys.join(', ')}`,
-            ].join('\n'),
-          },
-        ],
+      const completion = await this.llm.chatCompletion({
+        purpose: 'enrich',
+        userId: input.goal.userId,
+        request: {
+          model,
+          temperature: 0.4,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content: [
+                'You enrich learning roadmap titles only.',
+                'Return JSON: { "pathTitle": string, "phaseTitles": { "<phaseKey>": string } }.',
+                'Only rename; do not invent phases. Use only the given phase keys.',
+                'Keep titles concise and motivating (max 60 chars).',
+              ].join(' '),
+            },
+            {
+              role: 'user',
+              content: [
+                `Goal roles: ${(input.goal.targetRoles ?? []).join(', ')}`,
+                `Recipe: ${input.recipeTitle}`,
+                `Current path title: ${input.plan.title}`,
+                `Phases:\n${phaseList}`,
+                `Allowed phase keys: ${phaseKeys.join(', ')}`,
+              ].join('\n'),
+            },
+          ],
+        },
       });
 
       const content = completion.choices[0]?.message?.content;

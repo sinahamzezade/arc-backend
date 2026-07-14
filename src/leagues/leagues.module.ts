@@ -3,6 +3,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { GamificationModule } from '../gamification/gamification.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ProfilesModule } from '../profiles/profiles.module';
+import { QuestsModule } from '../quests/quests.module';
+import { RankAvatarModule } from '../ranks/rank-avatar.module';
 import { SocialModule } from '../social/social.module';
 import { User } from '../users/entities/user.entity';
 import { LeagueCohort } from './entities/league-cohort.entity';
@@ -33,6 +35,8 @@ import { LeaguesService } from './leagues.service';
     ProfilesModule,
     NotificationsModule,
     SocialModule,
+    QuestsModule,
+    RankAvatarModule,
     forwardRef(() => GamificationModule),
   ],
   controllers: [LeaguesController],

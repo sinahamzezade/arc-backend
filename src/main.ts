@@ -67,6 +67,8 @@ async function bootstrap() {
       { path: 'admin/store/(.*)', method: RequestMethod.ALL },
       { path: 'admin/badges', method: RequestMethod.ALL },
       { path: 'admin/badges/(.*)', method: RequestMethod.ALL },
+      { path: 'admin/quests', method: RequestMethod.ALL },
+      { path: 'admin/quests/(.*)', method: RequestMethod.ALL },
       { path: 'admin/wheel', method: RequestMethod.ALL },
       { path: 'admin/wheel/(.*)', method: RequestMethod.ALL },
       { path: 'admin/courses', method: RequestMethod.ALL },

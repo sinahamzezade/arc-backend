@@ -7,6 +7,8 @@ import { GamificationService } from '../gamification/gamification.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
 import { ProfilesService } from '../profiles/profiles.service';
+import { QuestsService } from '../quests/quests.service';
+import { RankAvatarService } from '../ranks/rank-avatar.service';
 import { SocialPermissionService } from '../social/social-permission.service';
 import { User } from '../users/entities/user.entity';
 import { LeagueFinalResult } from './entities/league-final-result.entity';
@@ -64,6 +66,8 @@ export class LeaguesService {
     private readonly profiles: ProfilesService,
     private readonly notifications: NotificationsService,
     private readonly socialPermissions: SocialPermissionService,
+    private readonly quests: QuestsService,
+    private readonly rankAvatars: RankAvatarService,
     @Optional()
     @Inject(forwardRef(() => GamificationService))
     private readonly gamification?: GamificationService,
@@ -169,6 +173,10 @@ export class LeaguesService {
     const me = ranked.find((r) => r.userId === userId);
 
     const breakdown = await this.scoreBreakdown(membership.id);
+    const quests = await this.quests.progressForLeague({
+      breakdown,
+      activeDays: membership.activeDays,
+    });
 
     return toCurrentLeagueDto({
       serverTimestamp: new Date(),
@@ -189,6 +197,7 @@ export class LeaguesService {
         userId,
       ),
       breakdown,
+      quests,
     });
   }
 
@@ -443,6 +452,16 @@ export class LeaguesService {
       privacyState?: LeaguePrivacyState;
     },
   >(peers: T[], viewerId: string) {
+    const visibleIds = peers
+      .filter(
+        (p) =>
+          p.userId === viewerId ||
+          (p.privacyState !== LeaguePrivacyState.Hidden &&
+            p.privacyState !== LeaguePrivacyState.Anonymized),
+      )
+      .map((p) => p.userId);
+    const rankIcons = await this.rankAvatars.iconKeysByUserIds(visibleIds);
+
     const profiles = await Promise.all(
       peers.map(async (p) => {
         if (p.userId === viewerId) {
@@ -453,7 +472,8 @@ export class LeaguesService {
             qualifiedXp: p.qualifiedXp,
             displayName: profile?.displayName ?? 'You',
             username: profile?.username ?? null,
-            avatarUrl: profile?.avatarUrl ?? null,
+            avatarUrl:
+              rankIcons.get(p.userId) ?? profile?.avatarUrl ?? null,
             anonymized: false,
           };
         }
@@ -484,7 +504,8 @@ export class LeaguesService {
           qualifiedXp: p.qualifiedXp,
           displayName: profile?.displayName ?? profile?.username ?? 'Learner',
           username: profile?.username ?? null,
-          avatarUrl: profile?.avatarUrl ?? null,
+          avatarUrl:
+            rankIcons.get(p.userId) ?? profile?.avatarUrl ?? null,
           anonymized: false,
         };
       }),

@@ -232,4 +232,30 @@ export class RoadmapSnapshotService {
 
     return snapshot;
   }
+
+  /** Drop recipe snapshots after catalog/import mutations (stack IDs change). */
+  async invalidateRecipeCaches(roleSlugs?: string[]): Promise<void> {
+    if (!this.redis) return;
+    try {
+      if (roleSlugs?.length) {
+        const keys: string[] = [];
+        for (const slug of roleSlugs) {
+          const found = await this.redis.keys(`recipe:${slug}:*`);
+          keys.push(...found);
+        }
+        if (keys.length) await this.redis.del(...keys);
+        this.logger.log(
+          `Invalidated ${keys.length} recipe snapshot(s) for ${roleSlugs.join(',')}`,
+        );
+        return;
+      }
+      const keys = await this.redis.keys('recipe:*');
+      if (keys.length) await this.redis.del(...keys);
+      this.logger.log(`Invalidated ${keys.length} recipe snapshot(s)`);
+    } catch (err) {
+      this.logger.warn(
+        `Recipe cache invalidate failed: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
 }

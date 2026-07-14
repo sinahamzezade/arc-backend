@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserLeagueState } from '../leagues/entities/user-league-state.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { Profile } from '../profiles/entities/profile.entity';
+import { RankAvatarModule } from '../ranks/rank-avatar.module';
 import { User } from '../users/entities/user.entity';
 import { Follow } from './entities/follow.entity';
 import { FriendRequest } from './entities/friend-request.entity';
@@ -33,6 +34,7 @@ import { SocialService } from './social.service';
       UserLeagueState,
     ]),
     NotificationsModule,
+    RankAvatarModule,
   ],
   controllers: [SocialController],
   providers: [SocialService, SocialPermissionService, SocialPresenceService],

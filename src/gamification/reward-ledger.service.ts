@@ -247,6 +247,76 @@ export class RewardLedgerService {
     };
   }
 
+  /**
+   * Admin absolute set for lifetime XP / coins / gems.
+   * Writes ledger deltas (may be negative) then mirrors profile.
+   */
+  async adminSetBalances(
+    userId: string,
+    balances: { lifetimeXp: number; coins: number; gems: number },
+    meta?: { adminUserId?: string },
+  ): Promise<GrantRewardResult> {
+    const lifetimeXp = Math.max(0, Math.floor(balances.lifetimeXp));
+    const coins = Math.max(0, Math.floor(balances.coins));
+    const gems = Math.max(0, Math.floor(balances.gems));
+
+    return this.dataSource.transaction(async (manager) => {
+      const wallet = await this.ensureWallet(manager, userId, true);
+      const lines: GrantLine[] = [];
+      const dxp = lifetimeXp - wallet.lifetimeXp;
+      const dCoins = coins - wallet.coins;
+      const dGems = gems - wallet.gems;
+      if (dxp !== 0) {
+        lines.push({
+          currency: RewardCurrency.LifetimeXp,
+          amount: dxp,
+          idempotencySuffix: 'xp',
+        });
+      }
+      if (dCoins !== 0) {
+        lines.push({
+          currency: RewardCurrency.Coins,
+          amount: dCoins,
+          idempotencySuffix: 'coins',
+        });
+      }
+      if (dGems !== 0) {
+        lines.push({
+          currency: RewardCurrency.Gems,
+          amount: dGems,
+          idempotencySuffix: 'gems',
+        });
+      }
+      if (!lines.length) {
+        return {
+          transactionGroupId: randomUUID(),
+          wallet: this.snapshot(wallet),
+          entryIds: {},
+          alreadyGranted: true,
+        };
+      }
+
+      const adjustmentId = randomUUID();
+      return this.grantReward(manager, {
+        userId,
+        reasonType: RewardReasonType.Admin,
+        reasonId: adjustmentId,
+        idempotencyKey: `admin:set:${userId}:${adjustmentId}`,
+        lines,
+        metadata: {
+          source: 'admin_set_balances',
+          adminUserId: meta?.adminUserId ?? null,
+          target: { lifetimeXp, coins, gems },
+          previous: {
+            lifetimeXp: wallet.lifetimeXp,
+            coins: wallet.coins,
+            gems: wallet.gems,
+          },
+        },
+      });
+    });
+  }
+
   async ensureWallet(
     manager: EntityManager,
     userId: string,

@@ -110,6 +110,14 @@ export class SystemFlagsService implements OnModuleInit {
         defaultValue: this.envBoolDefault('ARLO_AI_ENABLED', true),
       },
       {
+        key: SystemFlagKey.LESSON_BODY_AI_ENABLED,
+        valueType: 'boolean',
+        label: 'Lesson body personalization',
+        description:
+          'After materialize, rewrite lesson teaching copy from intake answers (practice/quiz stay scaffold).',
+        defaultValue: this.envBoolDefault('LESSON_BODY_AI_ENABLED', false),
+      },
+      {
         key: SystemFlagKey.SSO_ENABLED,
         valueType: 'boolean',
         label: 'Google / Apple SSO',
@@ -153,6 +161,17 @@ export class SystemFlagsService implements OnModuleInit {
         description: 'Model for battle MCQ generation from lesson catalog.',
         defaultValue: this.envModelOr(
           ['LLM_BATTLE_MODEL', 'LLM_ROADMAP_MODEL'],
+          DEFAULT_LLM_MODEL,
+        ),
+      },
+      {
+        key: SystemFlagKey.LLM_LESSON_BODY_MODEL,
+        valueType: 'string',
+        label: 'LLM · Lesson body personalizer',
+        description:
+          'Model for intake-based rewrite of lesson content pages (purpose: lesson_body).',
+        defaultValue: this.envModelOr(
+          ['LLM_LESSON_BODY_MODEL', 'LLM_ROADMAP_MODEL'],
           DEFAULT_LLM_MODEL,
         ),
       },
@@ -360,7 +379,8 @@ export class SystemFlagsService implements OnModuleInit {
     if (
       key === SystemFlagKey.LLM_ROADMAP_MODEL ||
       key === SystemFlagKey.LLM_ARLO_MODEL ||
-      key === SystemFlagKey.LLM_BATTLE_MODEL
+      key === SystemFlagKey.LLM_BATTLE_MODEL ||
+      key === SystemFlagKey.LLM_LESSON_BODY_MODEL
     ) {
       return [...LLM_MODEL_OPTIONS];
     }

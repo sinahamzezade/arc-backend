@@ -1,8 +1,9 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
+import { LessonBodyPersonalizationJobs } from '../lessons/lesson-body-personalization.jobs';
 import { LessonTemplate } from '../skill-graph/entities/lesson-template.entity';
 import { Resource } from '../skill-graph/entities/resource.entity';
 import { RoleRecipe } from '../skill-graph/entities/role-recipe.entity';
@@ -77,6 +78,8 @@ export class ContentQueryService {
     private readonly milestonesRepo: Repository<Milestone>,
     @InjectRepository(Lesson)
     private readonly userLessonsRepo: Repository<Lesson>,
+    @Optional()
+    private readonly bodyPersonalizationJobs?: LessonBodyPersonalizationJobs | null,
   ) {}
 
   async getRoleRecipe(roleSlug: string): Promise<RoleRecipe> {
@@ -411,6 +414,18 @@ export class ContentQueryService {
       weeks,
       count: materializedLessonIds.length,
     });
+
+    if (this.bodyPersonalizationJobs && materializedLessonIds.length) {
+      try {
+        await this.bodyPersonalizationJobs.enqueueForMaterializedLessons({
+          roadmapId,
+          userId: roadmap.userId,
+          lessonIds: materializedLessonIds,
+        });
+      } catch {
+        /* personalization is best-effort; scaffold already playable */
+      }
+    }
 
     return {
       roadmapId,

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -23,6 +24,7 @@ import {
   transformCurriculumLesson,
   validateTransformedOutline,
 } from '../skill-graph/seeds/transform-curriculum';
+import { RoadmapSnapshotService } from '../roadmaps/roadmap-snapshot.service';
 
 const LESSON_TYPES = [
   'reading',
@@ -83,6 +85,8 @@ function parseCsv(raw: string | undefined | null): string[] {
 
 @Injectable()
 export class AdminSkillGraphService {
+  private readonly logger = new Logger(AdminSkillGraphService.name);
+
   constructor(
     @InjectRepository(TechStack)
     private readonly stacks: Repository<TechStack>,
@@ -97,6 +101,7 @@ export class AdminSkillGraphService {
     @InjectRepository(CareerRole)
     private readonly careers: Repository<CareerRole>,
     private readonly dataSource: DataSource,
+    private readonly roadmapSnapshots: RoadmapSnapshotService,
   ) {}
 
   lessonTypeChoices(current?: string) {
@@ -866,12 +871,18 @@ export class AdminSkillGraphService {
             stackPlan: { phases: recipe.phases },
             requiredSkillNodeIds: [...new Set(requiredSkillNodeIds)],
             optionalSkillNodeIds: [...new Set(optionalSkillNodeIds)],
+            version: existingRecipe.version + 1,
             isActive: true,
           });
           stats.recipesUpdated += 1;
         }
       }
     });
+
+    const roleSlugs = catalog.recipes.map((r) => r.targetRoleSlug);
+    await this.roadmapSnapshots.invalidateRecipeCaches(
+      roleSlugs.length ? roleSlugs : undefined,
+    );
 
     return stats;
   }
