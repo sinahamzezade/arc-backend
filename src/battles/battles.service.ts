@@ -209,12 +209,19 @@ export class BattlesService {
       } as const);
     const skill = await this.battleCatalog.resolveSkill(stack.slug, dto.topic);
     const subjectLabel = stack.name;
-    const topicLabel = skill?.title ?? dto.topic ?? null;
+    // Prefer catalog topic slug for pool matching on accept (ILIKE / skill resolve).
+    const topicForPool = dto.topic?.trim() || null;
+    const topicLabel =
+      (skill
+        ? await this.battleCatalog.publishedBattleCountForSkill(skill.id)
+        : 0) > 0
+        ? (skill?.title ?? topicForPool)
+        : topicForPool;
 
-    // LLM configured OR seeded pool must cover this matchup (no debit yet).
+    // Seeded pool must cover this matchup (no debit yet).
     const canFulfill = await this.questionPool.canFulfillBattleSet({
       subject: stack.slug,
-      topic: topicLabel ?? dto.topic,
+      topic: topicForPool ?? undefined,
       skillNodeId: skill?.id,
       count: dto.questions,
       difficultyMix,

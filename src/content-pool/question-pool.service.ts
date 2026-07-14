@@ -93,16 +93,14 @@ export class QuestionPoolService {
     return this.selectFromSeededPool(withCatalog);
   }
 
-  /** Create-invite preflight: LLM configured OR seeded pool large enough. */
+  /**
+   * Create-invite preflight against seeded pool after catalog resolve.
+   * Empty skill-graph stacks must fail here (not only on accept).
+   */
   async canFulfillBattleSet(input: BattleQuestionSelectInput): Promise<boolean> {
-    if (this.battleLlm.isConfigured()) {
-      const stackSlug = await this.battleCatalog.resolveSubjectSlug(
-        input.subject ?? '',
-      );
-      if (stackSlug) return true;
-    }
+    const resolved = await this.resolveCatalogIds(input);
     try {
-      await this.selectFromSeededPool(input);
+      await this.selectFromSeededPool({ ...input, ...resolved });
       return true;
     } catch {
       return false;
@@ -111,18 +109,39 @@ export class QuestionPoolService {
 
   private async resolveCatalogIds(
     input: BattleQuestionSelectInput,
-  ): Promise<Pick<BattleQuestionSelectInput, 'subject' | 'skillNodeId'>> {
+  ): Promise<
+    Pick<BattleQuestionSelectInput, 'subject' | 'skillNodeId' | 'topic'>
+  > {
     const stackSlug =
       (await this.battleCatalog.resolveSubjectSlug(input.subject ?? '')) ??
       input.subject?.trim().toLowerCase().replace(/\s+/g, '-');
     if (!stackSlug) return {};
-    const skill =
-      input.skillNodeId
-        ? null
-        : await this.battleCatalog.resolveSkill(stackSlug, input.topic);
+
+    // Only pin skillNodeId when that skill actually has battle content.
+    // Seeded pool uses tech_stack_slug + slug topic — skill filter would yield 0.
+    let skillNodeId = input.skillNodeId;
+    if (!skillNodeId && input.topic) {
+      const skill = await this.battleCatalog.resolveSkill(
+        stackSlug,
+        input.topic,
+      );
+      if (skill) {
+        const n = await this.battleCatalog.publishedBattleCountForSkill(
+          skill.id,
+        );
+        if (n > 0) skillNodeId = skill.id;
+      }
+    } else if (skillNodeId) {
+      const n =
+        await this.battleCatalog.publishedBattleCountForSkill(skillNodeId);
+      if (n === 0) skillNodeId = undefined;
+    }
+
     return {
       subject: stackSlug,
-      ...(skill ? { skillNodeId: skill.id } : {}),
+      ...(skillNodeId ? { skillNodeId } : {}),
+      // Keep topic for slug ILIKE when not skill-bound.
+      ...(input.topic && !skillNodeId ? { topic: input.topic } : {}),
     };
   }
 
@@ -255,7 +274,8 @@ export class QuestionPoolService {
     if (input.subject) {
       qb.andWhere('q.tech_stack_slug = :subject', { subject: input.subject });
     }
-    if (input.topic) {
+    // Topic slug match only when not already pinned to a skill node.
+    if (input.topic && !input.skillNodeId) {
       const topicRaw = input.topic.trim();
       const topicSlug = topicRaw.toLowerCase().replace(/\s+/g, '-');
       qb.andWhere('(q.slug ILIKE :topicRaw OR q.slug ILIKE :topicSlug)', {
