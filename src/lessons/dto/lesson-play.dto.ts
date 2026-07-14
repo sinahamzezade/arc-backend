@@ -56,13 +56,20 @@ export class UpdateLessonProgressDto {
 }
 
 export class CheckPracticeDto {
-  @ApiProperty()
-  @IsString()
-  optionId!: string;
-
   @ApiProperty({ description: 'Active attempt id from start/play' })
   @IsString()
   attemptId!: string;
+
+  @ApiProperty({ description: 'Selected option id' })
+  @IsString()
+  optionId!: string;
+
+  @ApiPropertyOptional({
+    description: 'Practice or recovery item id (defaults to practice.id)',
+  })
+  @IsOptional()
+  @IsString()
+  itemId?: string;
 
   @ApiPropertyOptional({ description: 'True if learner opened the hint' })
   @IsOptional()
@@ -71,17 +78,26 @@ export class CheckPracticeDto {
 }
 
 export class CheckQuizDto {
-  @ApiProperty()
-  @IsString()
-  questionId!: string;
-
-  @ApiProperty()
-  @IsString()
-  optionId!: string;
-
   @ApiProperty({ description: 'Active attempt id from start/play' })
   @IsString()
   attemptId!: string;
+
+  @ApiProperty({ description: 'Selected option id' })
+  @IsString()
+  optionId!: string;
+
+  @ApiPropertyOptional({
+    description: 'Quiz question or recovery item id (§16.4)',
+  })
+  @IsOptional()
+  @IsString()
+  itemId?: string;
+
+  /** @deprecated Prefer itemId — kept for older clients */
+  @ApiPropertyOptional({ description: 'Alias for itemId' })
+  @IsOptional()
+  @IsString()
+  questionId?: string;
 }
 
 export class CompleteLessonDto {

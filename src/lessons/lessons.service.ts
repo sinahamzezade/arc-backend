@@ -27,6 +27,7 @@ import {
 import { LessonArloService } from './lesson-arlo.service';
 import { LessonCompletionOrchestrator } from './lesson-completion.orchestrator';
 import { LessonContentService } from './lesson-content.service';
+import { LessonRemediationService } from './lesson-remediation.service';
 import { LessonRewardsService } from './lesson-rewards.service';
 import { LessonUnlockService } from './lesson-unlock.service';
 
@@ -46,6 +47,7 @@ export class LessonsService {
     @InjectRepository(LessonAttempt)
     private readonly attemptsRepo: Repository<LessonAttempt>,
     private readonly content: LessonContentService,
+    private readonly remediation: LessonRemediationService,
     private readonly rewards: LessonRewardsService,
     private readonly unlock: LessonUnlockService,
     private readonly orchestrator: LessonCompletionOrchestrator,
@@ -330,20 +332,7 @@ export class LessonsService {
       attempt.contentVersionId,
     );
     const outline = resolved.outline;
-    const option = outline.practice.options.find((o) => o.id === dto.optionId);
-    if (!option) {
-      throw new AppException(
-        AuthErrorCode.LESSON_INVALID_ANSWER,
-        'Unknown practice option for content version',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    const correctOption = outline.practice.options.find((o) => o.correct);
-    const correct = Boolean(option.correct);
-    const feedback = correct
-      ? (outline.practice.feedbackCorrect ?? 'Nailed it.')
-      : (outline.practice.feedbackIncorrect ?? 'Not quite — try the hint.');
+    const itemId = dto.itemId ?? outline.practice.id;
 
     if (dto.hintUsed) {
       attempt.assistanceUsed = {
@@ -354,15 +343,24 @@ export class LessonsService {
       await this.attemptsRepo.save(attempt);
     }
 
-    await this.patchSession(userId, lesson.id, progress, {
-      practiceDone: true,
-      practiceOptionId: dto.optionId,
+    const graded = await this.remediation.grade(attempt, outline, {
+      itemId,
+      optionId: dto.optionId,
     });
 
+    // Only mark practiceDone for the primary practice item (not recovery)
+    if (itemId === outline.practice.id) {
+      await this.patchSession(userId, lesson.id, progress, {
+        practiceDone: true,
+        practiceOptionId: dto.optionId,
+      });
+    }
+
     return {
-      correct,
-      correctOptionId: correctOption?.id ?? dto.optionId,
-      feedback,
+      correct: graded.correct,
+      correctOptionId: graded.correctOptionId,
+      feedback: graded.feedback,
+      remediation: graded.remediation,
     };
   }
 
@@ -384,36 +382,36 @@ export class LessonsService {
       attempt.contentVersionId,
     );
     const outline = resolved.outline;
-    const question = outline.quiz.find((q) => q.id === dto.questionId);
-    if (!question) {
+    const itemId = dto.itemId ?? dto.questionId;
+    if (!itemId) {
       throw new AppException(
         AuthErrorCode.LESSON_INVALID_ANSWER,
-        'Unknown quiz question for content version',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-    const optionOk = question.options.some((o) => o.id === dto.optionId);
-    if (!optionOk) {
-      throw new AppException(
-        AuthErrorCode.LESSON_INVALID_ANSWER,
-        'Unknown quiz option for content version',
+        'itemId is required',
         HttpStatus.BAD_REQUEST,
       );
     }
 
-    const correct = question.correctOptionId === dto.optionId;
-    const answers = {
-      ...(progress?.sessionState?.quizAnswers ?? {}),
-      [dto.questionId]: dto.optionId,
-    };
-    await this.patchSession(userId, lesson.id, progress, {
-      quizAnswers: answers,
+    const graded = await this.remediation.grade(attempt, outline, {
+      itemId,
+      optionId: dto.optionId,
     });
 
+    // Persist quiz answers only for primary quiz questions
+    if (outline.quiz.some((q) => q.id === itemId)) {
+      const answers = {
+        ...(progress?.sessionState?.quizAnswers ?? {}),
+        [itemId]: dto.optionId,
+      };
+      await this.patchSession(userId, lesson.id, progress, {
+        quizAnswers: answers,
+      });
+    }
+
     return {
-      correct,
-      correctOptionId: question.correctOptionId,
-      explanation: question.explanation,
+      correct: graded.correct,
+      correctOptionId: graded.correctOptionId,
+      explanation: graded.explanation,
+      remediation: graded.remediation,
     };
   }
 

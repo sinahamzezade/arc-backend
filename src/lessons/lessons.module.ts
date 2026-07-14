@@ -17,6 +17,7 @@ import { UserBadge } from '../badges/entities/user-badge.entity';
 import { LessonArloService } from './lesson-arlo.service';
 import { LessonCompletionOrchestrator } from './lesson-completion.orchestrator';
 import { LessonContentService } from './lesson-content.service';
+import { LessonRemediationService } from './lesson-remediation.service';
 import { LessonRewardsService } from './lesson-rewards.service';
 import { LessonUnlockService } from './lesson-unlock.service';
 import { LessonsController } from './lessons.controller';
@@ -45,6 +46,7 @@ import { LessonsService } from './lessons.service';
   providers: [
     LessonsService,
     LessonContentService,
+    LessonRemediationService,
     LessonRewardsService,
     LessonUnlockService,
     LessonCompletionOrchestrator,
