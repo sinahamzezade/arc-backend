@@ -54,6 +54,6 @@ import { LessonsService } from './lessons.service';
     LessonCompletionOrchestrator,
     LessonArloService,
   ],
-  exports: [LessonsService, LessonBodyAiModule],
+  exports: [LessonsService, LessonContentService, LessonBodyAiModule],
 })
 export class LessonsModule {}

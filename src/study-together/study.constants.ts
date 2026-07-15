@@ -50,6 +50,11 @@ export enum StudyCompletionOutcome {
   None = 'none',
 }
 
+export enum StudySessionMode {
+  Focus = 'focus',
+  ReadTogether = 'read_together',
+}
+
 export enum StudyEventType {
   InviteSent = 'invite_sent',
   Accepted = 'accepted',
@@ -61,6 +66,10 @@ export enum StudyEventType {
   Heartbeat = 'heartbeat',
   TaskChanged = 'task_changed',
   MeaningfulAction = 'meaningful_action',
+  StepAcked = 'step_acked',
+  StepAdvanced = 'step_advanced',
+  ChatMessage = 'chat_message',
+  WsJoined = 'ws_joined',
   Left = 'left',
   Completed = 'completed',
   Expired = 'expired',
@@ -86,3 +95,5 @@ export const STUDY_INVITE_EXPIRY_WITHIN_MS = 60 * 60 * 1000;
 export const STUDY_INVITE_EXPIRY_SCHEDULED_AFTER_START_MS = 30 * 60 * 1000;
 
 export const STUDY_MESSAGE_MAX_LEN = 160;
+export const STUDY_CHAT_MESSAGE_MAX_LEN = 500;
+export const STUDY_MAX_CONCURRENT_ROOMS = 10;

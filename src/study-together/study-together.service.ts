@@ -5,6 +5,7 @@ import {
   EntityManager,
   In,
   LessThan,
+  MoreThan,
   Repository,
 } from 'typeorm';
 import { BadgesService } from '../badges/badges.service';
@@ -17,11 +18,21 @@ import {
 } from '../gamification/entities/reward-ledger-entry.entity';
 import { RewardLedgerService } from '../gamification/reward-ledger.service';
 import {
+  isReadingContent,
+  type UnitPlayContent,
+} from '../lessons/lesson-play.types';
+import { LessonContentService } from '../lessons/lesson-content.service';
+import {
   NotificationChannel,
   NotificationType,
 } from '../notifications/entities/notification.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Profile } from '../profiles/entities/profile.entity';
+import {
+  Lesson,
+  LessonStatus,
+} from '../roadmaps/entities/lesson.entity';
+import { Roadmap, RoadmapStatus } from '../roadmaps/entities/roadmap.entity';
 import { SocialPermissionService } from '../social/social-permission.service';
 import { User } from '../users/entities/user.entity';
 import {
@@ -31,15 +42,18 @@ import {
   StudyTaskDto,
 } from './dto/study-together.dto';
 import { StudySessionEvent } from './entities/study-session-event.entity';
+import { StudySessionMessage } from './entities/study-session-message.entity';
 import { StudySessionParticipant } from './entities/study-session-participant.entity';
 import { StudySession } from './entities/study-session.entity';
 import {
   STUDY_ALLOWED_DURATIONS_MIN,
+  STUDY_CHAT_MESSAGE_MAX_LEN,
   STUDY_DISCONNECT_GRACE_SEC,
   STUDY_HEARTBEAT_INTERVAL_SEC,
   STUDY_INVITE_EXPIRY_NOW_MS,
   STUDY_INVITE_EXPIRY_SCHEDULED_AFTER_START_MS,
   STUDY_INVITE_EXPIRY_WITHIN_MS,
+  STUDY_MAX_CONCURRENT_ROOMS,
   STUDY_MIN_VERIFIED_MINUTES,
   STUDY_PAIR_DAILY_REWARD_CAP,
   STUDY_QUALIFY_ACTIVE_RATIO,
@@ -50,6 +64,7 @@ import {
   StudyEventType,
   StudyInvitationStatus,
   StudyParticipantRole,
+  StudySessionMode,
   StudySessionStatus,
   StudyStartMode,
 } from './study.constants';
@@ -86,6 +101,7 @@ export class StudyTogetherService {
     private readonly socialPermissions: SocialPermissionService,
     private readonly notifications: NotificationsService,
     private readonly ledger: RewardLedgerService,
+    private readonly lessonContent: LessonContentService,
     @Optional()
     @Inject(forwardRef(() => BadgesService))
     private readonly badges: BadgesService | undefined,
@@ -95,10 +111,16 @@ export class StudyTogetherService {
     private readonly participantsRepo: Repository<StudySessionParticipant>,
     @InjectRepository(StudySessionEvent)
     private readonly eventsRepo: Repository<StudySessionEvent>,
+    @InjectRepository(StudySessionMessage)
+    private readonly messagesRepo: Repository<StudySessionMessage>,
     @InjectRepository(Profile)
     private readonly profilesRepo: Repository<Profile>,
     @InjectRepository(User)
     private readonly usersRepo: Repository<User>,
+    @InjectRepository(Lesson)
+    private readonly lessonsRepo: Repository<Lesson>,
+    @InjectRepository(Roadmap)
+    private readonly roadmapsRepo: Repository<Roadmap>,
   ) {}
 
   async create(userId: string, dto: CreateStudySessionDto) {
@@ -138,8 +160,8 @@ export class StudyTogetherService {
       );
     }
 
-    await this.assertNoConflict(userId);
-    await this.assertNoConflict(dto.inviteeId);
+    await this.assertRoomCap(userId);
+    await this.assertRoomCap(dto.inviteeId);
 
     const now = new Date();
     let scheduledStartAt: Date | null = null;
@@ -180,12 +202,19 @@ export class StudyTogetherService {
     }
 
     const message = dto.message?.trim() ? dto.message.trim() : null;
+    const lessonMeta = await this.resolveCreatorLesson(userId, dto.lessonId);
 
     const session = await this.dataSource.transaction(async (manager) => {
       const row = manager.create(StudySession, {
         creatorId: userId,
         inviteeId: dto.inviteeId,
         subject: dto.subject,
+        lessonId: lessonMeta.lessonId,
+        unitId: lessonMeta.unitId,
+        lessonTitle: lessonMeta.lessonTitle,
+        mode: StudySessionMode.ReadTogether,
+        contentStep: 0,
+        stepCount: lessonMeta.stepCount,
         durationMinutes: dto.durationMinutes,
         startMode: dto.startMode,
         message,
@@ -204,14 +233,16 @@ export class StudyTogetherService {
           role: StudyParticipantRole.Creator,
           invitationStatus: StudyInvitationStatus.Accepted,
           joinedAt: now,
-          taskLabel: `${dto.subject} practice`,
+          taskLabel: lessonMeta.lessonTitle,
+          ackedStep: -1,
         }),
         manager.create(StudySessionParticipant, {
           sessionId: saved.id,
           userId: dto.inviteeId,
           role: StudyParticipantRole.Invitee,
           invitationStatus: StudyInvitationStatus.Pending,
-          taskLabel: `${dto.subject} review`,
+          taskLabel: lessonMeta.lessonTitle,
+          ackedStep: -1,
         }),
       ]);
 
@@ -234,7 +265,7 @@ export class StudyTogetherService {
       userId: dto.inviteeId,
       type: NotificationType.StudyInvite,
       title: 'Study Together invite',
-      body: `${creatorName} invited you to study ${dto.subject} for ${dto.durationMinutes} minutes.`,
+      body: `${creatorName} invited you to read "${lessonMeta.lessonTitle}" together for ${dto.durationMinutes} minutes.`,
       actionUrl: `/study/room?id=${session.id}`,
       payload: { sessionId: session.id },
       dedupeKey: `study_invite:${session.id}`,
@@ -242,6 +273,23 @@ export class StudyTogetherService {
     });
 
     return this.getState(userId, session.id);
+  }
+
+  async listRooms(userId: string) {
+    await this.runMaintenance();
+    const sessions = await this.sessionsRepo.find({
+      where: [
+        { creatorId: userId, status: In(LIVE_STATUSES) },
+        { inviteeId: userId, status: In(LIVE_STATUSES) },
+      ],
+      order: { updatedAt: 'DESC' },
+      take: 50,
+    });
+    return {
+      items: await Promise.all(
+        sessions.map((s) => this.getState(userId, s.id)),
+      ),
+    };
   }
 
   async listInvites(userId: string) {
@@ -649,6 +697,317 @@ export class StudyTogetherService {
     return this.tryComplete(userId, sessionId, dto);
   }
 
+  async getContent(userId: string, sessionId: string) {
+    const session = await this.requireParticipantSession(userId, sessionId);
+    if (!session.lessonId) {
+      throw new AppException(
+        AuthErrorCode.STUDY_TASK_NOT_AVAILABLE,
+        'Session has no lesson bound',
+      );
+    }
+
+    const lesson = await this.lessonsRepo.findOne({
+      where: { id: session.lessonId },
+    });
+    if (!lesson) {
+      throw new AppException(
+        AuthErrorCode.STUDY_TASK_NOT_AVAILABLE,
+        'Lesson not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const content = await this.lessonContent.ensurePlayContent(lesson);
+    if (!isReadingContent(content)) {
+      throw new AppException(
+        AuthErrorCode.STUDY_TASK_NOT_AVAILABLE,
+        'Lesson is not a reading session',
+      );
+    }
+
+    return {
+      sessionId: session.id,
+      lessonId: session.lessonId,
+      lessonTitle: session.lessonTitle ?? lesson.title,
+      contentStep: session.contentStep,
+      stepCount: session.stepCount,
+      body: this.lessonContent.toPublicPlayBody(content),
+    };
+  }
+
+  async ackRead(
+    userId: string,
+    sessionId: string,
+    opts: { soloAdvance?: boolean } = {},
+  ) {
+    await this.runMaintenance();
+    const session = await this.requireParticipantSession(userId, sessionId);
+    if (
+      ![
+        StudySessionStatus.Waiting,
+        StudySessionStatus.Active,
+        StudySessionStatus.Accepted,
+      ].includes(session.status)
+    ) {
+      throw new AppException(
+        AuthErrorCode.STUDY_INVALID_STATE,
+        'Session not in reading state',
+      );
+    }
+
+    let stepPayload: {
+      contentStep: number;
+      stepCount: number;
+      acks: { userId: string; ackedStep: number }[];
+      advanced: boolean;
+      readingComplete: boolean;
+    } | null = null;
+
+    await this.dataSource.transaction(async (manager) => {
+      const me = await manager.findOneOrFail(StudySessionParticipant, {
+        where: { sessionId, userId },
+      });
+
+      if (me.ackedStep >= session.contentStep) {
+        const refreshedEarly = await manager.find(StudySessionParticipant, {
+          where: { sessionId },
+        });
+        const partnerEarly = refreshedEarly.find((p) => p.userId !== userId)!;
+        const allowSoloRetry =
+          opts.soloAdvance &&
+          session.creatorId === userId &&
+          this.isPartnerDisconnected(partnerEarly);
+        if (!allowSoloRetry) {
+          return;
+        }
+      } else {
+        me.ackedStep = session.contentStep;
+        await manager.save(me);
+
+        await this.appendEvent(manager, {
+          sessionId,
+          userId,
+          type: StudyEventType.StepAcked,
+          payload: { contentStep: session.contentStep },
+        });
+      }
+
+      const refreshed = await manager.find(StudySessionParticipant, {
+        where: { sessionId },
+      });
+      const partner = refreshed.find((p) => p.userId !== userId)!;
+      const partnerDisconnected = this.isPartnerDisconnected(partner);
+      const bothAcked = refreshed.every(
+        (p) => p.ackedStep >= session.contentStep,
+      );
+      const canSoloAdvance =
+        opts.soloAdvance &&
+        session.creatorId === userId &&
+        partnerDisconnected &&
+        me.ackedStep >= session.contentStep;
+
+      if (!bothAcked && !canSoloAdvance) {
+        stepPayload = {
+          contentStep: session.contentStep,
+          stepCount: session.stepCount,
+          acks: refreshed.map((p) => ({
+            userId: p.userId,
+            ackedStep: p.ackedStep,
+          })),
+          advanced: false,
+          readingComplete: false,
+        };
+        return;
+      }
+
+      const isLastStep = session.contentStep >= session.stepCount - 1;
+      if (isLastStep) {
+        for (const p of refreshed) {
+          p.meaningfulActionCompleted = true;
+          await manager.save(p);
+        }
+        session.roomVersion += 1;
+        await manager.save(session);
+        await this.appendEvent(manager, {
+          sessionId,
+          userId: null,
+          type: StudyEventType.MeaningfulAction,
+          payload: { contentStep: session.contentStep, final: true },
+        });
+        stepPayload = {
+          contentStep: session.contentStep,
+          stepCount: session.stepCount,
+          acks: refreshed.map((p) => ({
+            userId: p.userId,
+            ackedStep: p.ackedStep,
+          })),
+          advanced: false,
+          readingComplete: true,
+        };
+        return;
+      }
+
+      session.contentStep += 1;
+      session.roomVersion += 1;
+      await manager.save(session);
+      await this.appendEvent(manager, {
+        sessionId,
+        userId: null,
+        type: StudyEventType.StepAdvanced,
+        payload: {
+          contentStep: session.contentStep,
+          soloAdvance: canSoloAdvance,
+        },
+      });
+
+      const afterAdvance = await manager.find(StudySessionParticipant, {
+        where: { sessionId },
+      });
+      stepPayload = {
+        contentStep: session.contentStep,
+        stepCount: session.stepCount,
+        acks: afterAdvance.map((p) => ({
+          userId: p.userId,
+          ackedStep: p.ackedStep,
+        })),
+        advanced: true,
+        readingComplete: false,
+      };
+    });
+
+    const state = await this.getState(userId, sessionId);
+    return { state, step: stepPayload };
+  }
+
+  async listMessages(
+    userId: string,
+    sessionId: string,
+    cursor?: string,
+    limit = 40,
+  ) {
+    await this.requireParticipantSession(userId, sessionId);
+    const take = Math.min(Math.max(limit, 1), 100);
+    const qb = this.messagesRepo
+      .createQueryBuilder('m')
+      .where('m.session_id = :sessionId', { sessionId })
+      .orderBy('m.created_at', 'DESC')
+      .take(take + 1);
+
+    if (cursor) {
+      const cursorRow = await this.messagesRepo.findOne({
+        where: { id: cursor, sessionId },
+      });
+      if (cursorRow) {
+        qb.andWhere('m.created_at < :createdAt', {
+          createdAt: cursorRow.createdAt,
+        });
+      }
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > take;
+    const page = hasMore ? rows.slice(0, take) : rows;
+    const senderIds = [...new Set(page.map((m) => m.senderId))];
+    const profiles = senderIds.length
+      ? await this.profilesRepo.find({ where: { userId: In(senderIds) } })
+      : [];
+    const profileMap = new Map(profiles.map((p) => [p.userId, p]));
+
+    const items = page.reverse().map((m) => {
+      const profile = profileMap.get(m.senderId);
+      const name =
+        profile?.displayName || profile?.username || 'Learner';
+      return {
+        id: m.id,
+        sessionId: m.sessionId,
+        senderId: m.senderId,
+        senderName: name,
+        body: m.body,
+        createdAt: m.createdAt.toISOString(),
+      };
+    });
+
+    return {
+      items,
+      nextCursor: hasMore ? page[0]?.id ?? null : null,
+    };
+  }
+
+  async sendChatMessage(userId: string, sessionId: string, rawBody: string) {
+    const session = await this.requireParticipantSession(userId, sessionId);
+    if (TERMINAL_STATUSES.includes(session.status)) {
+      throw new AppException(
+        AuthErrorCode.STUDY_INVALID_STATE,
+        'Session already ended',
+      );
+    }
+
+    const body = rawBody.trim();
+    if (!body || body.length > STUDY_CHAT_MESSAGE_MAX_LEN) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'Invalid chat message',
+      );
+    }
+
+    const recent = await this.messagesRepo.count({
+      where: {
+        sessionId,
+        senderId: userId,
+        createdAt: MoreThan(new Date(Date.now() - 10_000)),
+      },
+    });
+    if (recent >= 8) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'Chat rate limit exceeded',
+      );
+    }
+
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const row = manager.create(StudySessionMessage, {
+        sessionId,
+        senderId: userId,
+        body,
+      });
+      const msg = await manager.save(row);
+      await this.appendEvent(manager, {
+        sessionId,
+        userId,
+        type: StudyEventType.ChatMessage,
+        payload: { messageId: msg.id },
+      });
+      session.roomVersion += 1;
+      await manager.save(session);
+      return msg;
+    });
+
+    const profile = await this.profilesRepo.findOne({ where: { userId } });
+    const senderName =
+      profile?.displayName || profile?.username || 'Learner';
+
+    return {
+      id: saved.id,
+      sessionId: saved.sessionId,
+      senderId: saved.senderId,
+      senderName,
+      body: saved.body,
+      createdAt: saved.createdAt.toISOString(),
+    };
+  }
+
+  async setTyping(userId: string, sessionId: string) {
+    await this.requireParticipantSession(userId, sessionId);
+    await this.participantsRepo.update(
+      { sessionId, userId },
+      { typingAt: new Date() },
+    );
+  }
+
+  async requireParticipant(userId: string, sessionId: string) {
+    await this.requireParticipantSession(userId, sessionId);
+  }
+
   async getState(userId: string, sessionId: string) {
     const session = await this.requireParticipantSession(userId, sessionId);
     const participants = await this.participantsRepo.find({
@@ -686,7 +1045,12 @@ export class StudyTogetherService {
     return {
       id: session.id,
       status: session.status,
+      mode: session.mode,
       subject: session.subject,
+      lessonId: session.lessonId,
+      lessonTitle: session.lessonTitle,
+      contentStep: session.contentStep,
+      stepCount: session.stepCount,
       durationMinutes: session.durationMinutes,
       startMode: session.startMode,
       message: session.message,
@@ -1065,19 +1429,106 @@ export class StudyTogetherService {
       .getCount();
   }
 
-  private async assertNoConflict(userId: string) {
-    const conflict = await this.sessionsRepo.findOne({
+  private async assertRoomCap(userId: string) {
+    const count = await this.sessionsRepo.count({
       where: [
         { creatorId: userId, status: In(LIVE_STATUSES) },
         { inviteeId: userId, status: In(LIVE_STATUSES) },
       ],
     });
-    if (conflict) {
+    if (count >= STUDY_MAX_CONCURRENT_ROOMS) {
       throw new AppException(
         AuthErrorCode.STUDY_SESSION_CONFLICT,
-        'Already in a live Study Together session',
+        'Too many live Study Together rooms',
       );
     }
+  }
+
+  private async resolveCreatorLesson(userId: string, lessonId: string) {
+    const roadmaps = await this.roadmapsRepo.find({
+      where: { userId, status: RoadmapStatus.Ready },
+      relations: {
+        phases: {
+          milestones: {
+            lessons: true,
+          },
+        },
+      },
+      order: { updatedAt: 'DESC' },
+      take: 1,
+    });
+    const roadmap = roadmaps[0];
+    if (!roadmap) {
+      throw new AppException(
+        AuthErrorCode.STUDY_TASK_NOT_AVAILABLE,
+        'No active roadmap',
+      );
+    }
+
+    let lesson: Lesson | null = null;
+    for (const phase of roadmap.phases ?? []) {
+      for (const milestone of phase.milestones ?? []) {
+        const hit = (milestone.lessons ?? []).find((l) => l.id === lessonId);
+        if (hit) {
+          lesson = hit;
+          break;
+        }
+      }
+      if (lesson) break;
+    }
+
+    if (!lesson) {
+      throw new AppException(
+        AuthErrorCode.STUDY_TASK_NOT_AVAILABLE,
+        'Lesson not on your path',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    if (lesson.status === LessonStatus.Locked) {
+      throw new AppException(
+        AuthErrorCode.STUDY_TASK_NOT_AVAILABLE,
+        'Lesson is locked',
+      );
+    }
+
+    if (lesson.lessonType !== 'reading') {
+      throw new AppException(
+        AuthErrorCode.STUDY_TASK_NOT_AVAILABLE,
+        'Only reading lessons can be shared',
+      );
+    }
+
+    const content = await this.lessonContent.ensurePlayContent(lesson);
+    if (!isReadingContent(content)) {
+      throw new AppException(
+        AuthErrorCode.STUDY_TASK_NOT_AVAILABLE,
+        'Lesson content is not reading',
+      );
+    }
+
+    return {
+      lessonId: lesson.id,
+      unitId: lesson.unitId,
+      lessonTitle: lesson.title,
+      stepCount: this.computeStepCount(content),
+    };
+  }
+
+  private computeStepCount(content: UnitPlayContent): number {
+    if (!isReadingContent(content)) return 1;
+    const sections = content.sections?.length ?? 0;
+    const hasTakeaways = (content.keyTakeaways?.length ?? 0) > 0;
+    return Math.max(sections + (hasTakeaways ? 1 : 0), 1);
+  }
+
+  private isPartnerDisconnected(partner: StudySessionParticipant): boolean {
+    if (partner.leftAt) return true;
+    if (!partner.lastHeartbeatAt) return false;
+    const gapSec = Math.floor(
+      (Date.now() - partner.lastHeartbeatAt.getTime()) / 1000,
+    );
+    return gapSec > STUDY_DISCONNECT_GRACE_SEC;
   }
 
   private assertInviteFresh(session: StudySession) {
@@ -1148,6 +1599,8 @@ export class StudyTogetherService {
       invitationStatus: p.invitationStatus,
       taskId: p.taskId,
       taskLabel: p.taskLabel,
+      ackedStep: p.ackedStep,
+      typingAt: p.typingAt?.toISOString() ?? null,
       ready: !!p.readyAt,
       joinedAt: p.joinedAt?.toISOString() ?? null,
       leftAt: p.leftAt?.toISOString() ?? null,

@@ -56,6 +56,12 @@ export class StudySessionParticipant {
   @Column({ name: 'task_label', type: 'varchar', length: 120, nullable: true })
   taskLabel: string | null;
 
+  @Column({ name: 'acked_step', type: 'int', default: -1 })
+  ackedStep: number;
+
+  @Column({ name: 'typing_at', type: 'timestamptz', nullable: true })
+  typingAt: Date | null;
+
   @Column({ name: 'joined_at', type: 'timestamptz', nullable: true })
   joinedAt: Date | null;
 

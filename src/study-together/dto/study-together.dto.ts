@@ -12,6 +12,7 @@ import {
 } from 'class-validator';
 import {
   STUDY_ALLOWED_DURATIONS_MIN,
+  STUDY_CHAT_MESSAGE_MAX_LEN,
   STUDY_MESSAGE_MAX_LEN,
   StudyStartMode,
   StudySubject,
@@ -25,6 +26,10 @@ export class CreateStudySessionDto {
   @ApiProperty({ format: 'uuid' })
   @IsUUID()
   inviteeId: string;
+
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID()
+  lessonId: string;
 
   @ApiProperty({ enum: SUBJECTS })
   @IsIn(SUBJECTS)
@@ -110,6 +115,26 @@ export class StudyHistoryQueryDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  cursor?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  limit?: number;
+}
+
+export class StudyChatSendDto {
+  @ApiProperty({ maxLength: STUDY_CHAT_MESSAGE_MAX_LEN })
+  @IsString()
+  @MaxLength(STUDY_CHAT_MESSAGE_MAX_LEN)
+  body: string;
+}
+
+export class StudyMessagesQueryDto {
+  @ApiPropertyOptional({ description: 'Message id cursor for pagination' })
+  @IsOptional()
+  @IsUUID()
   cursor?: string;
 
   @ApiPropertyOptional()

@@ -20,10 +20,12 @@ import {
 } from '../common/decorators/current-user.decorator';
 import {
   CreateStudySessionDto,
+  StudyChatSendDto,
   StudyCompleteDto,
   StudyHeartbeatDto,
   StudyHistoryQueryDto,
   StudyIdempotencyDto,
+  StudyMessagesQueryDto,
   StudyTaskDto,
 } from './dto/study-together.dto';
 import { StudyTogetherService } from './study-together.service';
@@ -42,6 +44,12 @@ export class StudyTogetherController {
     @Body() dto: CreateStudySessionDto,
   ) {
     return this.study.create(user.userId, dto);
+  }
+
+  @Get('rooms')
+  @ApiOperation({ summary: 'My live study rooms (multi-room hub)' })
+  rooms(@CurrentUser() user: AuthUserPayload) {
+    return this.study.listRooms(user.userId);
   }
 
   @Get('invites')
@@ -106,7 +114,7 @@ export class StudyTogetherController {
 
   @Post(':id/heartbeat')
   @ApiOperation({
-    summary: 'Room heartbeat (REST stand-in for WS study:heartbeat)',
+    summary: 'Room heartbeat (REST fallback; prefer WS study:heartbeat)',
   })
   heartbeat(
     @CurrentUser() user: AuthUserPayload,
@@ -114,6 +122,50 @@ export class StudyTogetherController {
     @Body() dto: StudyHeartbeatDto,
   ) {
     return this.study.heartbeat(user.userId, id, dto);
+  }
+
+  @Get(':id/content')
+  @ApiOperation({ summary: 'Shared lesson reading body for room' })
+  content(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.study.getContent(user.userId, id);
+  }
+
+  @Post(':id/ack-read')
+  @ApiOperation({ summary: 'Acknowledge current reading step (I read)' })
+  ackRead(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { soloAdvance?: boolean },
+  ) {
+    return this.study.ackRead(user.userId, id, body);
+  }
+
+  @Get(':id/messages')
+  @ApiOperation({ summary: 'Chat history for study room' })
+  messages(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: StudyMessagesQueryDto,
+  ) {
+    return this.study.listMessages(
+      user.userId,
+      id,
+      query.cursor,
+      query.limit,
+    );
+  }
+
+  @Post(':id/messages')
+  @ApiOperation({ summary: 'Send chat message (REST fallback)' })
+  sendMessage(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: StudyChatSendDto,
+  ) {
+    return this.study.sendChatMessage(user.userId, id, dto.body);
   }
 
   @Get(':id/state')

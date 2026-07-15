@@ -12,6 +12,7 @@ import {
 import { User } from '../../users/entities/user.entity';
 import {
   StudyCompletionOutcome,
+  StudySessionMode,
   StudySessionStatus,
   StudyStartMode,
 } from '../study.constants';
@@ -41,6 +42,28 @@ export class StudySession {
 
   @Column({ type: 'varchar', length: 64 })
   subject: string;
+
+  @Column({ name: 'lesson_id', type: 'uuid', nullable: true })
+  lessonId: string | null;
+
+  @Column({ name: 'unit_id', type: 'varchar', nullable: true })
+  unitId: string | null;
+
+  @Column({ name: 'lesson_title', type: 'varchar', length: 200, nullable: true })
+  lessonTitle: string | null;
+
+  @Column({
+    type: 'varchar',
+    length: 24,
+    default: StudySessionMode.ReadTogether,
+  })
+  mode: StudySessionMode;
+
+  @Column({ name: 'content_step', type: 'int', default: 0 })
+  contentStep: number;
+
+  @Column({ name: 'step_count', type: 'int', default: 0 })
+  stepCount: number;
 
   @Column({ name: 'duration_minutes', type: 'int' })
   durationMinutes: number;
