@@ -12,7 +12,6 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/course ./course
 # Vite admin dashboard CSS/JS (served at /admin-assets)
 COPY --from=builder /app/public ./public
 EXPOSE 9000
