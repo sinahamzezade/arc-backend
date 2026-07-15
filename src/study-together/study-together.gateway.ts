@@ -16,8 +16,23 @@ import type { AccessTokenPayload } from '../auth/services/token.service';
 import { UsersService } from '../users/users.service';
 import { StudyTogetherService } from './study-together.service';
 
+/**
+ * Study realtime gateway.
+ *
+ * - Polling + WebSocket both enabled so it works behind proxies/LBs that block
+ *   the WS upgrade (client connects via polling, then upgrades when possible).
+ * - `path` overridable via WS_PATH when Nest sits behind a reverse-proxy subpath
+ *   (must match the client NEXT_PUBLIC_WS_PATH). Default `/socket.io`.
+ * - CORS reflects request origin (credentials-safe) — HTTP CORS is enforced
+ *   separately in main.ts via CORS_ORIGIN.
+ *
+ * NOTE: If you scale Nest to >1 replica, polling requires sticky sessions
+ * (or a @socket.io/redis-adapter) since Redis is already available.
+ */
 @WebSocketGateway({
   namespace: '/study',
+  path: process.env.WS_PATH || '/socket.io',
+  transports: ['polling', 'websocket'],
   cors: {
     origin: true,
     credentials: true,

@@ -84,21 +84,8 @@ export class RanksService implements OnModuleInit {
       const existing = await this.definitionsRepo.findOne({
         where: { level: seed.level },
       });
-      if (existing) {
-        existing.slug = seed.slug;
-        existing.title = seed.title;
-        existing.xpThreshold = seed.xpThreshold;
-        existing.minimumActiveDays = seed.minimumActiveDays;
-        existing.gateRules = seed.gateRules;
-        existing.rewardConfig = seed.rewardConfig;
-        if (!existing.iconAssetKey?.trim()) {
-          existing.iconAssetKey = seed.iconAssetKey;
-        }
-        existing.displayOrder = seed.level;
-        existing.isActive = true;
-        await this.definitionsRepo.save(existing);
-        continue;
-      }
+      // Insert-only — never overwrite admin edits on restart.
+      if (existing) continue;
       await this.definitionsRepo.save(
         this.definitionsRepo.create({
           level: seed.level,
