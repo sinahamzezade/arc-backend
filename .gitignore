@@ -52,10 +52,16 @@ pids
 *.seed
 *.pid.lock
 
+
+# runtime uploads
+/public/uploads/
+
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
-# Uploaded badge icons (keep folder)
+# Uploaded icons (keep folders, ignore runtime uploads)
 /public/uploads/badges/*
 !/public/uploads/badges/.gitkeep
+/public/uploads/ranks/*
+!/public/uploads/ranks/.gitkeep
 course/.transformed-outlines.sample.json
