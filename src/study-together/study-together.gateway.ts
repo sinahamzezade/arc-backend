@@ -166,7 +166,7 @@ export class StudyTogetherGateway
       body.sessionId,
       body.body,
     );
-    this.server.to(this.roomName(body.sessionId)).emit('chat:message', msg);
+    this.broadcastChat(body.sessionId, msg);
     return msg;
   }
 
@@ -178,14 +178,17 @@ export class StudyTogetherGateway
     const userId = client.data.userId as string | undefined;
     if (!userId || !body?.sessionId) return { ok: true };
     await this.study.setTyping(userId, body.sessionId);
-    client
-      .to(this.roomName(body.sessionId))
-      .emit('partner_typing', { userId });
+    client.to(this.roomName(body.sessionId)).emit('partner_typing', { userId });
     return { ok: true };
   }
 
   broadcastState(sessionId: string, state: unknown) {
     this.server.to(this.roomName(sessionId)).emit('state', state);
+  }
+
+  /** Push chat to everyone in the room (WS send + REST fallback). */
+  broadcastChat(sessionId: string, msg: unknown) {
+    this.server.to(this.roomName(sessionId)).emit('chat:message', msg);
   }
 
   private roomName(sessionId: string) {

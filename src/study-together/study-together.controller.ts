@@ -8,11 +8,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
   CurrentUser,
@@ -28,6 +24,7 @@ import {
   StudyMessagesQueryDto,
   StudyTaskDto,
 } from './dto/study-together.dto';
+import { StudyTogetherGateway } from './study-together.gateway';
 import { StudyTogetherService } from './study-together.service';
 
 @ApiTags('study-together')
@@ -35,7 +32,10 @@ import { StudyTogetherService } from './study-together.service';
 @UseGuards(JwtAuthGuard)
 @Controller('study-together')
 export class StudyTogetherController {
-  constructor(private readonly study: StudyTogetherService) {}
+  constructor(
+    private readonly study: StudyTogetherService,
+    private readonly gateway: StudyTogetherGateway,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Create Study Together invite' })
@@ -150,22 +150,19 @@ export class StudyTogetherController {
     @Param('id', ParseUUIDPipe) id: string,
     @Query() query: StudyMessagesQueryDto,
   ) {
-    return this.study.listMessages(
-      user.userId,
-      id,
-      query.cursor,
-      query.limit,
-    );
+    return this.study.listMessages(user.userId, id, query.cursor, query.limit);
   }
 
   @Post(':id/messages')
   @ApiOperation({ summary: 'Send chat message (REST fallback)' })
-  sendMessage(
+  async sendMessage(
     @CurrentUser() user: AuthUserPayload,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: StudyChatSendDto,
   ) {
-    return this.study.sendChatMessage(user.userId, id, dto.body);
+    const msg = await this.study.sendChatMessage(user.userId, id, dto.body);
+    this.gateway.broadcastChat(id, msg);
+    return msg;
   }
 
   @Get(':id/state')
