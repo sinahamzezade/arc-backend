@@ -5,10 +5,9 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'crypto';
-import { mkdir, unlink, writeFile } from 'fs/promises';
-import { join } from 'path';
 import { Repository } from 'typeorm';
 import { RankDefinition } from '../ranks/entities/rank-definition.entity';
+import { UploadsService } from '../uploads/uploads.service';
 
 const ALLOWED_MIME: Record<string, string> = {
   'image/png': '.png',
@@ -22,16 +21,10 @@ const MAX_BYTES = 2 * 1024 * 1024;
 
 @Injectable()
 export class AdminRankIconService {
-  private readonly uploadDir = join(
-    process.cwd(),
-    'public',
-    'uploads',
-    'ranks',
-  );
-
   constructor(
     @InjectRepository(RankDefinition)
     private readonly ranks: Repository<RankDefinition>,
+    private readonly uploads: UploadsService,
   ) {}
 
   /** Public URL path stored in iconAssetKey for uploaded files. */
@@ -59,18 +52,14 @@ export class AdminRankIconService {
     const rank = await this.ranks.findOne({ where: { id: rankId } });
     if (!rank) throw new NotFoundException('Rank not found');
 
-    await mkdir(this.uploadDir, { recursive: true });
-
     const safeSlug = rank.slug.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
     const hash = createHash('sha1')
       .update(randomBytes(8))
       .digest('hex')
       .slice(0, 10);
-    const filename = `${safeSlug}-${hash}${ext}`;
-    const absPath = join(this.uploadDir, filename);
-    const publicPath = `/uploads/ranks/${filename}`;
+    const publicPath = `/uploads/ranks/${safeSlug}-${hash}${ext}`;
 
-    await writeFile(absPath, file.buffer);
+    await this.uploads.put(publicPath, file.mimetype, file.buffer);
 
     const previous = rank.iconAssetKey;
     rank.iconAssetKey = publicPath;
@@ -81,7 +70,7 @@ export class AdminRankIconService {
       AdminRankIconService.isUploadPath(previous) &&
       previous !== publicPath
     ) {
-      await this.tryDeleteUpload(previous);
+      await this.uploads.remove(previous);
     }
 
     return rank;
@@ -94,18 +83,8 @@ export class AdminRankIconService {
     rank.iconAssetKey = null;
     await this.ranks.save(rank);
     if (previous && AdminRankIconService.isUploadPath(previous)) {
-      await this.tryDeleteUpload(previous);
+      await this.uploads.remove(previous);
     }
     return rank;
-  }
-
-  private async tryDeleteUpload(publicPath: string) {
-    const name = publicPath.replace(/^\/uploads\/ranks\//, '');
-    if (!name || name.includes('..') || name.includes('/')) return;
-    try {
-      await unlink(join(this.uploadDir, name));
-    } catch {
-      /* ignore missing file */
-    }
   }
 }

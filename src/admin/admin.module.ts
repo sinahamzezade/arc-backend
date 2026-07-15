@@ -42,6 +42,7 @@ import { AdminSessionGuard } from './guards/admin-session.guard';
 import { SkillGraphModule } from '../skill-graph/skill-graph.module';
 import { SystemFlagsModule } from '../system-flags/system-flags.module';
 import { GamificationModule } from '../gamification/gamification.module';
+import { UploadsModule } from '../uploads/uploads.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { GamificationModule } from '../gamification/gamification.module';
     SkillGraphModule,
     SystemFlagsModule,
     GamificationModule,
+    UploadsModule,
     TypeOrmModule.forFeature([
       Profile,
       User,

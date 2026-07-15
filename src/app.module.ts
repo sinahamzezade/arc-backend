@@ -28,6 +28,7 @@ import { CourseTimingModule } from './course-timing/course-timing.module';
 import { LuckyWheelModule } from './lucky-wheel/lucky-wheel.module';
 import { RanksModule } from './ranks/ranks.module';
 import { StudyTogetherModule } from './study-together/study-together.module';
+import { UploadsModule } from './uploads/uploads.module';
 import { BadgesModule } from './badges/badges.module';
 import { QuestsModule } from './quests/quests.module';
 import { SystemFlagsModule } from './system-flags/system-flags.module';
@@ -70,6 +71,7 @@ import { SystemFlagsModule } from './system-flags/system-flags.module';
     LuckyWheelModule,
     RanksModule,
     StudyTogetherModule,
+    UploadsModule,
     BadgesModule,
     QuestsModule,
   ],
