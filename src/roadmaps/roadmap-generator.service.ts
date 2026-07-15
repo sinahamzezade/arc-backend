@@ -7,11 +7,13 @@ import { AuthErrorCode } from '../common/errors/auth-error.codes';
 import { ContentQueryService } from '../content-pool/content-query.service';
 import { TimingService } from '../course-timing/timing.service';
 import { Goal } from '../goals/entities/goal.entity';
+import { LearnerProfileSnapshot } from '../questionnaire/entities/learner-profile-snapshot.entity';
 import { Roadmap } from './entities/roadmap.entity';
 import { RoadmapAnalyticsService } from './roadmap-analytics.service';
 import { RoadmapEngineClient } from './roadmap-engine.client';
 import { RoadmapLegacyAssembler } from './roadmap-legacy.assembler';
 import { RoadmapLlmPlannerService } from './roadmap-llm-planner.service';
+import { RoadmapPipelineService } from './roadmap-pipeline.service';
 import { RoadmapPersistenceService } from './roadmap-persistence.service';
 import { RoadmapSnapshotService } from './roadmap-snapshot.service';
 import { RoadmapAiService } from './roadmap-ai.service';
@@ -35,6 +37,8 @@ export class RoadmapGeneratorService {
     private readonly config: ConfigService,
     @InjectRepository(Goal)
     private readonly goalsRepo: Repository<Goal>,
+    @InjectRepository(LearnerProfileSnapshot)
+    private readonly learnerProfilesRepo: Repository<LearnerProfileSnapshot>,
     private readonly snapshot: RoadmapSnapshotService,
     private readonly engine: RoadmapEngineClient,
     private readonly persistence: RoadmapPersistenceService,
@@ -44,10 +48,13 @@ export class RoadmapGeneratorService {
     private readonly legacy: RoadmapLegacyAssembler,
     private readonly roadmapAi: RoadmapAiService,
     private readonly llmPlanner: RoadmapLlmPlannerService,
+    private readonly pipeline: RoadmapPipelineService,
     private readonly systemFlags: SystemFlagsService,
   ) {}
 
-  private async resolveMode(userId?: string | null): Promise<RoadmapEngineMode> {
+  private async resolveMode(
+    userId?: string | null,
+  ): Promise<RoadmapEngineMode> {
     const configured = (
       await this.systemFlags.getString(
         SystemFlagKey.ROADMAP_ENGINE_MODE,
@@ -63,10 +70,14 @@ export class RoadmapGeneratorService {
     return 'llm';
   }
 
-  async assemble(goalId: string, userId: string): Promise<Roadmap> {
+  async assemble(
+    goalId: string,
+    userId: string,
+    learnerProfileId?: string | null,
+  ): Promise<Roadmap> {
     const mode = await this.resolveMode(userId);
     this.logger.log(
-      `[roadmap-gen] assemble start goal=${goalId} user=${userId} engineMode=${mode}`,
+      `[roadmap-gen] assemble start goal=${goalId} user=${userId} engineMode=${mode} profile=${learnerProfileId ?? 'none'}`,
     );
     if (mode === 'legacy') {
       this.logger.log(
@@ -81,14 +92,37 @@ export class RoadmapGeneratorService {
       return this.assembleViaEngine(goalId, userId);
     }
     this.logger.log(
-      `[roadmap-gen] path=llm (LLM planner owns phase/lesson picks)`,
+      `[roadmap-gen] path=llm (deterministic units pipeline + narrator)`,
     );
-    return this.assembleViaLlm(goalId, userId);
+    return this.assembleViaPipeline(goalId, userId, learnerProfileId);
   }
 
-  private async assembleViaLlm(
+  /** Pinned learner profile for stage-aware generation (null when unset/missing). */
+  private async loadLearnerProfile(
+    learnerProfileId: string | null | undefined,
+    userId: string,
+  ): Promise<LearnerProfileSnapshot | null> {
+    if (!learnerProfileId) return null;
+    const profile = await this.learnerProfilesRepo.findOne({
+      where: { id: learnerProfileId, userId },
+      relations: { skillEstimates: true },
+    });
+    if (!profile) {
+      this.logger.warn(
+        `[roadmap-gen] learner profile ${learnerProfileId} not found for user ${userId} — falling back to goal-only profile`,
+      );
+    }
+    return profile;
+  }
+
+  /**
+   * Default path: deterministic units pipeline owns selection/order;
+   * the LLM narrator only groups + describes.
+   */
+  private async assembleViaPipeline(
     goalId: string,
     userId: string,
+    learnerProfileId?: string | null,
   ): Promise<Roadmap> {
     const goal = await this.goalsRepo.findOne({ where: { id: goalId } });
     if (!goal || goal.userId !== userId) {
@@ -101,72 +135,50 @@ export class RoadmapGeneratorService {
 
     const revision = this.snapshot.goalRevision(goal);
     const seed = this.snapshot.seedFor(userId, revision);
-    this.logger.log(
-      `[roadmap-gen] llm snapshot goal=${goalId} revision=${revision} seed=${seed}`,
+    const profileSnapshot = await this.loadLearnerProfile(
+      learnerProfileId,
+      userId,
     );
-
-    let contentSnapshot;
-    try {
-      contentSnapshot = await this.snapshot.buildSnapshot(goal);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(
-        `[roadmap-gen] llm snapshot failed goal=${goalId}: ${message}`,
-      );
-      this.analytics.roadmapGenerationFailed({
-        goalRevision: revision,
-        code: AuthErrorCode.ROADMAP_ROLE_NOT_FOUND,
-        stage: 'snapshot',
-      });
-      throw new AppException(
-        AuthErrorCode.CONTENT_ROLE_RECIPE_MISSING,
-        message,
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
+    const profile = this.snapshot.toProfile(goal, [], profileSnapshot);
     this.logger.log(
-      `[roadmap-gen] llm snapshot ok recipe=${contentSnapshot.recipe.title} lessons=${contentSnapshot.lessons.length}`,
+      `[roadmap-gen] pipeline start goal=${goalId} revision=${revision} seed=${seed} stageAware=${profileSnapshot ? 'yes' : 'no'}`,
     );
-
-    const profile = this.snapshot.toProfile(goal);
 
     let planResult;
     try {
-      this.logger.log(`[roadmap-gen] llm planner call start goal=${goalId}`);
-      planResult = await this.llmPlanner.plan({
-        goal,
-        profile,
-        snapshot: contentSnapshot,
-        seed,
-      });
+      planResult = await this.pipeline.plan({ goal, profile, seed });
     } catch (err) {
       this.logger.error(
-        `[roadmap-gen] llm planner hard-fail goal=${goalId}: ${err instanceof Error ? err.message : err}`,
+        `[roadmap-gen] pipeline hard-fail goal=${goalId}: ${err instanceof Error ? err.message : err}`,
       );
       this.analytics.roadmapGenerationFailed({
         goalRevision: revision,
-        code: AuthErrorCode.ROADMAP_GENERATION_FAILED,
-        stage: 'llm_plan',
+        code:
+          err instanceof AppException
+            ? err.code
+            : AuthErrorCode.ROADMAP_GENERATION_FAILED,
+        stage: 'pipeline_plan',
       });
+      if (err instanceof AppException) throw err;
       throw new AppException(
         AuthErrorCode.ROADMAP_GENERATION_FAILED,
-        err instanceof Error ? err.message : 'LLM roadmap plan failed',
+        err instanceof Error ? err.message : 'Roadmap pipeline failed',
         HttpStatus.BAD_GATEWAY,
       );
     }
 
     this.logger.log(
-      `[roadmap-gen] llm planner done model=${planResult.model} prompt=${planResult.promptVersion} fallback=${planResult.usedFallback} weeks=${planResult.plan.estimated_weeks} phases=${planResult.plan.phases.length}`,
+      `[roadmap-gen] pipeline done model=${planResult.model} prompt=${planResult.promptVersion} repaired=${planResult.usedFallback} weeks=${planResult.plan.estimated_weeks} phases=${planResult.plan.phases.length}`,
     );
 
     const roadmap = await this.persistence.persistPlan(goal, planResult.plan, {
       schemaVersion: 2,
       goalRevision: revision,
-      mode: 'llm',
+      mode: 'pipeline',
+      learnerProfileId: profileSnapshot?.id ?? null,
       aiEnrich: true,
       aiModel: planResult.model,
-      aiMode: 'planner',
+      aiMode: 'narrator',
       aiPromptVersion: planResult.promptVersion,
       aiUsedFallback: planResult.usedFallback,
     });

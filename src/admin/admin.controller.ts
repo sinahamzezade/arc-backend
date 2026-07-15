@@ -33,7 +33,6 @@ import {
   type QuestConditionJson,
   type QuestRewardJson,
 } from '../quests/quest.constants';
-import { ContentPublicationStatus } from '../content-pool/content-pool.constants';
 import { RewardCurrency } from '../gamification/entities/reward-ledger-entry.entity';
 import { StoreItemType } from '../gamification/entities/store-item.entity';
 import { WheelCampaignStatus } from '../lucky-wheel/entities/wheel.enums';
@@ -47,7 +46,6 @@ import { AdminCatalogService } from './admin-catalog.service';
 import { AdminQuestionnaireService } from './admin-questionnaire.service';
 import { AdminRolesService } from './admin-roles.service';
 import { AdminRoadmapEngineService } from './admin-roadmap-engine.service';
-import { AdminSkillGraphService } from './admin-skill-graph.service';
 import { AdminUserResetService } from './admin-user-reset.service';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { AdminSessionGuard } from './guards/admin-session.guard';
@@ -59,6 +57,10 @@ import { SystemFlagsService } from '../system-flags/system-flags.service';
 import { SystemFlagKey } from '../system-flags/system-flag.keys';
 import { RewardLedgerService } from '../gamification/reward-ledger.service';
 import { LlmUsageService } from '../common/llm/llm-usage.service';
+import { UnitsCatalogService } from '../content-pool/units-catalog.service';
+import { isUnitsJsonDocument } from '../content-pool/units-json.types';
+import { UnitsGraphError } from '../content-pool/units-graph.util';
+import { EXAMPLE_UNITS_DOCUMENT } from '../content-pool/units-example';
 
 function checked(v: unknown): boolean {
   return v === '1' || v === 'on' || v === true || v === 'true';
@@ -68,6 +70,13 @@ function checked(v: unknown): boolean {
  * Express already URL-decodes query values. Calling decodeURIComponent again
  * throws URIError when the value contains a literal `%` (e.g. "50% done").
  */
+function csvList(v: unknown): string[] {
+  return String(v ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 function flashQuery(v: string | undefined | null): string | null {
   if (v == null || v === '') return null;
   return v;
@@ -100,6 +109,17 @@ function selectOpts(
     selected: value === current,
   }));
 }
+
+const QUESTIONNAIRE_UI_KINDS = [
+  'options',
+  'schedule',
+  'track-select',
+  'skill-evidence',
+  'capacity',
+  'outcome',
+  'context',
+  'confidence-barriers',
+];
 
 function fmtDate(value: Date | null | undefined): string | null {
   if (!value) return null;
@@ -268,13 +288,13 @@ export class AdminController {
     private readonly rankIcons: AdminRankIconService,
     private readonly rolesAdmin: AdminRolesService,
     private readonly questionnaireAdmin: AdminQuestionnaireService,
-    private readonly skillGraphAdmin: AdminSkillGraphService,
     private readonly userReset: AdminUserResetService,
     private readonly roadmapsService: RoadmapsService,
     private readonly authService: AuthService,
     private readonly systemFlags: SystemFlagsService,
     private readonly rewardLedger: RewardLedgerService,
     private readonly llmUsage: LlmUsageService,
+    private readonly unitsCatalog: UnitsCatalogService,
   ) {}
 
   @Get()
@@ -1405,142 +1425,378 @@ export class AdminController {
     }
   }
 
-  @Get('courses')
+  @Get('units')
   @UseGuards(AdminSessionGuard)
-  @Render('courses')
-  async courses(
+  @Render('units')
+  async unitsPage(
     @Req() req: AdminRequest,
     @Query('ok') ok?: string,
     @Query('err') err?: string,
+    @Query('msg') msg?: string,
   ) {
-    const rows = await this.catalog.listCourses();
+    const units = await this.unitsCatalog.listActiveUnits();
+    const skills = await this.unitsCatalog.listActiveSkills();
     return {
-      title: 'Courses',
+      title: 'Units',
       email: req.session.adminEmail ?? '',
-      navCourses: true,
-      rows,
-      hasRows: rows.length > 0,
-      count: rows.length,
-      countSingular: rows.length === 1,
-      flashOk: ok === 'created' ? 'Course created.' : null,
+      navUnits: true,
+      units,
+      skills: skills.map((s) => ({
+        ...s,
+        prerequisitesLabel: (s.prerequisites ?? []).join(', ') || '—',
+      })),
+      unitCount: units.length,
+      unitCountSingular: units.length === 1,
+      skillCount: skills.length,
+      skillCountSingular: skills.length === 1,
+      flashOk:
+        ok === 'imported'
+          ? msg
+            ? `Imported: ${msg}`
+            : 'Units package imported.'
+          : ok === 'removed'
+            ? msg
+              ? `Removed unit: ${msg}`
+              : 'Unit removed.'
+            : ok === 'bulk-removed'
+              ? `Removed ${msg ?? '0'} unit${msg === '1' ? '' : 's'}.`
+              : null,
       flashErr: flashQuery(err),
+      samplePayload: '',
     };
   }
 
-  @Post('courses')
+  @Post('units/import')
   @UseGuards(AdminSessionGuard)
-  async courseCreate(
+  async unitsImport(
     @Body() body: Record<string, string>,
-    @Req() req: AdminRequest,
     @Res() res: Response,
   ) {
     try {
-      const slug = String(body.slug ?? '').trim();
-      const title = String(body.title ?? '').trim();
-      if (!slug || !title) {
+      const raw = String(body.payload ?? '').trim();
+      const parsed = JSON.parse(raw) as unknown;
+      if (!isUnitsJsonDocument(parsed)) {
         return res.redirect(
-          `/admin/courses?err=${encodeURIComponent('Slug and title required')}`,
+          `/admin/units?tab=import&err=${encodeURIComponent('Invalid JSON: need skills_index + units')}`,
         );
       }
-      const row = await this.catalog.createCourse({
-        slug,
-        title,
-        learningOutcome: String(body.learningOutcome ?? ''),
-        actorId: req.session.adminUserId,
+      const result = await this.unitsCatalog.importDocument(parsed, {
+        deactivateMissing: checked(body.deactivateMissing),
       });
-      return res.redirect(`/admin/courses/${row.id}?ok=created`);
+      return res.redirect(
+        `/admin/units?ok=imported&msg=${encodeURIComponent(`${result.skills} skills, ${result.units} units`)}`,
+      );
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Create failed';
-      return res.redirect(`/admin/courses?err=${encodeURIComponent(msg)}`);
+      const msg =
+        e instanceof UnitsGraphError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : 'Import failed';
+      return res.redirect(
+        `/admin/units?tab=import&err=${encodeURIComponent(msg)}`,
+      );
     }
+  }
+
+  @Post('units/bulk-remove')
+  @UseGuards(AdminSessionGuard)
+  async unitsBulkRemove(
+    @Body() body: Record<string, string | string[]>,
+    @Res() res: Response,
+  ) {
+    const raw = body.ids;
+    const ids = (Array.isArray(raw) ? raw : raw ? [raw] : []).map(String);
+    if (!ids.length) {
+      return res.redirect(
+        `/admin/units?err=${encodeURIComponent('Select at least one unit to delete')}`,
+      );
+    }
+    try {
+      const removed = await this.unitsCatalog.removeUnits(ids);
+      return res.redirect(`/admin/units?ok=bulk-removed&msg=${removed}`);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Bulk delete failed';
+      return res.redirect(`/admin/units?err=${encodeURIComponent(message)}`);
+    }
+  }
+
+  @Get('units/example.json')
+  @UseGuards(AdminSessionGuard)
+  unitsExampleDownload(@Res() res: Response) {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="units-example.json"',
+    );
+    return res.send(JSON.stringify(EXAMPLE_UNITS_DOCUMENT, null, 2));
+  }
+
+  @Get('units/export.json')
+  @UseGuards(AdminSessionGuard)
+  async unitsExportDownload(@Res() res: Response) {
+    const doc = await this.unitsCatalog.exportDocument();
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="units-export.json"',
+    );
+    return res.send(JSON.stringify(doc, null, 2));
+  }
+
+  @Get('units/skills/:id')
+  @UseGuards(AdminSessionGuard)
+  async unitsSkillDetail(
+    @Param('id') id: string,
+    @Req() req: AdminRequest,
+    @Res() res: Response,
+    @Query('ok') ok?: string,
+    @Query('err') err?: string,
+  ) {
+    const skill = await this.unitsCatalog.getSkillById(id);
+    if (!skill) {
+      return res.redirect(
+        `/admin/units?tab=skills&err=${encodeURIComponent(`Skill "${id}" not found`)}`,
+      );
+    }
+    const allSkills = await this.unitsCatalog.listActiveSkills();
+    const taughtBy = await this.unitsCatalog.listUnitsForSkill(id);
+    const flashMap: Record<string, string> = {
+      '1': 'Skill saved.',
+      activated: 'Skill activated.',
+      deactivated: 'Skill deactivated.',
+    };
+    return res.render('units-skill-detail', {
+      title: skill.title,
+      email: req.session.adminEmail ?? '',
+      navUnits: true,
+      skill: {
+        ...skill,
+        prerequisitesCsv: (skill.prerequisites ?? []).join(', '),
+      },
+      otherSkills: allSkills.filter((s) => s.id !== id),
+      taughtBy,
+      hasTaughtBy: taughtBy.length > 0,
+      flashOk: ok ? (flashMap[ok] ?? null) : null,
+      flashErr: flashQuery(err),
+    });
+  }
+
+  @Post('units/skills/:id')
+  @UseGuards(AdminSessionGuard)
+  async unitsSkillSave(
+    @Param('id') id: string,
+    @Body() body: Record<string, string>,
+    @Res() res: Response,
+  ) {
+    try {
+      await this.unitsCatalog.upsertSkill({
+        id,
+        title: String(body.title ?? '').trim() || id,
+        prerequisites: csvList(body.prerequisites),
+        level: num(body.level, 1),
+      });
+      if (!checked(body.isActive)) {
+        await this.unitsCatalog.setSkillActive(id, false);
+      }
+      return res.redirect(`/admin/units/skills/${id}?ok=1`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Save failed';
+      return res.redirect(
+        `/admin/units/skills/${id}?err=${encodeURIComponent(msg)}`,
+      );
+    }
+  }
+
+  @Post('units/skills/:id/active')
+  @UseGuards(AdminSessionGuard)
+  async unitsSkillToggleActive(
+    @Param('id') id: string,
+    @Body() body: Record<string, string>,
+    @Res() res: Response,
+  ) {
+    const active = checked(body.active);
+    await this.unitsCatalog.setSkillActive(id, active);
+    return res.redirect(
+      `/admin/units/skills/${id}?ok=${active ? 'activated' : 'deactivated'}`,
+    );
+  }
+
+  @Get('units/:id')
+  @UseGuards(AdminSessionGuard)
+  async unitDetail(
+    @Param('id') id: string,
+    @Req() req: AdminRequest,
+    @Res() res: Response,
+    @Query('ok') ok?: string,
+    @Query('err') err?: string,
+  ) {
+    const unit = await this.unitsCatalog.getUnitById(id);
+    if (!unit) {
+      return res.redirect(
+        `/admin/units?err=${encodeURIComponent(`Unit "${id}" not found`)}`,
+      );
+    }
+    const skills = await this.unitsCatalog.listActiveSkills();
+    const flashMap: Record<string, string> = {
+      '1': 'Unit saved.',
+      activated: 'Unit activated.',
+      deactivated: 'Unit deactivated.',
+    };
+    return res.render('unit-detail', {
+      title: unit.title,
+      email: req.session.adminEmail ?? '',
+      navUnits: true,
+      unit: {
+        ...unit,
+        skillsTaughtCsv: (unit.skillsTaught ?? []).join(', '),
+        prerequisitesCsv: (unit.prerequisites ?? []).join(', '),
+        formatsCsv: (unit.formats ?? []).join(', '),
+        servesStageCsv: (unit.servesStage ?? []).join(', '),
+        contentJson: JSON.stringify(unit.content ?? {}, null, 2),
+      },
+      skills,
+      lessonTypes: [
+        'reading',
+        'video',
+        'practice',
+        'interactive',
+        'mini_project',
+        'quiz',
+      ].map((t) => ({ value: t, selected: t === unit.lessonType })),
+      unitRoles: [
+        'foundation',
+        'refresher',
+        'checkpoint',
+        'project',
+        'proof',
+      ].map((r) => ({
+        value: r,
+        selected: r === (unit.unitRole ?? 'foundation'),
+      })),
+      flashOk: ok ? (flashMap[ok] ?? null) : null,
+      flashErr: flashQuery(err),
+    });
+  }
+
+  @Post('units/:id')
+  @UseGuards(AdminSessionGuard)
+  async unitSave(
+    @Param('id') id: string,
+    @Body() body: Record<string, string>,
+    @Res() res: Response,
+  ) {
+    try {
+      let content: Record<string, unknown>;
+      try {
+        content = JSON.parse(String(body.content ?? '{}')) as Record<
+          string,
+          unknown
+        >;
+      } catch {
+        return res.redirect(
+          `/admin/units/${id}?err=${encodeURIComponent('Content is not valid JSON')}`,
+        );
+      }
+      const existing = await this.unitsCatalog.getUnitById(id);
+      const servesStage = csvList(body.servesStage)
+        .map((s) => Number(s))
+        .filter((n) => Number.isInteger(n) && n >= 1);
+      await this.unitsCatalog.upsertUnit({
+        id,
+        title: String(body.title ?? '').trim() || id,
+        skills_taught: csvList(body.skillsTaught),
+        prerequisites: csvList(body.prerequisites),
+        level: num(body.level, 1),
+        estimated_minutes: num(body.estimatedMinutes, 20),
+        formats: csvList(body.formats),
+        lesson_type: String(body.lessonType ?? 'reading'),
+        domain: String(body.domain ?? 'frontend').trim() || 'frontend',
+        stack: String(body.stack ?? '').trim(),
+        provider: String(body.provider ?? '').trim() || null,
+        url: String(body.url ?? '').trim() || null,
+        xp: num(body.xp, 20),
+        content,
+        serves_stage: servesStage.length ? servesStage : [num(body.level, 1)],
+        unit_role: String(body.unitRole ?? 'foundation').trim() || 'foundation',
+        profile_skill_slug: String(body.profileSkillSlug ?? '').trim() || null,
+        source_template_id: existing?.sourceTemplateId ?? null,
+        source_version_id: existing?.sourceVersionId ?? null,
+      });
+      if (!checked(body.isActive)) {
+        await this.unitsCatalog.setUnitActive(id, false);
+      }
+      return res.redirect(`/admin/units/${id}?ok=1`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Save failed';
+      return res.redirect(`/admin/units/${id}?err=${encodeURIComponent(msg)}`);
+    }
+  }
+
+  @Post('units/:id/active')
+  @UseGuards(AdminSessionGuard)
+  async unitToggleActive(
+    @Param('id') id: string,
+    @Body() body: Record<string, string>,
+    @Res() res: Response,
+  ) {
+    const active = checked(body.active);
+    await this.unitsCatalog.setUnitActive(id, active);
+    return res.redirect(
+      `/admin/units/${id}?ok=${active ? 'activated' : 'deactivated'}`,
+    );
+  }
+
+  @Post('units/:id/remove')
+  @UseGuards(AdminSessionGuard)
+  async unitRemove(@Param('id') id: string, @Res() res: Response) {
+    try {
+      const removed = await this.unitsCatalog.removeUnit(id);
+      if (!removed) {
+        return res.redirect(
+          `/admin/units?err=${encodeURIComponent(`Unit "${id}" not found`)}`,
+        );
+      }
+      return res.redirect(
+        `/admin/units?ok=removed&msg=${encodeURIComponent(id)}`,
+      );
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Remove failed';
+      return res.redirect(
+        `/admin/units/${id}?err=${encodeURIComponent(message)}`,
+      );
+    }
+  }
+
+  @Get('courses')
+  @UseGuards(AdminSessionGuard)
+  coursesRedirect(@Res() res: Response) {
+    return res.redirect('/admin/units');
   }
 
   @Get('courses/:id')
   @UseGuards(AdminSessionGuard)
-  async courseDetail(
-    @Param('id') id: string,
-    @Req() req: AdminRequest,
-    @Res() res: Response,
-    @Query('ok') ok?: string,
-    @Query('err') err?: string,
-  ) {
-    try {
-      const { course, modules } = await this.catalog.getCourse(id);
-      const flashMap: Record<string, string> = {
-        '1': 'Course saved.',
-        created: 'Course created.',
-        module: 'Module created.',
-      };
-      return res.render('course-detail', {
-        title: course.title,
-        email: req.session.adminEmail ?? '',
-        navCourses: true,
-        course,
-        modules: modules.map((m) => ({
-          ...m,
-          lessonCount: m.lessonTemplateIds?.length ?? 0,
-        })),
-        hasModules: modules.length > 0,
-        flashOk: ok ? (flashMap[ok] ?? null) : null,
-        flashErr: flashQuery(err),
-      });
-    } catch {
-      return res.redirect('/admin/courses');
-    }
+  courseDetailRedirect(@Res() res: Response) {
+    return res.redirect('/admin/units');
+  }
+
+  /** @deprecated course templates superseded by flattened units */
+  @Post('courses')
+  @UseGuards(AdminSessionGuard)
+  courseCreateDeprecated(@Res() res: Response) {
+    return res.redirect('/admin/units');
   }
 
   @Post('courses/:id')
   @UseGuards(AdminSessionGuard)
-  async courseSave(
-    @Param('id') id: string,
-    @Body() body: Record<string, string>,
-    @Res() res: Response,
-  ) {
-    try {
-      await this.catalog.updateCourse(id, {
-        title: String(body.title ?? '').trim(),
-        learningOutcome: String(body.learningOutcome ?? ''),
-        status: String(body.status ?? 'draft') as ContentPublicationStatus,
-        isActive: checked(body.isActive),
-        isRequired: checked(body.isRequired),
-      });
-      return res.redirect(`/admin/courses/${id}?ok=1`);
-    } catch {
-      return res.redirect('/admin/courses');
-    }
+  courseSaveDeprecated(@Res() res: Response) {
+    return res.redirect('/admin/units');
   }
 
   @Post('courses/:id/modules')
   @UseGuards(AdminSessionGuard)
-  async moduleCreate(
-    @Param('id') id: string,
-    @Body() body: Record<string, string>,
-    @Req() req: AdminRequest,
-    @Res() res: Response,
-  ) {
-    try {
-      const slug = String(body.slug ?? '').trim();
-      const title = String(body.title ?? '').trim();
-      if (!slug || !title) {
-        return res.redirect(
-          `/admin/courses/${id}?err=${encodeURIComponent('Module slug and title required')}`,
-        );
-      }
-      await this.catalog.createModule({
-        courseTemplateId: id,
-        slug,
-        title,
-        orderHint: num(body.orderHint),
-        estimatedMinutes: num(body.estimatedMinutes),
-        actorId: req.session.adminUserId,
-      });
-      return res.redirect(`/admin/courses/${id}?ok=module`);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Module create failed';
-      return res.redirect(
-        `/admin/courses/${id}?err=${encodeURIComponent(msg)}`,
-      );
-    }
+  moduleCreateDeprecated(@Res() res: Response) {
+    return res.redirect('/admin/units');
   }
 
   @Get('datasets')
@@ -1860,6 +2116,7 @@ export class AdminController {
         hasSteps: steps.length > 0,
         stepCount: steps.length,
         stepCountSingular: steps.length === 1,
+        uiKinds: selectOpts(QUESTIONNAIRE_UI_KINDS, 'options'),
         flashOk: ok ? (flashMap[ok] ?? null) : null,
         flashErr: flashQuery(err),
       });
@@ -1874,8 +2131,11 @@ export class AdminController {
     try {
       await this.questionnaireAdmin.activate(id);
       return res.redirect(`/admin/questionnaire/${id}?ok=activated`);
-    } catch {
-      return res.redirect('/admin/questionnaire');
+    } catch (e) {
+      const msg = adminErrMessage(e, 'Activation failed');
+      return res.redirect(
+        `/admin/questionnaire/${id}?err=${encodeURIComponent(msg)}`,
+      );
     }
   }
 
@@ -1963,6 +2223,15 @@ export class AdminController {
           scheduleTimesJson: step.scheduleTimes
             ? JSON.stringify(step.scheduleTimes, null, 2)
             : '',
+          exposureOptionsJson: step.exposureOptions
+            ? JSON.stringify(step.exposureOptions, null, 2)
+            : '',
+          sessionOptionsJson: step.sessionOptions
+            ? JSON.stringify(step.sessionOptions, null, 2)
+            : '',
+          secondaryOptionsJson: step.secondaryOptions
+            ? JSON.stringify(step.secondaryOptions, null, 2)
+            : '',
           isSchedule: step.uiKind === 'schedule',
           isOptions: step.uiKind !== 'schedule',
           selectionSingle: step.selection === 'single',
@@ -1972,6 +2241,7 @@ export class AdminController {
         hasOptions: options.length > 0,
         icons: this.questionnaireAdmin.iconChoices(step.reviewIcon),
         optionIcons: this.questionnaireAdmin.iconChoices(),
+        uiKinds: selectOpts(QUESTIONNAIRE_UI_KINDS, step.uiKind),
         backHref: `/admin/questionnaire/${defId}`,
         flashOk: ok ? (flashMap[ok] ?? null) : null,
         flashErr: flashQuery(err),
@@ -2002,6 +2272,9 @@ export class AdminController {
         stepNumber: num(body.stepNumber),
         scheduleDays: body.scheduleDays,
         scheduleTimesJson: body.scheduleTimesJson,
+        exposureOptionsJson: body.exposureOptionsJson,
+        sessionOptionsJson: body.sessionOptionsJson,
+        secondaryOptionsJson: body.secondaryOptionsJson,
       });
       return res.redirect(
         `/admin/questionnaire/${defId}/steps/${stepId}?ok=saved`,
@@ -2089,6 +2362,9 @@ export class AdminController {
           value: opt.value,
           icon: opt.icon ?? '',
           sortOrder: opt.sortOrder,
+          profileSignalJson: opt.profileSignal
+            ? JSON.stringify(opt.profileSignal, null, 2)
+            : '',
         },
         icons: this.questionnaireAdmin.iconChoices(opt.icon),
         backHref: `/admin/questionnaire/${defId}/steps/${stepId}`,
@@ -2115,6 +2391,7 @@ export class AdminController {
         value: String(body.value ?? ''),
         icon: String(body.icon ?? ''),
         sortOrder: num(body.sortOrder),
+        profileSignalJson: body.profileSignalJson,
       });
       return res.redirect(
         `/admin/questionnaire/${defId}/steps/${stepId}/options/${optionId}?ok=saved`,
@@ -2316,373 +2593,89 @@ export class AdminController {
     });
   }
 
+  /** @deprecated skill-graph UI superseded by flattened units */
   @Get('skill-graph')
   @UseGuards(AdminSessionGuard)
-  @Render('skill-graph')
-  async skillGraphList(
-    @Req() req: AdminRequest,
-    @Query('ok') ok?: string,
-    @Query('err') err?: string,
-    @Query('msg') msg?: string,
-  ) {
-    const rows = await this.skillGraphAdmin.listStacks();
-    const flashMap: Record<string, string> = {
-      created: 'Stack created.',
-      deleted: 'Stack deleted.',
-      imported: msg ? (flashQuery(msg) ?? msg) : 'Catalog JSON imported.',
-    };
-    return {
-      title: 'Skill graph',
-      email: req.session.adminEmail ?? '',
-      navSkillGraph: true,
-      rows,
-      hasRows: rows.length > 0,
-      count: rows.length,
-      countSingular: rows.length === 1,
-      flashOk: ok ? (flashMap[ok] ?? null) : null,
-      flashErr: flashQuery(err),
-    };
-  }
-
-  @Post('skill-graph/import')
-  @UseGuards(AdminSessionGuard)
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: memoryStorage(),
-      limits: { fileSize: 15 * 1024 * 1024 },
-    }),
-  )
-  async skillGraphImport(
-    @UploadedFile()
-    file:
-      { buffer: Buffer; originalname?: string; mimetype?: string } | undefined,
-    @Body() body: Record<string, string>,
-    @Res() res: Response,
-  ) {
-    try {
-      if (!file?.buffer?.length) {
-        throw new BadRequestException('Choose a .json catalog file');
-      }
-      const name = String(file.originalname ?? '').toLowerCase();
-      if (name && !name.endsWith('.json')) {
-        throw new BadRequestException('File must be .json');
-      }
-      const stats = await this.skillGraphAdmin.importCatalogJson(file.buffer, {
-        overwrite: checked(body.overwrite),
-      });
-      const summary = [
-        `+${stats.stacksAdded}/~${stats.stacksUpdated} stacks`,
-        `+${stats.skillsAdded}/~${stats.skillsUpdated} skills`,
-        `+${stats.lessonsAdded}/~${stats.lessonsUpdated} lessons`,
-        `+${stats.recipesAdded}/~${stats.recipesUpdated} recipes`,
-      ].join(', ');
-      return res.redirect(
-        `/admin/skill-graph?tab=import&ok=imported&msg=${encodeURIComponent(`Imported: ${summary}`)}`,
-      );
-    } catch (e) {
-      const msg =
-        e instanceof BadRequestException
-          ? String(
-              (e.getResponse() as { message?: string | string[] }).message ??
-                e.message,
-            )
-          : e instanceof Error
-            ? e.message
-            : 'Import failed';
-      return res.redirect(
-        `/admin/skill-graph?tab=import&err=${encodeURIComponent(Array.isArray(msg) ? msg.join(', ') : msg)}`,
-      );
-    }
-  }
-
-  @Post('skill-graph/stacks')
-  @UseGuards(AdminSessionGuard)
-  async skillGraphStackCreate(
-    @Body() body: Record<string, string>,
-    @Res() res: Response,
-  ) {
-    try {
-      const row = await this.skillGraphAdmin.createStack({
-        slug: String(body.slug ?? ''),
-        name: String(body.name ?? ''),
-        category: String(body.category ?? ''),
-        description: String(body.description ?? ''),
-      });
-      return res.redirect(`/admin/skill-graph/stacks/${row.id}?ok=created`);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Create failed';
-      return res.redirect(
-        `/admin/skill-graph?tab=create&err=${encodeURIComponent(msg)}`,
-      );
-    }
+  skillGraphRedirect(@Res() res: Response) {
+    return res.redirect('/admin/units');
   }
 
   @Get('skill-graph/stacks/:id')
   @UseGuards(AdminSessionGuard)
-  async skillGraphStackDetail(
-    @Param('id') id: string,
-    @Req() req: AdminRequest,
-    @Res() res: Response,
-    @Query('ok') ok?: string,
-    @Query('err') err?: string,
-  ) {
-    try {
-      const { stack, skills } = await this.skillGraphAdmin.getStack(id);
-      const flashMap: Record<string, string> = {
-        '1': 'Stack saved.',
-        created: 'Stack created.',
-        skill: 'Skill created.',
-        'skill-deleted': 'Skill deleted.',
-      };
-      return res.render('skill-graph-stack', {
-        title: stack.name,
-        email: req.session.adminEmail ?? '',
-        navSkillGraph: true,
-        stack,
-        skills,
-        hasSkills: skills.length > 0,
-        flashOk: ok ? (flashMap[ok] ?? null) : null,
-        flashErr: flashQuery(err),
-      });
-    } catch {
-      return res.redirect('/admin/skill-graph');
-    }
-  }
-
-  @Post('skill-graph/stacks/:id')
-  @UseGuards(AdminSessionGuard)
-  async skillGraphStackSave(
-    @Param('id') id: string,
-    @Body() body: Record<string, string>,
-    @Res() res: Response,
-  ) {
-    try {
-      await this.skillGraphAdmin.updateStack(id, {
-        name: String(body.name ?? ''),
-        category: String(body.category ?? ''),
-        description: String(body.description ?? ''),
-        isActive: checked(body.isActive),
-      });
-      return res.redirect(`/admin/skill-graph/stacks/${id}?ok=1`);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Save failed';
-      return res.redirect(
-        `/admin/skill-graph/stacks/${id}?err=${encodeURIComponent(msg)}`,
-      );
-    }
-  }
-
-  @Post('skill-graph/stacks/:id/delete')
-  @UseGuards(AdminSessionGuard)
-  async skillGraphStackDelete(@Param('id') id: string, @Res() res: Response) {
-    try {
-      await this.skillGraphAdmin.deleteStack(id);
-      return res.redirect('/admin/skill-graph?ok=deleted');
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Delete failed';
-      return res.redirect(`/admin/skill-graph?err=${encodeURIComponent(msg)}`);
-    }
-  }
-
-  @Post('skill-graph/stacks/:id/skills')
-  @UseGuards(AdminSessionGuard)
-  async skillGraphSkillCreate(
-    @Param('id') id: string,
-    @Body() body: Record<string, string>,
-    @Res() res: Response,
-  ) {
-    try {
-      const skill = await this.skillGraphAdmin.createSkill(id, {
-        slug: String(body.slug ?? ''),
-        title: String(body.title ?? ''),
-        description: String(body.description ?? ''),
-        orderHint: num(body.orderHint),
-        estimatedHours: num(body.estimatedHours, 1),
-        tags: String(body.tags ?? ''),
-        prereqSlugs: String(body.prereqSlugs ?? ''),
-      });
-      return res.redirect(`/admin/skill-graph/skills/${skill.id}?ok=created`);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Skill create failed';
-      return res.redirect(
-        `/admin/skill-graph/stacks/${id}?err=${encodeURIComponent(msg)}`,
-      );
-    }
+  skillGraphStackRedirect(@Res() res: Response) {
+    return res.redirect('/admin/units');
   }
 
   @Get('skill-graph/skills/:id')
   @UseGuards(AdminSessionGuard)
-  async skillGraphSkillDetail(
-    @Param('id') id: string,
-    @Req() req: AdminRequest,
-    @Res() res: Response,
-    @Query('ok') ok?: string,
-    @Query('err') err?: string,
-  ) {
-    try {
-      const data = await this.skillGraphAdmin.getSkill(id);
-      const flashMap: Record<string, string> = {
-        '1': 'Skill saved.',
-        created: 'Skill created.',
-        lesson: 'Lesson created.',
-        'lesson-deleted': 'Lesson deleted.',
-      };
-      return res.render('skill-graph-skill', {
-        title: data.skill.title,
-        email: req.session.adminEmail ?? '',
-        navSkillGraph: true,
-        ...data,
-        hasLessons: data.lessons.length > 0,
-        flashOk: ok ? (flashMap[ok] ?? null) : null,
-        flashErr: flashQuery(err),
-        lessonTypes: this.skillGraphAdmin.lessonTypeChoices('reading'),
-      });
-    } catch {
-      return res.redirect('/admin/skill-graph');
-    }
-  }
-
-  @Post('skill-graph/skills/:id')
-  @UseGuards(AdminSessionGuard)
-  async skillGraphSkillSave(
-    @Param('id') id: string,
-    @Body() body: Record<string, string | string[]>,
-    @Res() res: Response,
-  ) {
-    try {
-      const rawPrereq = body.prereqIds;
-      const prereqIds = Array.isArray(rawPrereq)
-        ? rawPrereq.map(String)
-        : rawPrereq
-          ? [String(rawPrereq)]
-          : [];
-      await this.skillGraphAdmin.updateSkill(id, {
-        title: String(body.title ?? ''),
-        description: String(body.description ?? ''),
-        orderHint: num(body.orderHint),
-        estimatedHours: num(body.estimatedHours, 1),
-        tags: String(body.tags ?? ''),
-        prereqIds,
-        isActive: checked(body.isActive),
-      });
-      return res.redirect(`/admin/skill-graph/skills/${id}?ok=1`);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Save failed';
-      return res.redirect(
-        `/admin/skill-graph/skills/${id}?err=${encodeURIComponent(msg)}`,
-      );
-    }
-  }
-
-  @Post('skill-graph/skills/:id/delete')
-  @UseGuards(AdminSessionGuard)
-  async skillGraphSkillDelete(@Param('id') id: string, @Res() res: Response) {
-    try {
-      const { stackId } = await this.skillGraphAdmin.deleteSkill(id);
-      return res.redirect(
-        `/admin/skill-graph/stacks/${stackId}?ok=skill-deleted`,
-      );
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Delete failed';
-      return res.redirect(`/admin/skill-graph?err=${encodeURIComponent(msg)}`);
-    }
-  }
-
-  @Post('skill-graph/skills/:id/lessons')
-  @UseGuards(AdminSessionGuard)
-  async skillGraphLessonCreate(
-    @Param('id') id: string,
-    @Body() body: Record<string, string>,
-    @Res() res: Response,
-  ) {
-    try {
-      const lesson = await this.skillGraphAdmin.createLesson(id, {
-        slug: String(body.slug ?? ''),
-        title: String(body.title ?? ''),
-        lessonType: String(body.lessonType ?? 'reading'),
-        estimatedMinutes: num(body.estimatedMinutes, 20),
-        xpReward: num(body.xpReward, 20),
-        orderHint: num(body.orderHint),
-        missionNameTemplate: String(body.missionNameTemplate ?? ''),
-        learningStyleTags: String(body.learningStyleTags ?? ''),
-      });
-      return res.redirect(`/admin/skill-graph/lessons/${lesson.id}?ok=created`);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Lesson create failed';
-      return res.redirect(
-        `/admin/skill-graph/skills/${id}?err=${encodeURIComponent(msg)}`,
-      );
-    }
+  skillGraphSkillRedirect(@Res() res: Response) {
+    return res.redirect('/admin/units');
   }
 
   @Get('skill-graph/lessons/:id')
   @UseGuards(AdminSessionGuard)
-  async skillGraphLessonDetail(
-    @Param('id') id: string,
-    @Req() req: AdminRequest,
-    @Res() res: Response,
-    @Query('ok') ok?: string,
-    @Query('err') err?: string,
-  ) {
-    try {
-      const data = await this.skillGraphAdmin.getLesson(id);
-      const flashMap: Record<string, string> = {
-        '1': 'Lesson saved.',
-        created: 'Lesson created.',
-      };
-      return res.render('skill-graph-lesson', {
-        title: data.lesson.title,
-        email: req.session.adminEmail ?? '',
-        navSkillGraph: true,
-        ...data,
-        flashOk: ok ? (flashMap[ok] ?? null) : null,
-        flashErr: flashQuery(err),
-      });
-    } catch {
-      return res.redirect('/admin/skill-graph');
-    }
+  skillGraphLessonRedirect(@Res() res: Response) {
+    return res.redirect('/admin/units');
+  }
+
+  @Post('skill-graph/import')
+  @UseGuards(AdminSessionGuard)
+  skillGraphImportDeprecated(@Res() res: Response) {
+    return res.redirect('/admin/units');
+  }
+
+  @Post('skill-graph/stacks')
+  @UseGuards(AdminSessionGuard)
+  skillGraphStackCreateDeprecated(@Res() res: Response) {
+    return res.redirect('/admin/units');
+  }
+
+  @Post('skill-graph/stacks/:id')
+  @UseGuards(AdminSessionGuard)
+  skillGraphStackSaveDeprecated(@Res() res: Response) {
+    return res.redirect('/admin/units');
+  }
+
+  @Post('skill-graph/stacks/:id/delete')
+  @UseGuards(AdminSessionGuard)
+  skillGraphStackDeleteDeprecated(@Res() res: Response) {
+    return res.redirect('/admin/units');
+  }
+
+  @Post('skill-graph/stacks/:id/skills')
+  @UseGuards(AdminSessionGuard)
+  skillGraphSkillCreateDeprecated(@Res() res: Response) {
+    return res.redirect('/admin/units');
+  }
+
+  @Post('skill-graph/skills/:id')
+  @UseGuards(AdminSessionGuard)
+  skillGraphSkillSaveDeprecated(@Res() res: Response) {
+    return res.redirect('/admin/units');
+  }
+
+  @Post('skill-graph/skills/:id/delete')
+  @UseGuards(AdminSessionGuard)
+  skillGraphSkillDeleteDeprecated(@Res() res: Response) {
+    return res.redirect('/admin/units');
+  }
+
+  @Post('skill-graph/skills/:id/lessons')
+  @UseGuards(AdminSessionGuard)
+  skillGraphLessonCreateDeprecated(@Res() res: Response) {
+    return res.redirect('/admin/units');
   }
 
   @Post('skill-graph/lessons/:id')
   @UseGuards(AdminSessionGuard)
-  async skillGraphLessonSave(
-    @Param('id') id: string,
-    @Body() body: Record<string, string>,
-    @Res() res: Response,
-  ) {
-    try {
-      await this.skillGraphAdmin.updateLesson(id, {
-        title: String(body.title ?? ''),
-        lessonType: String(body.lessonType ?? 'reading'),
-        estimatedMinutes: num(body.estimatedMinutes, 20),
-        xpReward: num(body.xpReward, 20),
-        orderHint: num(body.orderHint),
-        missionNameTemplate: String(body.missionNameTemplate ?? ''),
-        learningStyleTags: String(body.learningStyleTags ?? ''),
-        contentOutlineJson: String(body.contentOutlineJson ?? ''),
-        isActive: checked(body.isActive),
-      });
-      return res.redirect(`/admin/skill-graph/lessons/${id}?ok=1`);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Save failed';
-      return res.redirect(
-        `/admin/skill-graph/lessons/${id}?err=${encodeURIComponent(msg)}`,
-      );
-    }
+  skillGraphLessonSaveDeprecated(@Res() res: Response) {
+    return res.redirect('/admin/units');
   }
 
   @Post('skill-graph/lessons/:id/delete')
   @UseGuards(AdminSessionGuard)
-  async skillGraphLessonDelete(@Param('id') id: string, @Res() res: Response) {
-    try {
-      const { skillId } = await this.skillGraphAdmin.deleteLesson(id);
-      return res.redirect(
-        `/admin/skill-graph/skills/${skillId}?ok=lesson-deleted`,
-      );
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Delete failed';
-      return res.redirect(`/admin/skill-graph?err=${encodeURIComponent(msg)}`);
-    }
+  skillGraphLessonDeleteDeprecated(@Res() res: Response) {
+    return res.redirect('/admin/units');
   }
 
   @Get('login')

@@ -46,7 +46,11 @@ function topicSlug(topic: string) {
   return topic.toLowerCase().replace(/\s+/g, '-');
 }
 
-type StemBank = { stem: string; correct: string; wrong: [string, string, string] };
+type StemBank = {
+  stem: string;
+  correct: string;
+  wrong: [string, string, string];
+};
 
 const BANKS: Record<(typeof SUBJECTS)[number], StemBank[]> = {
   sql: [
@@ -63,7 +67,11 @@ const BANKS: Record<(typeof SUBJECTS)[number], StemBank[]> = {
     {
       stem: 'What does COUNT(*) count?',
       correct: 'All rows including NULLs in other columns',
-      wrong: ['Only non-NULL primary keys', 'Distinct values only', 'Indexed columns only'],
+      wrong: [
+        'Only non-NULL primary keys',
+        'Distinct values only',
+        'Indexed columns only',
+      ],
     },
     {
       stem: 'Which keyword removes duplicate rows from a result set?',
@@ -93,7 +101,11 @@ const BANKS: Record<(typeof SUBJECTS)[number], StemBank[]> = {
     {
       stem: 'A PRIMARY KEY must be:',
       correct: 'UNIQUE and NOT NULL',
-      wrong: ['Nullable but unique', 'Always auto-increment', 'A composite of all columns'],
+      wrong: [
+        'Nullable but unique',
+        'Always auto-increment',
+        'A composite of all columns',
+      ],
     },
     {
       stem: 'Which statement changes existing rows?',
@@ -156,7 +168,7 @@ const BANKS: Record<(typeof SUBJECTS)[number], StemBank[]> = {
       wrong: ['SORT BY', 'GROUP BY', 'ARRANGE'],
     },
     {
-      stem: 'LIKE \'A%\' matches strings that:',
+      stem: "LIKE 'A%' matches strings that:",
       correct: 'Start with A',
       wrong: ['End with A', 'Contain only A', 'Equal A exactly only'],
     },
@@ -347,7 +359,11 @@ const BANKS: Record<(typeof SUBJECTS)[number], StemBank[]> = {
     {
       stem: 'INDEX + MATCH often replaces VLOOKUP because:',
       correct: 'More flexible lookup direction and insert-safe columns',
-      wrong: ['It is slower always', 'It only works on Mac', 'It deletes duplicates'],
+      wrong: [
+        'It is slower always',
+        'It only works on Mac',
+        'It deletes duplicates',
+      ],
     },
     {
       stem: 'What does ROUND(2.56, 1) return?',
@@ -434,7 +450,11 @@ const BANKS: Record<(typeof SUBJECTS)[number], StemBank[]> = {
     {
       stem: 'EDA primarily means:',
       correct: 'Exploratory Data Analysis',
-      wrong: ['Enterprise Data Archive', 'Event Driven Automation', 'Exact Duplicate Audit'],
+      wrong: [
+        'Enterprise Data Archive',
+        'Event Driven Automation',
+        'Exact Duplicate Audit',
+      ],
     },
     {
       stem: 'A histogram visualizes:',
@@ -454,7 +474,11 @@ const BANKS: Record<(typeof SUBJECTS)[number], StemBank[]> = {
     {
       stem: 'Outliers are:',
       correct: 'Points far from typical values',
-      wrong: ['Always errors to delete', 'Only negative numbers', 'Duplicate keys'],
+      wrong: [
+        'Always errors to delete',
+        'Only negative numbers',
+        'Duplicate keys',
+      ],
     },
     {
       stem: 'A metric “conversion rate” is typically:',
@@ -509,7 +533,11 @@ const BANKS: Record<(typeof SUBJECTS)[number], StemBank[]> = {
     {
       stem: 'p-value (classic NHST) is NOT:',
       correct: 'Probability that H0 is true',
-      wrong: ['Related to observed data under H0', 'Often misinterpreted', 'Used with alpha thresholds'],
+      wrong: [
+        'Related to observed data under H0',
+        'Often misinterpreted',
+        'Used with alpha thresholds',
+      ],
     },
     {
       stem: 'Feature engineering means:',
@@ -539,7 +567,11 @@ const BANKS: Record<(typeof SUBJECTS)[number], StemBank[]> = {
     {
       stem: 'ETL stands for:',
       correct: 'Extract, Transform, Load',
-      wrong: ['Encrypt, Transfer, Lock', 'Edit, Test, Launch', 'Event, Trace, Log'],
+      wrong: [
+        'Encrypt, Transfer, Lock',
+        'Edit, Test, Launch',
+        'Event, Trace, Log',
+      ],
     },
     {
       stem: 'A data dictionary documents:',
@@ -571,7 +603,11 @@ const BANKS: Record<(typeof SUBJECTS)[number], StemBank[]> = {
     {
       stem: 'Which CSS display creates a flex formatting context?',
       correct: 'display: flex',
-      wrong: ['display: block only', 'display: table-row only', 'display: none'],
+      wrong: [
+        'display: block only',
+        'display: table-row only',
+        'display: none',
+      ],
     },
     {
       stem: 'document.querySelector("#id") returns:',
@@ -626,12 +662,20 @@ const BANKS: Record<(typeof SUBJECTS)[number], StemBank[]> = {
     {
       stem: 'Which tag loads an external stylesheet?',
       correct: '<link rel="stylesheet" href="...">',
-      wrong: ['<script src="style.css">', '<style href="...">', '<css src="...">'],
+      wrong: [
+        '<script src="style.css">',
+        '<style href="...">',
+        '<css src="...">',
+      ],
     },
     {
       stem: 'debounce on an input handler typically:',
       correct: 'Delays running until typing pauses',
-      wrong: ['Runs every key instantly only', 'Blocks the UI thread forever', 'Compresses images'],
+      wrong: [
+        'Runs every key instantly only',
+        'Blocks the UI thread forever',
+        'Compresses images',
+      ],
     },
     {
       stem: 'Content-Security-Policy mainly mitigates:',
@@ -651,7 +695,11 @@ const BANKS: Record<(typeof SUBJECTS)[number], StemBank[]> = {
     {
       stem: 'position: sticky elements stick within:',
       correct: 'Their containing scroll ancestor',
-      wrong: ['The entire OS desktop', 'Only <html> forever', 'Service workers'],
+      wrong: [
+        'The entire OS desktop',
+        'Only <html> forever',
+        'Service workers',
+      ],
     },
     {
       stem: 'Which is a boolean HTML attribute pattern?',
@@ -676,7 +724,11 @@ const BANKS: Record<(typeof SUBJECTS)[number], StemBank[]> = {
     {
       stem: 'event.target vs event.currentTarget:',
       correct: 'target = origin node; currentTarget = listener node',
-      wrong: ['They are always identical', 'target is window only', 'currentTarget is CSS'],
+      wrong: [
+        'They are always identical',
+        'target is window only',
+        'currentTarget is CSS',
+      ],
     },
     {
       stem: 'Which CSS feature creates responsive breakpoints?',
@@ -693,14 +745,16 @@ function optionIds(i: number) {
 function buildStem(
   subject: (typeof SUBJECTS)[number],
   index: number,
-): { stem: string; options: Array<{ id: string; label: string }>; correctId: string } {
+): {
+  stem: string;
+  options: Array<{ id: string; label: string }>;
+  correctId: string;
+} {
   const bank = BANKS[subject];
   const base = bank[index % bank.length]!;
   const variant = Math.floor(index / bank.length);
   const stem =
-    variant === 0
-      ? base.stem
-      : `${base.stem} (variant ${variant + 1})`;
+    variant === 0 ? base.stem : `${base.stem} (variant ${variant + 1})`;
 
   const ids = optionIds(index);
   const labels = [base.correct, ...base.wrong];
@@ -753,7 +807,9 @@ export class BattleQuestionSeedService implements OnModuleInit {
         const tSlug = topicSlug(topic);
         for (let i = 0; i < BATTLE_SEED_PER_SUBJECT; i++) {
           const slug = `battle-${subject}-${tSlug}-${String(i + 1).padStart(3, '0')}`;
-          const existing = await this.templatesRepo.findOne({ where: { slug } });
+          const existing = await this.templatesRepo.findOne({
+            where: { slug },
+          });
           if (existing?.publishedVersionId) continue;
 
           const band = DIFF_BANDS[i % DIFF_BANDS.length]!;

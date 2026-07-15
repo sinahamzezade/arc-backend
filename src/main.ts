@@ -42,7 +42,11 @@ function watchAdminPartials(partialsDir: string, logger: Logger) {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // Body parsers registered manually below with a raised limit (units JSON
+  // imports easily exceed body-parser's 100kb default).
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
   const isProd = config.get<string>('NODE_ENV') === 'production';
@@ -73,6 +77,8 @@ async function bootstrap() {
       { path: 'admin/wheel/(.*)', method: RequestMethod.ALL },
       { path: 'admin/courses', method: RequestMethod.ALL },
       { path: 'admin/courses/(.*)', method: RequestMethod.ALL },
+      { path: 'admin/units', method: RequestMethod.ALL },
+      { path: 'admin/units/(.*)', method: RequestMethod.ALL },
       { path: 'admin/datasets', method: RequestMethod.ALL },
       { path: 'admin/datasets/(.*)', method: RequestMethod.ALL },
       { path: 'admin/roles', method: RequestMethod.ALL },
@@ -97,7 +103,8 @@ async function bootstrap() {
     return helmet()(req, res, next);
   });
 
-  app.use(express.urlencoded({ extended: true }));
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(cookieParser());
   app.use(
     session({

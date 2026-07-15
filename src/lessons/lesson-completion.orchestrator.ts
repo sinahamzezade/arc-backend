@@ -19,7 +19,17 @@ import {
   LessonProgressStatus,
 } from '../roadmaps/entities/lesson-progress.entity';
 import { ContentQualityService } from '../content-pool/content-quality.service';
+import { Unit } from '../content-pool/entities/unit.entity';
 import { TimingService } from '../course-timing/timing.service';
+import {
+  LearnerProfileSnapshot,
+  LearnerProfileStatus,
+  StageConfidence,
+} from '../questionnaire/entities/learner-profile-snapshot.entity';
+import {
+  LearnerSkillEstimate,
+  SkillEvidenceSource,
+} from '../questionnaire/entities/learner-skill-estimate.entity';
 import { WeeksService } from '../weeks/weeks.service';
 import { CompleteLessonDto } from './dto/lesson-play.dto';
 import {
@@ -30,8 +40,6 @@ import { LessonCompletionResult } from './entities/lesson-completion-result.enti
 import { RemediationEvent } from './entities/remediation-event.entity';
 import { LessonRewardsService } from './lesson-rewards.service';
 import { LessonUnlockService } from './lesson-unlock.service';
-import type { LessonPlayOutline } from './lesson-play.types';
-import { collectConceptTags } from '../skill-graph/seeds/transform-curriculum';
 
 export type CompleteLessonResponse = {
   lessonId: string;
@@ -81,25 +89,26 @@ export class LessonCompletionOrchestrator {
   ) {}
 
   resolveContentVersionId(lesson: Lesson): string {
-    return (
-      lesson.sourceVersionId ??
-      lesson.lessonTemplate?.publishedVersionId ??
-      lesson.lessonTemplateId ??
-      lesson.id
-    );
+    return lesson.unitId ?? lesson.id;
   }
 
   async complete(input: {
     userId: string;
     lesson: Lesson;
-    outline: LessonPlayOutline;
+    /** Server-graded score against play_content snapshot (0/0 for non-quiz). */
+    quizCorrect: number;
+    quizTotal: number;
+    /** Final merged answers keyed by question id (q0..). */
+    quizAnswers: Record<string, number | boolean>;
+    /** Self-attested (or session-recorded) task completion. */
+    practiceDone: boolean;
     dto: CompleteLessonDto;
     idempotencyKey: string;
     contentVersionId?: string;
     contentSchemaVersion?: number;
     attempt?: LessonAttempt | null;
   }): Promise<CompleteLessonResponse> {
-    const { userId, lesson, outline, dto, idempotencyKey } = input;
+    const { userId, lesson, dto, idempotencyKey } = input;
     const contentVersionId =
       input.contentVersionId ?? this.resolveContentVersionId(lesson);
 
@@ -194,27 +203,8 @@ export class LessonCompletionOrchestrator {
         }
       }
 
-      const quizAnswers = {
-        ...(progress?.sessionState?.quizAnswers ?? {}),
-        ...(dto.quizAnswers ?? {}),
-      };
-      const practiceOptionId =
-        dto.practiceOptionId ??
-        progress?.sessionState?.practiceOptionId ??
-        null;
-
-      let quizCorrect = 0;
-      for (const q of outline.quiz) {
-        if (quizAnswers[q.id] === q.correctOptionId) quizCorrect += 1;
-      }
-      const quizTotal = outline.quiz.length;
-      const practiceCorrect = practiceOptionId
-        ? Boolean(
-            outline.practice.options.find(
-              (o) => o.id === practiceOptionId && o.correct,
-            ),
-          )
-        : null;
+      const { quizCorrect, quizTotal, quizAnswers, practiceDone } = input;
+      const practiceCorrect = practiceDone ? true : null;
 
       const completedCount = await progressRepo.count({
         where: { userId, status: LessonProgressStatus.Completed },
@@ -224,25 +214,8 @@ export class LessonCompletionOrchestrator {
       const pathPercentile = await this.unlock.pathPercentile(manager, lesson);
       const assistance = this.rewards.mapAssistance(attempt?.assistanceUsed);
 
-      const conceptTags = collectConceptTags(outline);
-      const mastery = attempt?.conceptMastery ?? {};
-      const shakyConcepts = conceptTags.filter(
-        (tag) => mastery[tag]?.state === 'shaky',
-      );
-      const conceptsMastered = conceptTags.filter((tag) => {
-        const s = mastery[tag]?.state;
-        return s === 'mastered' || s === 'recovered';
-      }).length;
-      const conceptsTotal = conceptTags.length;
-
-      const remediationRepo = manager.getRepository(RemediationEvent);
-      const remediationRoundsUsed = attempt
-        ? await remediationRepo.count({ where: { attemptId: attempt.id } })
-        : 0;
-
       const reward = this.rewards.computeReward({
         lesson,
-        outline,
         quizCorrect,
         quizTotal,
         alreadyCompleted: previouslyAwarded,
@@ -250,10 +223,6 @@ export class LessonCompletionOrchestrator {
         pathPercentile,
         assistance,
         attemptKind: previouslyAwarded ? 'review_later' : 'first',
-        conceptsMastered,
-        conceptsTotal,
-        remediationRoundsUsed,
-        hasShakyConcepts: shakyConcepts.length > 0,
       });
 
       const qualifiedLeagueXp = reward.firstTime ? reward.xp : 0;
@@ -310,8 +279,7 @@ export class LessonCompletionOrchestrator {
       }
       progress.sessionState = {
         ...(progress.sessionState ?? {}),
-        practiceDone: true,
-        practiceOptionId,
+        practiceDone,
         quizAnswers,
       };
 
@@ -409,10 +377,10 @@ export class LessonCompletionOrchestrator {
         lessonType: lesson.lessonType,
         rewardTransactionGroupId: grant.transactionGroupId,
         qualifiedLeagueXp,
-        conceptsTotal,
-        conceptsMastered,
-        remediationRoundsUsed,
-        shakyConcepts,
+        conceptsTotal: 0,
+        conceptsMastered: 0,
+        remediationRoundsUsed: 0,
+        shakyConcepts: [],
       });
 
       await this.gamification.enqueueRewardGranted(manager, {
@@ -491,6 +459,16 @@ export class LessonCompletionOrchestrator {
         txResult.attemptId,
         txResult.lessonId,
       ).catch(() => undefined);
+      // Skill evidence on the active learner profile — fire-and-forget,
+      // never rewrites questionnaire answers, never replans synchronously.
+      void this.recordSkillEvidence({
+        userId,
+        lesson,
+        attemptId: txResult.attemptId,
+        quizCorrect: input.quizCorrect,
+        quizTotal: input.quizTotal,
+        practiceDone: input.practiceDone,
+      }).catch(() => undefined);
     }
 
     if (txResult.firstCompletion) {
@@ -527,6 +505,209 @@ export class LessonCompletionOrchestrator {
     void this.gamification.processPendingOutbox().catch(() => undefined);
 
     return txResult.response;
+  }
+
+  /**
+   * Post-commit skill evidence from lesson performance.
+   *
+   * For each skill the lesson teaches (lesson snapshot, falling back to the
+   * source unit), update the matching LearnerSkillEstimate on the user's
+   * ACTIVE profile (latest provisional/verified version). Idempotency is
+   * keyed by attemptId+skillSlug via evidenceMeta.lastAttemptIds.
+   *
+   * - shaky completion (remediation used or low quiz score): confidence may
+   *   drop to low; verifiedStage is NEVER raised here.
+   * - strong completion (no remediation, high score): provisionalStage may
+   *   move toward the profile target by at most 1, confidence to medium.
+   * - strong checkpoint quiz: verifiedStage is raised to the proven stage.
+   */
+  private async recordSkillEvidence(input: {
+    userId: string;
+    lesson: Lesson;
+    attemptId: string;
+    quizCorrect: number;
+    quizTotal: number;
+    practiceDone: boolean;
+  }): Promise<void> {
+    const { userId, lesson, attemptId } = input;
+    const skillSlugs = await this.resolveSkillsTaught(lesson);
+    if (!skillSlugs.length) return;
+
+    const profile = await this.dataSource
+      .getRepository(LearnerProfileSnapshot)
+      .findOne({
+        where: [
+          { userId, status: LearnerProfileStatus.Provisional },
+          { userId, status: LearnerProfileStatus.Verified },
+        ],
+        order: { version: 'DESC' },
+      });
+    if (!profile) return;
+
+    const hadRemediation = await this.dataSource
+      .getRepository(RemediationEvent)
+      .exists({ where: { attemptId } });
+    const scorePercent =
+      input.quizTotal > 0
+        ? Math.round((input.quizCorrect / input.quizTotal) * 100)
+        : 100;
+    const shaky = hadRemediation || (input.quizTotal > 0 && scorePercent < 70);
+    const strong =
+      !hadRemediation &&
+      (input.quizTotal > 0 ? scorePercent >= 80 : input.practiceDone);
+    const isCheckpointQuiz =
+      lesson.unitRole === 'checkpoint' && input.quizTotal > 0;
+    const maxServedStage = Math.max(0, ...(lesson.servesStage ?? []));
+    let changed = false;
+
+    // Estimates are keyed by coarse profiling slugs (`html-css`), while units
+    // teach namespaced slugs (`html-css:selectors`) — group by coarse slug.
+    const byCoarse = new Map<string, string[]>();
+    for (const slug of skillSlugs) {
+      const coarse = (slug.includes(':') ? slug.split(':')[0]! : slug)
+        .trim()
+        .toLowerCase();
+      if (!coarse) continue;
+      const list = byCoarse.get(coarse) ?? [];
+      list.push(slug);
+      byCoarse.set(coarse, list);
+    }
+
+    const estimatesRepo = this.dataSource.getRepository(LearnerSkillEstimate);
+    for (const [coarseSlug, taughtSlugs] of byCoarse) {
+      try {
+        let estimate = await estimatesRepo.findOne({
+          where: { profileId: profile.id, skillSlug: coarseSlug },
+        });
+        if (!estimate) {
+          estimate = estimatesRepo.create({
+            profileId: profile.id,
+            skillSlug: coarseSlug,
+            selfExposureLevel: 'unknown',
+            provisionalStage: 1,
+            verifiedStage: null,
+            confidence: StageConfidence.Low,
+            evidenceSource: SkillEvidenceSource.LessonPerformance,
+            evidenceMeta: {},
+          });
+        }
+
+        const meta = { ...(estimate.evidenceMeta ?? {}) };
+        const lastAttemptIds = {
+          ...((meta.lastAttemptIds as Record<string, string>) ?? {}),
+        };
+        // Idempotent per attemptId+skillSlug — skip already-recorded evidence.
+        const pending = taughtSlugs.filter(
+          (slug) => lastAttemptIds[slug] !== attemptId,
+        );
+        if (!pending.length) continue;
+        for (const slug of pending) lastAttemptIds[slug] = attemptId;
+
+        meta.lastAttemptIds = lastAttemptIds;
+        meta.lastLessonEvidence = {
+          attemptId,
+          lessonId: lesson.id,
+          unitId: lesson.unitId,
+          scorePercent,
+          hadRemediation,
+          at: new Date().toISOString(),
+        };
+        estimate.evidenceMeta = meta;
+        estimate.evidenceSource = SkillEvidenceSource.LessonPerformance;
+
+        if (shaky) {
+          // Never raise verifiedStage on shaky evidence; lower confidence.
+          estimate.confidence = StageConfidence.Low;
+        } else if (strong) {
+          const targetStage = profile.targetStage ?? estimate.provisionalStage;
+          if (estimate.provisionalStage < targetStage) {
+            estimate.provisionalStage += 1;
+          }
+          if (isCheckpointQuiz) {
+            const provenStage = Math.min(
+              estimate.provisionalStage,
+              targetStage,
+              maxServedStage || targetStage,
+            );
+            estimate.verifiedStage = Math.max(
+              estimate.verifiedStage ?? 0,
+              provenStage,
+            );
+            estimate.confidence = StageConfidence.High;
+          }
+          if (estimate.confidence === StageConfidence.Low) {
+            estimate.confidence = StageConfidence.Medium;
+          }
+        }
+
+        await estimatesRepo.save(estimate);
+        changed = true;
+      } catch {
+        /* evidence failure must not affect learner */
+      }
+    }
+    if (changed) {
+      await this.refreshProfileStageFromEstimates(profile.id);
+    }
+  }
+
+  private async refreshProfileStageFromEstimates(profileId: string): Promise<void> {
+    try {
+      const estimates = await this.dataSource
+        .getRepository(LearnerSkillEstimate)
+        .find({ where: { profileId } });
+      if (!estimates.length) return;
+
+      const median = (values: number[]): number => {
+        const sorted = values
+          .filter((v) => Number.isFinite(v) && v > 0)
+          .sort((a, b) => a - b);
+        if (!sorted.length) return 1;
+        return sorted[Math.floor((sorted.length - 1) / 2)] ?? 1;
+      };
+
+      const profileRepo = this.dataSource.getRepository(LearnerProfileSnapshot);
+      const profile = await profileRepo.findOne({ where: { id: profileId } });
+      if (!profile) return;
+
+      const provisionalStage = Math.max(
+        profile.provisionalStage,
+        median(estimates.map((e) => e.provisionalStage)),
+      );
+      const verifiedValues = estimates
+        .map((e) => e.verifiedStage)
+        .filter((v): v is number => v != null);
+      const verifiedStage = verifiedValues.length
+        ? Math.max(profile.verifiedStage ?? 0, median(verifiedValues))
+        : profile.verifiedStage;
+
+      profile.provisionalStage = provisionalStage;
+      profile.verifiedStage = verifiedStage && verifiedStage > 0 ? verifiedStage : null;
+      profile.stageGap = Math.max(0, profile.targetStage - provisionalStage);
+      if (
+        profile.verifiedStage != null &&
+        profile.verifiedStage >= profile.provisionalStage
+      ) {
+        profile.stageConfidence = StageConfidence.High;
+      }
+      await profileRepo.save(profile);
+    } catch {
+      /* profile refresh failure must not affect completion */
+    }
+  }
+
+  /** Lesson snapshot first; fall back to the source unit's skillsTaught. */
+  private async resolveSkillsTaught(lesson: Lesson): Promise<string[]> {
+    if (lesson.skillsTaught?.length) return lesson.skillsTaught;
+    if (!lesson.unitId) return [];
+    try {
+      const unit = await this.dataSource
+        .getRepository(Unit)
+        .findOne({ where: { id: lesson.unitId } });
+      return unit?.skillsTaught ?? [];
+    } catch {
+      return [];
+    }
   }
 
   /** Emit lesson.remediation.v1 per round — never throws into completion path. */

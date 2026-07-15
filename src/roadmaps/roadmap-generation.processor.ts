@@ -92,7 +92,11 @@ export class RoadmapJobsProcessor {
     );
 
     try {
-      const roadmap = await this.generator.assemble(job.goalId, job.userId);
+      const roadmap = await this.generator.assemble(
+        job.goalId,
+        job.userId,
+        job.learnerProfileId,
+      );
       job.status = RoadmapJobStatus.Ready;
       job.roadmapId = roadmap.id;
       job.errorCode = null;

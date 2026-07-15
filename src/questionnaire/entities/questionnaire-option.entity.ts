@@ -40,6 +40,10 @@ export class QuestionnaireOption {
   @Column({ name: 'sort_order', type: 'int', default: 0 })
   sortOrder: number;
 
+  /** Private scoring/meta signal — never expose weights to public schema. */
+  @Column({ name: 'profile_signal', type: 'jsonb', nullable: true })
+  profileSignal: Record<string, unknown> | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

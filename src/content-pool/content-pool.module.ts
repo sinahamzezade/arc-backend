@@ -35,7 +35,10 @@ import { LessonVersion } from './entities/lesson-version.entity';
 import { ModuleTemplate } from './entities/module-template.entity';
 import { QuestionTemplate } from './entities/question-template.entity';
 import { QuestionVersion } from './entities/question-version.entity';
+import { Skill } from './entities/skill.entity';
 import { SkillPrerequisite } from './entities/skill-prerequisite.entity';
+import { Unit } from './entities/unit.entity';
+import { UnitsCatalogService } from './units-catalog.service';
 import { BattleCatalogService } from './battle-catalog.service';
 import { BattleQuestionLlmService } from './battle-question-llm.service';
 import { QuestionPoolService } from './question-pool.service';
@@ -61,6 +64,8 @@ import { BattleQuestionSeedService } from './seeds/battle-question.seed';
       QuestionVersion,
       Dataset,
       ContentAuditLog,
+      Skill,
+      Unit,
       LessonTemplate,
       RoleRecipe,
       SkillNode,
@@ -89,6 +94,7 @@ import { BattleQuestionSeedService } from './seeds/battle-question.seed';
     ContentCacheService,
     ContentCatalogService,
     ContentQualityService,
+    UnitsCatalogService,
     BattleQuestionSeedService,
     AdminRolesGuard,
   ],
@@ -103,6 +109,7 @@ import { BattleQuestionSeedService } from './seeds/battle-question.seed';
     ContentAnalyticsService,
     ContentQualityService,
     ContentCatalogService,
+    UnitsCatalogService,
     TypeOrmModule,
     SkillGraphModule,
   ],

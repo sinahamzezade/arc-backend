@@ -6,44 +6,15 @@ import type { Repository } from 'typeorm';
 import type { Lesson } from '../roadmaps/entities/lesson.entity';
 import type { Roadmap } from '../roadmaps/entities/roadmap.entity';
 import type { Goal } from '../goals/entities/goal.entity';
+import type { LearnerProfileSnapshot } from '../questionnaire/entities/learner-profile-snapshot.entity';
 import type { QuestionnaireResponse } from '../questionnaire/entities/questionnaire-response.entity';
 import { ARC_PERSONALIZATION_KEY } from './lesson-body-personalizer.schema';
-import type { LessonPlayOutline } from './lesson-play.types';
+import type { ReadingPlayContent } from './lesson-play.types';
 
-const SCAFFOLD: LessonPlayOutline = {
+const SCAFFOLD: ReadingPlayContent = {
   objective: 'Learn X',
-  arloPrompt: 'Ask',
-  suggestedArlo: ['Help'],
-  content: [
-    {
-      id: 'c1',
-      title: 'Intro',
-      blocks: [{ type: 'text', body: 'Scaffold body' }],
-    },
-  ],
-  practice: {
-    id: 'p1',
-    prompt: 'Pick',
-    hint: 'a',
-    conceptTag: 'x:p',
-    options: [
-      { id: 'a', label: 'A', correct: true },
-      { id: 'b', label: 'B', correct: false },
-    ],
-  },
-  quiz: [
-    {
-      id: 'q1',
-      prompt: 'Q?',
-      conceptTag: 'x:q',
-      options: [
-        { id: 'a', label: 'A' },
-        { id: 'b', label: 'B' },
-      ],
-      correctOptionId: 'a',
-      explanation: 'A',
-    },
-  ],
+  sections: ['Scaffold section one.', 'Scaffold section two.'],
+  keyTakeaways: ['Takeaway'],
 };
 
 function makeService(opts: {
@@ -58,6 +29,7 @@ function makeService(opts: {
       : ({
           id: 'lesson-1',
           title: 'Hooks',
+          lessonType: 'reading',
           playContent: SCAFFOLD as unknown as Record<string, unknown>,
           objective: null,
           ...opts.lesson,
@@ -66,40 +38,27 @@ function makeService(opts: {
   const llm = {
     isConfigured: () => opts.llmConfigured ?? true,
     getModel: async () => 'test-model',
-    createClient: () =>
-      opts.llmRaw === null
-        ? null
-        : {
-            chat: {
-              completions: {
-                create: async () => ({
-                  model: 'test-model',
-                  choices: [
-                    {
-                      message: {
-                        content: JSON.stringify(
-                          opts.llmRaw ?? {
-                            objective: 'Personalized',
-                            arloPrompt: 'Ask me',
-                            suggestedArlo: ['Recap'],
-                            pages: [
-                              {
-                                id: 'c1',
-                                title: 'Custom',
-                                blocks: [
-                                  { type: 'text', body: 'Personalized body' },
-                                ],
-                              },
-                            ],
-                          },
-                        ),
-                      },
-                    },
+    chatCompletion: async () => {
+      if (opts.llmRaw === null) throw new Error('LLM down');
+      return {
+        model: 'test-model',
+        choices: [
+          {
+            message: {
+              content: JSON.stringify(
+                opts.llmRaw ?? {
+                  objective: 'Personalized',
+                  sections: [
+                    'Personalized section one.',
+                    'Personalized section two.',
                   ],
-                }),
-              },
+                },
+              ),
             },
           },
+        ],
+      };
+    },
   } as unknown as LlmService;
 
   const systemFlags = {
@@ -122,7 +81,12 @@ function makeService(opts: {
 
   const roadmapsRepo = {
     findOne: async () =>
-      ({ id: 'rm-1', userId: 'u1', goalId: 'g1' }) as Roadmap,
+      ({
+        id: 'rm-1',
+        userId: 'u1',
+        goalId: 'g1',
+        generationMeta: {},
+      }) as Roadmap,
   } as unknown as Repository<Roadmap>;
 
   const goalsRepo = {
@@ -141,8 +105,12 @@ function makeService(opts: {
 
   const responsesRepo = {
     findOne: async () =>
-      ({ chatTranscript: [] }) as QuestionnaireResponse,
+      ({ chatTranscript: [] }) as unknown as QuestionnaireResponse,
   } as unknown as Repository<QuestionnaireResponse>;
+
+  const learnerProfilesRepo = {
+    findOne: async () => null,
+  } as unknown as Repository<LearnerProfileSnapshot>;
 
   const service = new LessonBodyPersonalizerService(
     llm,
@@ -151,6 +119,7 @@ function makeService(opts: {
     roadmapsRepo,
     goalsRepo,
     responsesRepo,
+    learnerProfilesRepo,
   );
 
   return { service, getSaved: () => saved };
@@ -168,7 +137,7 @@ describe('LessonBodyPersonalizerService', () => {
     expect(getSaved()).toBeNull();
   });
 
-  it('soft-fails when LLM client missing', async () => {
+  it('soft-fails when LLM call fails', async () => {
     const llmOff = makeService({ llmConfigured: false });
     expect(await llmOff.service.isEnabled('u1')).toBe(false);
 
@@ -204,7 +173,20 @@ describe('LessonBodyPersonalizerService', () => {
     expect(getSaved()).toBeNull();
   });
 
-  it('writes personalized playContent and freezes quiz', async () => {
+  it('skips when playContent is not valid unit content', async () => {
+    const { service, getSaved } = makeService({
+      lesson: { playContent: { foo: 'bar' } },
+    });
+    const result = await service.personalizeLesson({
+      lessonId: 'lesson-1',
+      userId: 'u1',
+      roadmapId: 'rm-1',
+    });
+    expect(result).toEqual({ ok: false, skipped: 'scaffold_not_ready' });
+    expect(getSaved()).toBeNull();
+  });
+
+  it('writes personalized playContent and freezes keyTakeaways', async () => {
     const { service, getSaved } = makeService({});
     const result = await service.personalizeLesson({
       lessonId: 'lesson-1',
@@ -214,13 +196,28 @@ describe('LessonBodyPersonalizerService', () => {
     expect(result.ok).toBe(true);
     const saved = getSaved();
     expect(saved).toBeTruthy();
-    const play = saved!.playContent as unknown as LessonPlayOutline &
+    const play = saved!.playContent as unknown as ReadingPlayContent &
       Record<string, unknown>;
-    expect(play.content[0]!.blocks[0]).toEqual({
-      type: 'text',
-      body: 'Personalized body',
-    });
-    expect(play.quiz[0]!.correctOptionId).toBe('a');
+    expect(play.sections).toEqual([
+      'Personalized section one.',
+      'Personalized section two.',
+    ]);
+    expect(play.keyTakeaways).toEqual(['Takeaway']);
+    expect(play.objective).toBe('Personalized');
     expect(play[ARC_PERSONALIZATION_KEY]).toMatchObject({ source: 'llm' });
+    expect(saved!.objective).toBe('Personalized');
+  });
+
+  it('rejects section count drift as merge_invalid', async () => {
+    const { service, getSaved } = makeService({
+      llmRaw: { objective: 'P', sections: ['only one'] },
+    });
+    const result = await service.personalizeLesson({
+      lessonId: 'lesson-1',
+      userId: 'u1',
+      roadmapId: 'rm-1',
+    });
+    expect(result).toEqual({ ok: false, skipped: 'merge_invalid' });
+    expect(getSaved()).toBeNull();
   });
 });

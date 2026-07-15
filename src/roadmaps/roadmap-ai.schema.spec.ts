@@ -118,9 +118,10 @@ describe('parseAndAssertRoadmapAiEnrich', () => {
 });
 
 describe('RoadmapAiService.applyEnrich', () => {
-  const service = new RoadmapAiService({
-    get: () => undefined,
-  } as never);
+  const service = new RoadmapAiService(
+    { get: () => undefined } as never,
+    { isConfigured: () => false } as never,
+  );
 
   function samplePhases(): PlannedPhase[] {
     return [

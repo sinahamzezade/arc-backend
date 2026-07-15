@@ -92,6 +92,13 @@
                       <label for="sortOrder">Sort order</label>
                       <input id="sortOrder" name="sortOrder" type="number" value="{{row.sortOrder}}" required />
                     </div>
+                    <div class="admin-field sm:col-span-2">
+                      <label for="profileSignalJson">Profile signal (JSON object)</label>
+                      <textarea id="profileSignalJson" name="profileSignalJson" rows="8" spellcheck="false">{{row.profileSignalJson}}</textarea>
+                      <p class="mt-2 text-xs leading-relaxed text-sage">
+                        Private scoring metadata. Only a string <span class="font-mono">hint</span> is exposed to clients.
+                      </p>
+                    </div>
                   </div>
                 </div>
 

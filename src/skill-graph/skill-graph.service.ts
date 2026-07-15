@@ -160,27 +160,17 @@ export class SkillGraphService implements OnModuleInit {
   }
 
   private async ensureSeeded() {
+    // Curriculum source of truth is now flattened units (UnitsCatalogService).
+    // Legacy LessonTemplate/SkillNode seeding is disabled.
     if (process.env.SKILL_GRAPH_RESET_ON_BOOT === 'true') {
       this.logger.warn(
         'SKILL_GRAPH_RESET_ON_BOOT=true — wiping learning catalog + user paths',
       );
       await this.wipeLearningData();
     }
-
-    const existing = await this.recipesRepo.count();
-    if (existing === 0) {
-      this.logger.log('Seeding skill graph catalog…');
-      await this.seedCatalog(CATALOG_SEED);
-      return;
-    }
-
     this.logger.log(
-      'Skill graph catalog already seeded — upserting missing packs',
+      'Skill-graph tree seed skipped — units pool owns curriculum',
     );
-    await this.upsertMissingCatalog(CATALOG_SEED);
-    await this.backfillEmptyOutlines();
-    await this.refreshCompletionAckOutlines();
-    await this.backfillCareerRoles();
   }
 
   /** Wipe user roadmaps/weeks + skill-graph pool so ensureSeeded can re-import. */
@@ -204,6 +194,9 @@ export class SkillGraphService implements OnModuleInit {
         roadmap_phases,
         roadmap_generation_jobs,
         roadmaps,
+        learner_skill_estimates,
+        learner_profile_snapshots,
+        questionnaire_responses,
         lesson_versions,
         assessment_templates,
         question_versions,
@@ -216,7 +209,9 @@ export class SkillGraphService implements OnModuleInit {
         course_templates,
         resources,
         tech_stacks,
-        career_roles
+        career_roles,
+        units,
+        skills
       RESTART IDENTITY CASCADE
     `);
     this.logger.warn('Learning catalog + user path tables truncated');

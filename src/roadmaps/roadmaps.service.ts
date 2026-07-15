@@ -80,6 +80,7 @@ export class RoadmapsService {
   async enqueueGenerate(
     goalId: string,
     userId: string,
+    learnerProfileId?: string | null,
   ): Promise<RoadmapJobResult> {
     const goal = await this.ensureGoalReadyForGenerate(goalId, userId);
 
@@ -87,6 +88,7 @@ export class RoadmapsService {
       this.jobsRepo.create({
         goalId: goal.id,
         userId,
+        learnerProfileId: learnerProfileId ?? null,
         status: RoadmapJobStatus.Queued,
         roadmapId: null,
         attempts: 0,
@@ -94,7 +96,7 @@ export class RoadmapsService {
     );
 
     this.logger.log(
-      `[roadmap-gen] queued job=${job.id} goal=${goalId} user=${userId}`,
+      `[roadmap-gen] queued job=${job.id} goal=${goalId} user=${userId} profile=${learnerProfileId ?? 'none'}`,
     );
     await this.processor.enqueue(job.id);
 

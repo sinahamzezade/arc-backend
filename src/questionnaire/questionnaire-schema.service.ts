@@ -1,8 +1,12 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { Profile, QuestionnaireStatus } from '../profiles/entities/profile.entity';
+import { UnitsCatalogService } from '../content-pool/units-catalog.service';
+import {
+  Profile,
+  QuestionnaireStatus,
+} from '../profiles/entities/profile.entity';
 import { QUESTIONNAIRE_SCHEMA_VERSION } from './constants/schema-version';
 import { QuestionnaireDefinition } from './entities/questionnaire-definition.entity';
 import { QuestionnaireOption } from './entities/questionnaire-option.entity';
@@ -10,7 +14,6 @@ import { QuestionnaireResponse } from './entities/questionnaire-response.entity'
 import {
   QuestionnaireSelection,
   QuestionnaireStep,
-  QuestionnaireUiKind,
 } from './entities/questionnaire-step.entity';
 import type { QuestionnaireAiCopy } from './questionnaire-ai.schema';
 import { QuestionnaireAiService } from './questionnaire-ai.service';
@@ -18,6 +21,7 @@ import { QUESTIONNAIRE_SEED } from './schema/seed-data';
 import type {
   QuestionnaireSchemaDto,
   QuestionnaireStepDto,
+  QuestionnaireUiKind,
 } from './schema/schema.types';
 
 @Injectable()
@@ -31,6 +35,8 @@ export class QuestionnaireSchemaService implements OnModuleInit {
     private readonly questionnaireAi: QuestionnaireAiService,
     private readonly config: ConfigService,
     private readonly dataSource: DataSource,
+    @Optional()
+    private readonly unitsCatalog?: UnitsCatalogService,
   ) {}
 
   async onModuleInit() {
@@ -40,8 +46,16 @@ export class QuestionnaireSchemaService implements OnModuleInit {
     await this.ensureSeeded();
     await this.reloadCache();
     await this.enrichActiveDefinitionWithAi();
-    await this.ensureGoalOptionsFromSeed();
+    await this.syncDomainOptionsToGoalStep();
     await this.reloadCache();
+
+    // New unit imports add domains — keep goal chips + validation in sync
+    // without a restart.
+    this.unitsCatalog?.onCatalogChanged(async () => {
+      await this.syncDomainOptionsToGoalStep();
+      await this.reloadCache();
+      this.logger.log('Units catalog changed — questionnaire schema reloaded');
+    });
   }
 
   getSchema(): QuestionnaireSchemaDto {
@@ -91,17 +105,38 @@ export class QuestionnaireSchemaService implements OnModuleInit {
       (a, b) => a.stepNumber - b.stepNumber,
     );
 
+    let mapped = steps.map((step) => this.toStepDto(step));
+
+    if (this.unitsCatalog) {
+      try {
+        const domains = await this.unitsCatalog.listActiveDomains();
+        mapped = mapped.map((step) => {
+          if (step.id !== 'goal' && step.uiKind !== 'track-select') return step;
+          if (!domains.length) return step;
+          return {
+            ...step,
+            options: domains.map((d) => ({
+              value: d.value,
+              label: d.label,
+              icon: 'cubes',
+              iconClassName: 'bg-arc-green-100 text-arc-green-600',
+            })),
+          };
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Domain inject failed: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
+
     this.cache = {
       schemaVersion: definition.version,
-      totalSteps: steps.length,
-      steps: steps.map((step) => this.toStepDto(step)),
+      totalSteps: mapped.length,
+      steps: mapped,
     };
   }
 
-  /**
-   * Wipe catalog + answers so new registrations start clean.
-   * Profiles questionnaire flags reset to not_started.
-   */
   private async resetAllQuestionnaireData() {
     this.logger.warn('Resetting all questionnaire data in database');
 
@@ -141,6 +176,9 @@ export class QuestionnaireSchemaService implements OnModuleInit {
         label: opt.label,
         ...(opt.icon ? { icon: opt.icon } : {}),
         ...(opt.iconClassName ? { iconClassName: opt.iconClassName } : {}),
+        ...(typeof opt.profileSignal?.hint === 'string'
+          ? { profileHint: String(opt.profileSignal.hint) }
+          : {}),
       }));
 
     return {
@@ -150,7 +188,7 @@ export class QuestionnaireSchemaService implements OnModuleInit {
       subtitle: step.subtitle,
       selection: step.selection,
       allowOther: step.allowOther || undefined,
-      uiKind: step.uiKind,
+      uiKind: step.uiKind as QuestionnaireUiKind,
       reviewLabel: step.reviewLabel,
       reviewIcon: step.reviewIcon,
       options,
@@ -159,6 +197,15 @@ export class QuestionnaireSchemaService implements OnModuleInit {
         : {}),
       ...(step.scheduleTimes?.length
         ? { scheduleTimes: step.scheduleTimes }
+        : {}),
+      ...(step.exposureOptions?.length
+        ? { exposureOptions: step.exposureOptions }
+        : {}),
+      ...(step.sessionOptions?.length
+        ? { sessionOptions: step.sessionOptions }
+        : {}),
+      ...(step.secondaryOptions?.length
+        ? { secondaryOptions: step.secondaryOptions }
         : {}),
       ...(step.visibleWhen ? { visibleWhen: step.visibleWhen } : {}),
     };
@@ -210,14 +257,14 @@ export class QuestionnaireSchemaService implements OnModuleInit {
               ? QuestionnaireSelection.Single
               : QuestionnaireSelection.Multi,
           allowOther: Boolean(seedStep.allowOther),
-          uiKind:
-            seedStep.uiKind === 'schedule'
-              ? QuestionnaireUiKind.Schedule
-              : QuestionnaireUiKind.Options,
+          uiKind: seedStep.uiKind,
           reviewLabel: seedStep.reviewLabel,
           reviewIcon: seedStep.reviewIcon,
           scheduleDays: seedStep.scheduleDays ?? null,
           scheduleTimes: seedStep.scheduleTimes ?? null,
+          exposureOptions: seedStep.exposureOptions ?? null,
+          sessionOptions: seedStep.sessionOptions ?? null,
+          secondaryOptions: seedStep.secondaryOptions ?? null,
           visibleWhen: seedStep.visibleWhen ?? null,
         });
         const savedStep: QuestionnaireStep = await manager.save(step);
@@ -231,6 +278,9 @@ export class QuestionnaireSchemaService implements OnModuleInit {
               icon: opt.icon ?? null,
               iconClassName: opt.iconClassName ?? null,
               sortOrder: index,
+              profileSignal: opt.profileHint
+                ? { hint: opt.profileHint }
+                : null,
             }),
           );
           await manager.save(options);
@@ -239,29 +289,32 @@ export class QuestionnaireSchemaService implements OnModuleInit {
     });
   }
 
-  /**
-   * Upsert seed goal options onto the active definition without wiping AI copy.
-   * Lets catalog grow when seed roles expand between schema versions.
-   */
-  private async ensureGoalOptionsFromSeed() {
-    const goalSeed = QUESTIONNAIRE_SEED.steps.find((s) => s.id === 'goal');
-    if (!goalSeed?.options?.length) return;
+  private async syncDomainOptionsToGoalStep() {
+    if (!this.unitsCatalog) return;
+    let domains: Array<{ value: string; label: string }> = [];
+    try {
+      domains = await this.unitsCatalog.listActiveDomains();
+    } catch {
+      return;
+    }
+    if (!domains.length) return;
 
     const definition = await this.definitionsRepo.findOne({
       where: { isActive: true },
       relations: { steps: { options: true } },
     });
     if (!definition) return;
-
-    const goalStep = (definition.steps ?? []).find((s) => s.fieldKey === 'goal');
+    const goalStep = (definition.steps ?? []).find(
+      (s) => s.fieldKey === 'goal',
+    );
     if (!goalStep) return;
 
-    if (goalSeed.allowOther && !goalStep.allowOther) {
-      goalStep.allowOther = true;
-      await this.dataSource.getRepository(QuestionnaireStep).save(goalStep);
-    }
-    if (goalSeed.subtitle) {
-      goalStep.subtitle = goalSeed.subtitle;
+    if (
+      goalStep.uiKind !== 'track-select' ||
+      goalStep.selection !== QuestionnaireSelection.Single
+    ) {
+      goalStep.uiKind = 'track-select';
+      goalStep.selection = QuestionnaireSelection.Single;
       await this.dataSource.getRepository(QuestionnaireStep).save(goalStep);
     }
 
@@ -275,32 +328,24 @@ export class QuestionnaireSchemaService implements OnModuleInit {
     );
     let added = 0;
 
-    for (const seedOpt of goalSeed.options) {
-      const row = existing.get(seedOpt.value);
-      if (row) {
-        if (!row.icon && seedOpt.icon) {
-          row.icon = seedOpt.icon;
-          row.iconClassName = seedOpt.iconClassName ?? null;
-          await optionRepo.save(row);
-        }
-        continue;
-      }
+    for (const domain of domains) {
+      if (existing.has(domain.value)) continue;
       maxOrder += 1;
       await optionRepo.save(
         optionRepo.create({
           stepId: goalStep.id,
-          value: seedOpt.value,
-          label: seedOpt.label,
-          icon: seedOpt.icon ?? null,
-          iconClassName: seedOpt.iconClassName ?? null,
+          value: domain.value,
+          label: domain.label,
+          icon: 'cubes',
+          iconClassName: 'bg-arc-green-100 text-arc-green-600',
           sortOrder: maxOrder,
+          profileSignal: { hint: 'track' },
         }),
       );
       added += 1;
     }
-
     if (added > 0) {
-      this.logger.log(`Synced ${added} goal role option(s) from seed`);
+      this.logger.log(`Synced ${added} domain option(s) onto goal step`);
     }
   }
 

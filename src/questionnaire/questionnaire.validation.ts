@@ -2,6 +2,7 @@ import { HttpStatus } from '@nestjs/common';
 import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
 import { isFieldVisible } from './branching';
+import { EXPOSURE_LEVELS } from './constants/profiling';
 import { OTHER_TEXT_MAX } from './constants/schema-version';
 import type {
   QuestionnaireSchemaDto,
@@ -9,12 +10,17 @@ import type {
 } from './schema/schema.types';
 import {
   asSchedule,
+  asSkillEvidence,
   asString,
   asStringArray,
+  asTrackSelection,
   emptyQuestionnaireAnswers,
   isScheduleAnswer,
+  isSkillEvidenceAnswer,
+  isTrackSelectionAnswer,
   type QuestionnaireAnswers,
   type ScheduleAnswer,
+  type SkillEvidenceAnswer,
 } from './types/answers';
 
 function isStringArray(value: unknown): value is string[] {
@@ -72,7 +78,6 @@ function sanitizeFreeSkillValues(values: string[]): string[] {
     out.push(v);
     if (out.length >= 12) break;
   }
-  if (out.includes('none') && out.length > 1) return ['none'];
   return out;
 }
 
@@ -100,14 +105,79 @@ function normalizeSchedule(
     return { days: [], times: [] };
   }
   const schedule = raw as Record<string, unknown>;
+  const timezone =
+    typeof schedule.timezone === 'string' && schedule.timezone.trim()
+      ? schedule.timezone.trim()
+      : undefined;
   return {
     days: isStringArray(schedule.days)
-      ? filterKnown(schedule.days, daysAllowed)
+      ? filterKnown(
+          schedule.days.map((d) => d.toLowerCase()),
+          daysAllowed.map((d) => d.toLowerCase()),
+        )
       : [],
     times: isStringArray(schedule.times)
       ? filterKnown(schedule.times, timesAllowed)
       : [],
+    ...(timezone ? { timezone } : {}),
   };
+}
+
+function normalizeSkillEvidence(
+  raw: unknown,
+  step: QuestionnaireStepDto,
+): SkillEvidenceAnswer[] {
+  const exposureAllowed = (step.exposureOptions ?? []).map((o) => o.value);
+  const fallbackExposure = exposureAllowed[0] ?? EXPOSURE_LEVELS[0];
+  if (!Array.isArray(raw)) return [];
+  if (raw.every((item) => typeof item === 'string')) {
+    return sanitizeFreeSkillValues(raw as string[])
+      .filter((s) => s !== 'none')
+      .map((skillSlug) => ({
+        skillSlug,
+        exposureLevel: fallbackExposure,
+      }));
+  }
+  const out: SkillEvidenceAnswer[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (!isSkillEvidenceAnswer(item)) continue;
+    const skillSlug = item.skillSlug.trim();
+    if (!skillSlug || skillSlug === 'none' || seen.has(skillSlug)) continue;
+    if (!isFreeSkillToken(skillSlug) && !optionValuesForStep(step).includes(skillSlug)) {
+      continue;
+    }
+    const exposure = exposureAllowed.includes(item.exposureLevel)
+      ? item.exposureLevel
+      : fallbackExposure;
+    seen.add(skillSlug);
+    out.push({ skillSlug, exposureLevel: exposure });
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
+function normalizeTrackSelection(
+  raw: unknown,
+  step: QuestionnaireStepDto,
+): { primary: string; secondary: string[] } {
+  const allowed = optionValuesForStep(step);
+  if (isTrackSelectionAnswer(raw)) {
+    const primary = allowed.includes(raw.primary) ? raw.primary : '';
+    const secondary = filterKnown(
+      raw.secondary.filter((s) => s !== primary),
+      allowed,
+    );
+    return { primary, secondary };
+  }
+  if (isStringArray(raw) && raw.length) {
+    const known = filterKnown(raw, allowed);
+    return { primary: known[0] ?? '', secondary: known.slice(1) };
+  }
+  if (typeof raw === 'string' && allowed.includes(raw)) {
+    return { primary: raw, secondary: [] };
+  }
+  return { primary: '', secondary: [] };
 }
 
 /** Soft-normalize draft answers; allow incomplete data. */
@@ -128,17 +198,113 @@ export function normalizeDraftAnswers(
 
     if (step.uiKind === 'schedule') {
       base[key] = normalizeSchedule(raw[key], step);
+      if (typeof raw.timezone === 'string' && raw.timezone.trim()) {
+        base.timezone = raw.timezone.trim();
+      }
+      continue;
+    }
+
+    if (step.uiKind === 'skill-evidence') {
+      base[key] = normalizeSkillEvidence(raw[key], step);
+      if (step.allowOther) {
+        const other = trimOther(raw[otherKey]);
+        if (other) base[otherKey] = other;
+      }
+      continue;
+    }
+
+    if (step.uiKind === 'track-select') {
+      base[key] = normalizeTrackSelection(raw[key], step);
+      continue;
+    }
+
+    if (step.uiKind === 'capacity') {
+      const allowed = optionValuesForStep(step);
+      if (typeof raw[key] === 'string' && allowed.includes(raw[key])) {
+        base[key] = raw[key];
+      } else if (isStringArray(raw[key]) && raw[key].length === 1) {
+        const only = raw[key][0]!;
+        base[key] = allowed.includes(only) ? only : '';
+      } else {
+        base[key] = '';
+      }
+      const sessionOpts = (step.sessionOptions ?? []).map((o) => o.value);
+      const sessionRaw =
+        raw.preferredSessionMinutes ?? raw.sessionMinutes ?? '';
+      const sessionStr = String(sessionRaw);
+      if (sessionOpts.includes(sessionStr)) {
+        base.preferredSessionMinutes = sessionStr;
+      } else if (sessionOpts.length) {
+        base.preferredSessionMinutes = sessionOpts[1] ?? sessionOpts[0];
+      }
+      continue;
+    }
+
+    if (step.uiKind === 'outcome') {
+      const allowed = optionValuesForStep(step);
+      if (typeof raw[key] === 'string' && allowed.includes(raw[key])) {
+        base[key] = raw[key];
+      } else {
+        base[key] = '';
+      }
+      const deadlines = (step.secondaryOptions ?? []).map((o) => o.value);
+      const deadlineRaw = raw.deadline ?? raw.targetDeadline;
+      if (typeof deadlineRaw === 'string' && deadlines.includes(deadlineRaw)) {
+        base.deadline = deadlineRaw;
+      }
+      continue;
+    }
+
+    if (step.uiKind === 'context') {
+      const allowed = optionValuesForStep(step);
+      if (typeof raw[key] === 'string' && allowed.includes(raw[key])) {
+        base[key] = raw[key];
+      } else if (
+        typeof raw.currentJob === 'string' &&
+        allowed.includes(raw.currentJob)
+      ) {
+        base[key] = raw.currentJob;
+      } else {
+        base[key] = '';
+      }
+      const freqs = (step.secondaryOptions ?? []).map((o) => o.value);
+      const freqRaw = raw.useFrequency ?? raw.currentContextFrequency;
+      if (typeof freqRaw === 'string' && freqs.includes(freqRaw)) {
+        base.useFrequency = freqRaw;
+      }
+      if (step.allowOther) {
+        const other = trimOther(raw[otherKey] ?? raw.currentJobOther);
+        if (other) base[otherKey] = other;
+      }
+      continue;
+    }
+
+    if (step.uiKind === 'confidence-barriers') {
+      const confAllowed = optionValuesForStep(step);
+      const confRaw = raw.confidence ?? raw.confidenceLevel;
+      if (typeof confRaw === 'string' && confAllowed.includes(confRaw)) {
+        base.confidence = confRaw;
+      }
+      const barrierAllowed = (step.secondaryOptions ?? []).map((o) => o.value);
+      if (isStringArray(raw[key])) {
+        base[key] = filterKnown(raw[key], barrierAllowed);
+      } else if (isStringArray(raw.quitReasons)) {
+        base[key] = filterKnown(raw.quitReasons, barrierAllowed);
+      } else {
+        base[key] = [];
+      }
+      if (step.allowOther) {
+        const other = trimOther(raw[otherKey] ?? raw.quitReasonsOther);
+        if (other) base[otherKey] = other;
+      }
       continue;
     }
 
     const allowed = optionValuesForStep(step);
     if (step.selection === 'multi') {
-      if (key === 'skills' && isStringArray(raw[key])) {
-        base[key] = sanitizeFreeSkillValues(raw[key]);
-      } else if (isStringArray(raw[key])) {
+      if (isStringArray(raw[key])) {
         base[key] = filterKnown(raw[key], allowed);
       } else if (typeof raw[key] === 'string' && allowed.includes(raw[key])) {
-        // Clients sometimes store single-select shape; keep the pick.
         base[key] = [raw[key]];
       } else {
         base[key] = [];
@@ -146,7 +312,6 @@ export function normalizeDraftAnswers(
     } else if (typeof raw[key] === 'string' && allowed.includes(raw[key])) {
       base[key] = raw[key];
     } else if (isStringArray(raw[key]) && raw[key].length === 1) {
-      // Multi UI write into a single-select step — take first known value.
       const only = raw[key][0]!;
       base[key] = allowed.includes(only) ? only : '';
     } else {
@@ -182,10 +347,68 @@ export function assertCompleteAnswers(
 
     if (step.uiKind === 'schedule') {
       const schedule = asSchedule(answers, key);
-      const daysAllowed = step.scheduleDays ?? [];
+      const daysAllowed = (step.scheduleDays ?? []).map((d) => d.toLowerCase());
       const timesAllowed = (step.scheduleTimes ?? []).map((t) => t.value);
       assertAllowed(`${key}.days`, schedule.days, daysAllowed);
       assertAllowed(`${key}.times`, schedule.times, timesAllowed);
+      continue;
+    }
+
+    if (step.uiKind === 'skill-evidence') {
+      const evidence = asSkillEvidence(answers, key);
+      const exposureAllowed = (step.exposureOptions ?? []).map((o) => o.value);
+      for (const item of evidence) {
+        if (
+          exposureAllowed.length &&
+          !exposureAllowed.includes(item.exposureLevel)
+        ) {
+          throw new AppException(
+            AuthErrorCode.VALIDATION_ERROR,
+            `Invalid exposure for ${item.skillSlug}`,
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+      }
+      continue;
+    }
+
+    if (step.uiKind === 'track-select') {
+      const track = asTrackSelection(answers, key);
+      const allowed = optionValuesForStep(step);
+      if (track.primary) assertAllowed(key, [track.primary], allowed);
+      if (track.secondary.length) {
+        assertAllowed(`${key}.secondary`, track.secondary, allowed);
+      }
+      continue;
+    }
+
+    if (step.uiKind === 'outcome') {
+      const allowed = optionValuesForStep(step);
+      const value = asString(answers, key);
+      if (value) assertAllowed(key, [value], allowed);
+      const deadlines = (step.secondaryOptions ?? []).map((o) => o.value);
+      const deadline = asString(answers, 'deadline');
+      if (deadline) assertAllowed('deadline', [deadline], deadlines);
+      continue;
+    }
+
+    if (step.uiKind === 'context') {
+      const allowed = optionValuesForStep(step);
+      const value = asString(answers, key);
+      if (value) assertAllowed(key, [value], allowed);
+      const freqs = (step.secondaryOptions ?? []).map((o) => o.value);
+      const freq = asString(answers, 'useFrequency');
+      if (freq) assertAllowed('useFrequency', [freq], freqs);
+      continue;
+    }
+
+    if (step.uiKind === 'confidence-barriers') {
+      const confAllowed = optionValuesForStep(step);
+      const conf = asString(answers, 'confidence');
+      if (conf) assertAllowed('confidence', [conf], confAllowed);
+      const barrierAllowed = (step.secondaryOptions ?? []).map((o) => o.value);
+      const barriers = asStringArray(answers, key);
+      if (barriers.length) assertAllowed(key, barriers, barrierAllowed);
       continue;
     }
 
@@ -194,38 +417,12 @@ export function assertCompleteAnswers(
 
     if (step.selection === 'multi') {
       const values = asStringArray(answers, key);
-      if (key === 'skills') {
-        if (values.length) {
-          const bad = values.filter(
-            (v) => !sanitizeFreeSkillValues([v]).length,
-          );
-          if (bad.length) {
-            throw new AppException(
-              AuthErrorCode.VALIDATION_ERROR,
-              `Invalid skills value(s): ${bad.join(', ')}`,
-              HttpStatus.BAD_REQUEST,
-            );
-          }
-        }
-        if (values.includes('none') && values.length > 1) {
-          throw new AppException(
-            AuthErrorCode.VALIDATION_ERROR,
-            'skills cannot combine "none" with other values',
-            HttpStatus.BAD_REQUEST,
-          );
-        }
-        continue;
-      }
-      if (values.length) {
-        assertAllowed(key, values, allowed);
-      }
+      if (values.length) assertAllowed(key, values, allowed);
       continue;
     }
 
     const value = asString(answers, key);
-    if (value) {
-      assertAllowed(key, [value], allowed);
-    }
+    if (value) assertAllowed(key, [value], allowed);
     if (value === 'other' && !other) {
       throw new AppException(
         AuthErrorCode.VALIDATION_ERROR,
@@ -252,6 +449,45 @@ export function listMissingFields(
       const schedule = asSchedule(answers, key);
       if (!schedule.days.length) missing.push(`${key}.days`);
       if (!schedule.times.length) missing.push(`${key}.times`);
+      continue;
+    }
+
+    if (step.uiKind === 'skill-evidence') {
+      // Empty skill list is valid (no prior skills).
+      continue;
+    }
+
+    if (step.uiKind === 'track-select') {
+      const track = asTrackSelection(answers, key);
+      if (!track.primary) missing.push(key);
+      continue;
+    }
+
+    if (step.uiKind === 'capacity') {
+      if (!asString(answers, key)) missing.push(key);
+      if (!asString(answers, 'preferredSessionMinutes')) {
+        missing.push('preferredSessionMinutes');
+      }
+      continue;
+    }
+
+    if (step.uiKind === 'outcome') {
+      if (!asString(answers, key)) missing.push(key);
+      if (!asString(answers, 'deadline')) missing.push('deadline');
+      continue;
+    }
+
+    if (step.uiKind === 'context') {
+      const other = asString(answers, `${key}Other`).trim();
+      if (!asString(answers, key) && !other) missing.push(key);
+      if (!asString(answers, 'useFrequency')) missing.push('useFrequency');
+      continue;
+    }
+
+    if (step.uiKind === 'confidence-barriers') {
+      if (!asString(answers, 'confidence')) missing.push('confidence');
+      // Barriers optional but recommended — require at least one.
+      if (!asStringArray(answers, key).length) missing.push(key);
       continue;
     }
 
@@ -284,3 +520,5 @@ export function withOther(
 export function isScheduleShape(value: unknown): boolean {
   return isScheduleAnswer(value);
 }
+
+export { sanitizeFreeSkillValues, isFreeSkillToken };

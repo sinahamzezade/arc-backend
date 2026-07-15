@@ -37,6 +37,10 @@ export class RoadmapGenerationJob {
   @JoinColumn({ name: 'user_id' })
   user: User;
 
+  /** Optional pinned learner profile used by stage-aware generation. */
+  @Column({ name: 'learner_profile_id', type: 'uuid', nullable: true })
+  learnerProfileId: string | null;
+
   @Column({
     type: 'enum',
     enum: RoadmapJobStatus,

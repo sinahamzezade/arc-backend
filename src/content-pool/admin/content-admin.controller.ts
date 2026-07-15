@@ -20,6 +20,9 @@ import {
   AdminOnly,
   AdminRolesGuard,
 } from '../../common/guards/admin-roles.guard';
+import { HttpStatus } from '@nestjs/common';
+import { AppException } from '../../common/errors/app.exception';
+import { AuthErrorCode } from '../../common/errors/auth-error.codes';
 import { ContentCatalogService } from '../content-catalog.service';
 import { ContentPublicationService } from '../content-publication.service';
 import { ContentQueryService } from '../content-query.service';
@@ -29,6 +32,13 @@ import type {
   QuestionVersionAnswer,
   QuestionVersionPrompt,
 } from '../entities/question-version.entity';
+import { UnitsCatalogService } from '../units-catalog.service';
+import {
+  isUnitsJsonDocument,
+  type UnitsJsonSkill,
+  type UnitsJsonUnit,
+} from '../units-json.types';
+import { UnitsGraphError } from '../units-graph.util';
 import {
   CreateLessonDto,
   CreateLessonVersionDto,
@@ -49,6 +59,7 @@ export class ContentAdminController {
     private readonly publication: ContentPublicationService,
     private readonly query: ContentQueryService,
     private readonly catalog: ContentCatalogService,
+    private readonly unitsCatalog: UnitsCatalogService,
   ) {}
 
   private actorId(req: AuthedRequest): string | undefined {
@@ -228,9 +239,138 @@ export class ContentAdminController {
   }
 
   @Post('validate-graph')
-  @ApiOperation({ summary: 'Validate skill prerequisite DAG' })
+  @ApiOperation({ summary: 'Validate skill prerequisite DAG (legacy nodes)' })
   validateGraph() {
     return this.publication.validateGraph();
+  }
+
+  @Get('units')
+  @ApiOperation({ summary: 'List active flattened units' })
+  listUnits(
+    @Query('stack') stack?: string,
+    @Query('domain') domain?: string,
+  ) {
+    return this.unitsCatalog.listActiveUnits({ stack, domain });
+  }
+
+  @Get('skills')
+  @ApiOperation({ summary: 'List skills index' })
+  listSkills() {
+    return this.unitsCatalog.listActiveSkills();
+  }
+
+  @Get('units/export')
+  @ApiOperation({ summary: 'Export pool as units JSON' })
+  exportUnits() {
+    return this.unitsCatalog.exportDocument();
+  }
+
+  @Post('units/import')
+  @ApiOperation({
+    summary: 'Import units JSON (skills_index + units) — add a course at runtime',
+  })
+  async importUnits(
+    @Body() body: unknown,
+    @Query('deactivateMissing') deactivateMissing?: string,
+  ) {
+    if (!isUnitsJsonDocument(body)) {
+      throw new AppException(
+        AuthErrorCode.CONTENT_UNITS_INVALID,
+        'Body must be { skills_index: [], units: [] }',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    try {
+      return await this.unitsCatalog.importDocument(body, {
+        deactivateMissing: deactivateMissing === 'true',
+      });
+    } catch (err) {
+      if (err instanceof UnitsGraphError) {
+        throw new AppException(
+          err.code === 'CONTENT_GRAPH_CYCLE'
+            ? AuthErrorCode.CONTENT_GRAPH_CYCLE
+            : AuthErrorCode.CONTENT_PREREQ_UNRESOLVED,
+          err.message,
+          HttpStatus.UNPROCESSABLE_ENTITY,
+        );
+      }
+      throw err;
+    }
+  }
+
+  @Post('units')
+  @ApiOperation({ summary: 'Upsert a single unit' })
+  async upsertUnit(@Body() body: UnitsJsonUnit) {
+    try {
+      return await this.unitsCatalog.upsertUnit(body);
+    } catch (err) {
+      if (err instanceof UnitsGraphError) {
+        throw new AppException(
+          err.code === 'CONTENT_GRAPH_CYCLE'
+            ? AuthErrorCode.CONTENT_GRAPH_CYCLE
+            : AuthErrorCode.CONTENT_PREREQ_UNRESOLVED,
+          err.message,
+          HttpStatus.UNPROCESSABLE_ENTITY,
+        );
+      }
+      throw err;
+    }
+  }
+
+  @Post('skills')
+  @ApiOperation({ summary: 'Upsert a skill index entry' })
+  async upsertSkill(@Body() body: UnitsJsonSkill) {
+    try {
+      return await this.unitsCatalog.upsertSkill(body);
+    } catch (err) {
+      if (err instanceof UnitsGraphError) {
+        throw new AppException(
+          err.code === 'CONTENT_GRAPH_CYCLE'
+            ? AuthErrorCode.CONTENT_GRAPH_CYCLE
+            : AuthErrorCode.CONTENT_PREREQ_UNRESOLVED,
+          err.message,
+          HttpStatus.UNPROCESSABLE_ENTITY,
+        );
+      }
+      throw err;
+    }
+  }
+
+  @Post('units/:id/deactivate')
+  deactivateUnit(@Param('id') id: string) {
+    return this.unitsCatalog.deactivateUnit(id).then(() => ({ ok: true, id }));
+  }
+
+  @Post('skills/:id/deactivate')
+  deactivateSkill(@Param('id') id: string) {
+    return this.unitsCatalog.deactivateSkill(id).then(() => ({ ok: true, id }));
+  }
+
+  @Post('units/validate')
+  @ApiOperation({ summary: 'Validate units JSON DAG without saving' })
+  validateUnitsDoc(@Body() body: unknown) {
+    if (!isUnitsJsonDocument(body)) {
+      throw new AppException(
+        AuthErrorCode.CONTENT_UNITS_INVALID,
+        'Body must be { skills_index: [], units: [] }',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    try {
+      this.unitsCatalog.validateDocument(body);
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof UnitsGraphError) {
+        throw new AppException(
+          err.code === 'CONTENT_GRAPH_CYCLE'
+            ? AuthErrorCode.CONTENT_GRAPH_CYCLE
+            : AuthErrorCode.CONTENT_PREREQ_UNRESOLVED,
+          err.message,
+          HttpStatus.UNPROCESSABLE_ENTITY,
+        );
+      }
+      throw err;
+    }
   }
 
   @Post('roadmaps/:id/materialize')

@@ -16,7 +16,9 @@ import {
 } from '../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
+  IntakeChatCompleteDto,
   IntakeChatMessageDto,
+  ProfilePreviewRequestDto,
   SetIntakeModeDto,
   SubmitQuestionnaireDto,
   UpsertQuestionnaireDto,
@@ -90,10 +92,38 @@ export class QuestionnaireController {
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({
-    summary: 'Complete chat intake — same submit path as form',
+    summary:
+      'Save chat draft and mark ready for review (preferred). Finalize via POST /questionnaire/submit; pass { submit: true } only for legacy immediate submit.',
   })
-  chatComplete(@CurrentUser() user: AuthUserPayload) {
-    return this.intakeChat.complete(user.userId);
+  chatComplete(
+    @CurrentUser() user: AuthUserPayload,
+    @Body() dto?: IntakeChatCompleteDto,
+  ) {
+    return this.intakeChat.complete(user.userId, { submit: dto?.submit });
+  }
+
+  @Get('profile')
+  @ApiOperation({ summary: 'Current private learner profile snapshot' })
+  getProfile(@CurrentUser() user: AuthUserPayload) {
+    return this.questionnaireService.getProfile(user.userId);
+  }
+
+  @Post('profile-preview')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Non-persistent derived profile preview' })
+  profilePreview(
+    @CurrentUser() user: AuthUserPayload,
+    @Body() dto: ProfilePreviewRequestDto,
+  ) {
+    return this.questionnaireService.profilePreview(user.userId, dto.answers);
+  }
+
+  @Post('reassess')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Create placement/reassess profile revision' })
+  reassess(@CurrentUser() user: AuthUserPayload) {
+    return this.questionnaireService.reassess(user.userId);
   }
 
   @Get()
@@ -116,12 +146,14 @@ export class QuestionnaireController {
   @HttpCode(HttpStatus.CREATED)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({
-    summary: 'Submit questionnaire, upsert goal, enqueue roadmap',
+    summary: 'Submit questionnaire, create learner profile, enqueue roadmap',
   })
   submit(
     @CurrentUser() user: AuthUserPayload,
     @Body() dto: SubmitQuestionnaireDto,
   ) {
-    return this.questionnaireService.submit(user.userId, dto.answers);
+    return this.questionnaireService.submit(user.userId, dto.answers, {
+      schemaVersion: dto.schemaVersion,
+    });
   }
 }

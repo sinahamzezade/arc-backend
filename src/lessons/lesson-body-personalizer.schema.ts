@@ -1,12 +1,14 @@
 import {
-  isPlayOutline,
-  type LessonContentBlock,
-  type LessonContentPage,
-  type LessonPlayOutline,
+  isQuizContent,
+  isReadingContent,
+  isTaskContent,
+  isUnitPlayContent,
+  isVideoContent,
+  type UnitPlayContent,
 } from './lesson-play.types';
 import type {
-  LessonBodyPageDraft,
   LessonBodyRewriteDraft,
+  LessonBodySafeFields,
 } from './lesson-body-personalizer.prompt';
 
 export const ARC_PERSONALIZATION_KEY = '_arcPersonalization';
@@ -26,138 +28,134 @@ export function isAlreadyPersonalized(playContent: unknown): boolean {
   return Boolean(meta && typeof meta === 'object');
 }
 
+/**
+ * Extract the rewrite-safe fields for a unit body. Everything else
+ * (questions, answers, acceptanceCriteria, keyTakeaways, starterHtml, urls)
+ * stays server-side and frozen.
+ */
+export function extractSafeFields(content: UnitPlayContent): LessonBodySafeFields {
+  if (isReadingContent(content)) {
+    // Structured sections stay frozen — personalizer only rewrites string[] copy.
+    if (content.sections.every((s): s is string => typeof s === 'string')) {
+      return { objective: content.objective, sections: content.sections };
+    }
+    return { objective: content.objective };
+  }
+  if (isTaskContent(content)) {
+    return {
+      objective: content.objective,
+      task: content.task,
+      ...(content.hints?.length ? { hints: content.hints } : {}),
+    };
+  }
+  if (isQuizContent(content)) {
+    return { objective: content.objective };
+  }
+  return { objective: content.objective, note: content.note };
+}
+
+/** Validate the LLM rewrite against the original safe fields. */
 export function parseLessonBodyRewrite(
   raw: unknown,
-  allowedPageIds: Set<string>,
+  original: LessonBodySafeFields,
 ): LessonBodyRewriteDraft {
   if (!raw || typeof raw !== 'object') {
     throw new Error('Lesson body rewrite must be an object');
   }
   const obj = raw as Record<string, unknown>;
-  const pagesRaw = obj.pages;
-  if (!Array.isArray(pagesRaw) || !pagesRaw.length) {
-    throw new Error('Lesson body rewrite pages[] required');
+  const draft: LessonBodyRewriteDraft = {};
+
+  if (typeof obj.objective === 'string' && obj.objective.trim()) {
+    draft.objective = obj.objective.trim().slice(0, 500);
   }
 
-  const pages: LessonBodyPageDraft[] = [];
-  for (const p of pagesRaw) {
-    if (!p || typeof p !== 'object') continue;
-    const page = p as Record<string, unknown>;
-    const id = typeof page.id === 'string' ? page.id.trim() : '';
-    if (!id || !allowedPageIds.has(id)) {
-      throw new Error(`Unknown or missing page id: ${id || '(empty)'}`);
+  if (original.sections) {
+    const sections = asTrimmedStrings(obj.sections, 4000);
+    if (sections) {
+      if (sections.length !== original.sections.length) {
+        throw new Error(
+          `Rewrite must keep ${original.sections.length} sections, got ${sections.length}`,
+        );
+      }
+      draft.sections = sections;
     }
-    const title =
-      typeof page.title === 'string' && page.title.trim()
-        ? page.title.trim().slice(0, 120)
-        : 'Page';
-    const blocks = parseBlocks(page.blocks);
-    if (!blocks.length) {
-      throw new Error(`Page ${id} has no valid blocks`);
+  }
+
+  if (original.task !== undefined && typeof obj.task === 'string') {
+    const task = obj.task.trim().slice(0, 4000);
+    if (task) draft.task = task;
+  }
+
+  if (original.hints) {
+    const hints = asTrimmedStrings(obj.hints, 500);
+    if (hints) {
+      if (hints.length !== original.hints.length) {
+        throw new Error(
+          `Rewrite must keep ${original.hints.length} hints, got ${hints.length}`,
+        );
+      }
+      draft.hints = hints;
     }
-    pages.push({ id, title, blocks });
   }
 
-  if (!pages.length) {
-    throw new Error('No valid rewritten pages');
+  if (original.note !== undefined && typeof obj.note === 'string') {
+    const note = obj.note.trim().slice(0, 2000);
+    if (note) draft.note = note;
   }
 
-  const suggestedArlo = Array.isArray(obj.suggestedArlo)
-    ? obj.suggestedArlo
-        .filter(
-          (s): s is string => typeof s === 'string' && s.trim().length > 0,
-        )
-        .map((s) => s.trim().slice(0, 120))
-        .slice(0, 6)
-    : undefined;
-
-  return {
-    objective:
-      typeof obj.objective === 'string' && obj.objective.trim()
-        ? obj.objective.trim().slice(0, 500)
-        : undefined,
-    arloPrompt:
-      typeof obj.arloPrompt === 'string' && obj.arloPrompt.trim()
-        ? obj.arloPrompt.trim().slice(0, 300)
-        : undefined,
-    suggestedArlo,
-    pages,
-  };
+  if (Object.keys(draft).length === 0) {
+    throw new Error('Rewrite contained no usable safe fields');
+  }
+  return draft;
 }
 
-function parseBlocks(raw: unknown): LessonBodyPageDraft['blocks'] {
-  if (!Array.isArray(raw)) return [];
-  const out: LessonBodyPageDraft['blocks'] = [];
-  for (const b of raw) {
-    if (!b || typeof b !== 'object') continue;
-    const block = b as Record<string, unknown>;
-    const type = block.type;
-    if (type === 'text' && typeof block.body === 'string') {
-      out.push({ type: 'text', body: block.body.slice(0, 4000) });
-    } else if (
-      type === 'callout' &&
-      typeof block.title === 'string' &&
-      typeof block.body === 'string'
-    ) {
-      out.push({
-        type: 'callout',
-        title: block.title.slice(0, 120),
-        body: block.body.slice(0, 2000),
-      });
-    } else if (
-      type === 'code' &&
-      typeof block.label === 'string' &&
-      typeof block.code === 'string'
-    ) {
-      out.push({
-        type: 'code',
-        label: block.label.slice(0, 80),
-        code: block.code.slice(0, 4000),
-      });
-    }
-  }
-  return out;
+function asTrimmedStrings(value: unknown, maxLen: number): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const out = value
+    .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+    .map((s) => s.trim().slice(0, maxLen));
+  return out.length ? out : null;
 }
 
 /**
- * Apply rewrite onto scaffold. Practice / quiz / remediation / reward frozen.
+ * Apply rewrite onto the original body. Questions/answers, passScore,
+ * acceptanceCriteria, keyTakeaways and starterHtml are always preserved
+ * from the original — the draft cannot touch them.
  */
 export function mergeLessonBodyRewrite(
-  scaffold: LessonPlayOutline,
+  original: UnitPlayContent,
   draft: LessonBodyRewriteDraft,
   meta: ArcPersonalizationMeta,
-): LessonPlayOutline {
-  const byId = new Map(draft.pages.map((p) => [p.id, p]));
-  const content: LessonContentPage[] = scaffold.content.map((page) => {
-    const rewritten = byId.get(page.id);
-    if (!rewritten) return page;
-    return {
-      id: page.id,
-      title: rewritten.title || page.title,
-      blocks: rewritten.blocks as LessonContentBlock[],
-    };
-  });
-
-  const merged: LessonPlayOutline & Record<string, unknown> = {
-    ...scaffold,
-    objective: draft.objective?.trim() || scaffold.objective,
-    arloPrompt: draft.arloPrompt?.trim() || scaffold.arloPrompt,
-    suggestedArlo:
-      draft.suggestedArlo && draft.suggestedArlo.length
-        ? draft.suggestedArlo
-        : scaffold.suggestedArlo,
-    content,
-    practice: scaffold.practice,
-    quiz: scaffold.quiz,
-    reward: scaffold.reward,
-    rewardPresentation: scaffold.rewardPresentation,
-    remediation: scaffold.remediation,
-    attemptBudgetPerConcept: scaffold.attemptBudgetPerConcept,
+): UnitPlayContent {
+  const merged: Record<string, unknown> = {
+    ...(original as unknown as Record<string, unknown>),
+    objective: draft.objective?.trim() || original.objective,
     [ARC_PERSONALIZATION_KEY]: meta,
   };
 
-  if (!isPlayOutline(merged)) {
-    throw new Error('Merged outline failed isPlayOutline validation');
+  if (isReadingContent(original) && draft.sections) {
+    merged.sections = draft.sections;
+    merged.keyTakeaways = original.keyTakeaways;
   }
-  return merged;
+  if (isTaskContent(original)) {
+    if (draft.task) merged.task = draft.task;
+    if (draft.hints && original.hints) merged.hints = draft.hints;
+    merged.acceptanceCriteria = original.acceptanceCriteria;
+    if (original.starterHtml !== undefined) {
+      merged.starterHtml = original.starterHtml;
+    }
+  }
+  if (isQuizContent(original)) {
+    merged.passScore = original.passScore;
+    merged.questions = original.questions;
+  }
+  if (isVideoContent(original) && draft.note) {
+    merged.note = draft.note;
+  }
+
+  const result = merged as unknown as UnitPlayContent;
+  if (!isUnitPlayContent(result)) {
+    throw new Error('Merged body failed isUnitPlayContent validation');
+  }
+  return result;
 }

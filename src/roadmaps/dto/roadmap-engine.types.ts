@@ -1,5 +1,16 @@
 /** Mirrors roadmap-engine pydantic contracts (HTTP seam). */
 
+/** Per-skill stage estimate carried from a learner profile snapshot. */
+export type LearnerSkillEstimateDto = {
+  skill_slug: string;
+  self_exposure_level: string;
+  provisional_stage: number;
+  verified_stage: number | null;
+  confidence: string;
+  /** true when a placement diagnostic gates skipping this skill. */
+  diagnostic_required: boolean;
+};
+
 export type LearnerProfileDto = {
   user_id: string;
   goal_id: string;
@@ -18,6 +29,13 @@ export type LearnerProfileDto = {
   language: string;
   interview_signals: Record<string, unknown>;
   proven_mastered_skill_ids: string[];
+  /** Stage-aware fields (present when a LearnerProfileSnapshot is pinned). */
+  skill_estimates?: LearnerSkillEstimateDto[];
+  current_stage?: number;
+  target_stage?: number;
+  weekly_effective_minutes?: number;
+  learning_style_weights?: Record<string, number>;
+  pace_class?: string;
 };
 
 export type ContentSnapshotDto = {
@@ -92,6 +110,24 @@ export type SelectedLessonDto = {
   source_template_id: string;
   source_version_id: string | null;
   skill_node_id: string;
+  /** Units model: flat unit slug id (source_template_id mirrors it). */
+  unit_id?: string | null;
+  /** Units model: namespaced skill slug (skill_node_id mirrors it). */
+  skill_id?: string | null;
+  /** Units model: external provider snapshot (e.g. `MDN`). */
+  provider?: string | null;
+  /** Units model: external resource URL snapshot. */
+  url?: string | null;
+  /** Units model: unit difficulty level snapshot. */
+  level?: number | null;
+  /** Units model: skill slugs the unit teaches. */
+  skills_taught?: string[];
+  /** Units model: unit role (foundation | refresher | checkpoint | ...). */
+  unit_role?: string | null;
+  /** Units model: learner stages the unit serves. */
+  serves_stage?: number[];
+  /** Stage-aware plan action for the skill this unit was selected for. */
+  entry_action?: string | null;
   title: string;
   mission_name: string | null;
   lesson_type: string;
@@ -108,6 +144,8 @@ export type SelectedLessonDto = {
 
 export type SelectedMilestoneDto = {
   skill_node_id: string;
+  /** Units model: namespaced skill slug (skill_node_id mirrors it). */
+  skill_id?: string | null;
   title: string;
   type: string;
   compress: boolean;

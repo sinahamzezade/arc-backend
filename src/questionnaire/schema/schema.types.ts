@@ -3,6 +3,8 @@ export type QuestionnaireOptionDto = {
   label: string;
   icon?: string;
   iconClassName?: string;
+  /** Safe display metadata only — scoring weights never exposed to clients. */
+  profileHint?: string;
 };
 
 /** Adaptive branch rule — Question Engine only (not skill graph). */
@@ -12,6 +14,16 @@ export type StepVisibleWhen = {
   value: string | string[];
 };
 
+export type QuestionnaireUiKind =
+  | 'options'
+  | 'schedule'
+  | 'track-select'
+  | 'skill-evidence'
+  | 'capacity'
+  | 'outcome'
+  | 'context'
+  | 'confidence-barriers';
+
 export type QuestionnaireStepDto = {
   id: string;
   stepNumber: number;
@@ -19,12 +31,18 @@ export type QuestionnaireStepDto = {
   subtitle: string;
   selection: 'single' | 'multi';
   allowOther?: boolean;
-  uiKind: 'options' | 'schedule';
+  uiKind: QuestionnaireUiKind;
   reviewLabel: string;
   reviewIcon: string;
   options: QuestionnaireOptionDto[];
   scheduleDays?: string[];
   scheduleTimes?: QuestionnaireOptionDto[];
+  /** Exposure levels for skill-evidence uiKind */
+  exposureOptions?: QuestionnaireOptionDto[];
+  /** Session length choices for capacity uiKind */
+  sessionOptions?: QuestionnaireOptionDto[];
+  /** Secondary options for compound screens (outcome deadline, barriers, etc.) */
+  secondaryOptions?: QuestionnaireOptionDto[];
   /** Omit / undefined = always visible. Array = AND. */
   visibleWhen?: StepVisibleWhen | StepVisibleWhen[];
 };

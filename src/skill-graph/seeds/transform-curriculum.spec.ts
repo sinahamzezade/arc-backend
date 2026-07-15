@@ -1,8 +1,8 @@
-import { LessonContentService } from '../../lessons/lesson-content.service';
 import {
   assertConceptTagsPresent,
   collectSecretKeyHits,
   isPlayOutline,
+  stripPlaySecrets,
 } from '../../lessons/lesson-play.types';
 import {
   transformCurriculumLesson,
@@ -63,7 +63,7 @@ describe('transformCurriculumLesson', () => {
     const tags = [
       outline.practice.conceptTag,
       ...outline.quiz.map((q) => q.conceptTag),
-    ];
+    ].filter((t): t is string => Boolean(t));
     for (const tag of tags) {
       const pool = outline.remediation?.[tag];
       expect(pool).toBeDefined();
@@ -86,8 +86,7 @@ describe('transformCurriculumLesson', () => {
 
   it('public strip removes every secret key', () => {
     const outline = transformCurriculumLesson(SAMPLE_QUIZ_LESSON);
-    const content = new LessonContentService();
-    const publicBody = content.toPublicPlayBody(outline);
+    const publicBody = stripPlaySecrets(outline) as Record<string, unknown>;
     const hits = collectSecretKeyHits(publicBody);
     expect(hits).toEqual([]);
     expect(publicBody).not.toHaveProperty('remediation');

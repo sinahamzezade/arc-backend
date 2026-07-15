@@ -7,7 +7,6 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { LessonTemplate } from '../../skill-graph/entities/lesson-template.entity';
 import { Resource } from '../../skill-graph/entities/resource.entity';
 import { Milestone } from './milestone.entity';
 
@@ -31,12 +30,13 @@ export class Lesson {
   @JoinColumn({ name: 'milestone_id' })
   milestone: Milestone;
 
+  /** Source unit slug this lesson was materialized from (units.id). */
+  @Column({ name: 'unit_id', type: 'varchar', nullable: true })
+  unitId: string | null;
+
+  /** @deprecated legacy skill-graph template ref — unused by play APIs. */
   @Column({ name: 'lesson_template_id', type: 'uuid', nullable: true })
   lessonTemplateId: string | null;
-
-  @ManyToOne(() => LessonTemplate, { nullable: true, onDelete: 'SET NULL' })
-  @JoinColumn({ name: 'lesson_template_id' })
-  lessonTemplate: LessonTemplate | null;
 
   @Column({ type: 'varchar' })
   title: string;
@@ -76,13 +76,51 @@ export class Lesson {
   })
   status: LessonStatus;
 
-  /** Optional per-lesson play payload override (else template.contentOutline). */
+  /** Type-specific unit body snapshot (authoritative play payload). */
   @Column({ name: 'play_content', type: 'jsonb', nullable: true })
   playContent: Record<string, unknown> | null;
 
-  /** Pinned published LessonVersion id at roadmap generation time. */
+  /** @deprecated legacy content-pool pin — unused by play APIs. */
   @Column({ name: 'source_version_id', type: 'uuid', nullable: true })
   sourceVersionId: string | null;
+
+  /** External resource provider snapshot from the unit (e.g. `mdn`). */
+  @Column({ type: 'varchar', nullable: true })
+  provider: string | null;
+
+  /** External resource URL snapshot from the unit. */
+  @Column({ type: 'text', nullable: true })
+  url: string | null;
+
+  /** Unit difficulty level snapshot. */
+  @Column({ type: 'int', nullable: true, default: 1 })
+  level: number | null;
+
+  /** Skill slugs the source unit teaches (unit.skills_taught snapshot). */
+  @Column({
+    name: 'skills_taught',
+    type: 'text',
+    array: true,
+    default: '{}',
+  })
+  skillsTaught: string[];
+
+  /** Unit role snapshot (foundation | refresher | checkpoint | project | proof). */
+  @Column({ name: 'unit_role', type: 'varchar', nullable: true })
+  unitRole: string | null;
+
+  /** Learner stages the source unit serves (unit.serves_stage snapshot). */
+  @Column({
+    name: 'serves_stage',
+    type: 'int',
+    array: true,
+    default: '{}',
+  })
+  servesStage: number[];
+
+  /** Stage-aware plan action this lesson was scheduled under. */
+  @Column({ name: 'entry_action', type: 'varchar', nullable: true })
+  entryAction: string | null;
 
   /** Snapshot of template reward class (not wallet amount). */
   @Column({ name: 'reward_class_snapshot', type: 'varchar', nullable: true })

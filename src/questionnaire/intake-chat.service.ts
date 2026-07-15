@@ -10,7 +10,7 @@ import {
   Profile,
   QuestionnaireStatus,
 } from '../profiles/entities/profile.entity';
-import { RoleRecipe } from '../skill-graph/entities/role-recipe.entity';
+import { UnitsCatalogService } from '../content-pool/units-catalog.service';
 import type { IntakeChatSelectionDto } from './dto/questionnaire.dto';
 import {
   QuestionnaireResponse,
@@ -26,21 +26,29 @@ import { parseIntakeChatLlmResponse } from './intake-chat.schema';
 import {
   allowedValuesForStep,
   buildIntakeSuggestions,
+  humanizeSkillSlug,
   isFreeSkillToken,
+  listChatPendingFields,
   slugifySkillLabel,
+  type IntakeChatMeta,
   type IntakeSuggestionOption,
   type IntakeSuggestions,
 } from './intake-chat.suggestions';
 import { QuestionnaireSchemaService } from './questionnaire-schema.service';
 import { QuestionnaireService } from './questionnaire.service';
+import type { QuestionnaireStepDto } from './schema/schema.types';
 import {
   listMissingFields,
   normalizeDraftAnswers,
 } from './questionnaire.validation';
 import {
+  asSkillEvidence,
   asString,
+  asTrackSelection,
   emptyQuestionnaireAnswers,
+  isSkillEvidenceAnswer,
   type QuestionnaireAnswers,
+  type SkillEvidenceAnswer,
 } from './types/answers';
 
 export type ChatTurnResponse = {
@@ -51,14 +59,16 @@ export type ChatTurnResponse = {
   done: boolean;
   promptVersion: string;
   model: string | null;
-  /** Pickable chips for the current focus field (from schema / role recipes). */
+  /** Pickable chips for the current focus (sub)question. */
   suggestions: IntakeSuggestions | null;
 };
 
 @Injectable()
 export class IntakeChatService {
   private readonly logger = new Logger(IntakeChatService.name);
-  /** Cache skill chips per goal (avoid rebuild every poll). */
+  /** Internal chat progress markers stored inside the answers JSON. */
+  private static readonly CHAT_META_KEY = '_chatMeta';
+  /** Cache skill chips per primary track (avoid rebuild every poll). */
   private readonly skillSuggestCache = new Map<
     string,
     { at: number; options: IntakeSuggestionOption[] }
@@ -73,8 +83,7 @@ export class IntakeChatService {
     private readonly responsesRepo: Repository<QuestionnaireResponse>,
     @InjectRepository(Profile)
     private readonly profilesRepo: Repository<Profile>,
-    @InjectRepository(RoleRecipe)
-    private readonly recipesRepo: Repository<RoleRecipe>,
+    private readonly unitsCatalog: UnitsCatalogService,
   ) {}
 
   async chatEnabled(userId?: string | null): Promise<boolean> {
@@ -90,6 +99,55 @@ export class IntakeChatService {
       );
     }
   }
+
+  // ---------------------------------------------------------------- meta
+
+  private readMeta(raw: unknown): IntakeChatMeta {
+    if (!raw || typeof raw !== 'object') return {};
+    const meta = (raw as Record<string, unknown>)[
+      IntakeChatService.CHAT_META_KEY
+    ];
+    if (!meta || typeof meta !== 'object') return {};
+    const m = meta as Record<string, unknown>;
+    return {
+      skillsAnswered: m.skillsAnswered === true,
+      exposureDone: Array.isArray(m.exposureDone)
+        ? m.exposureDone.filter((s): s is string => typeof s === 'string')
+        : [],
+      sessionAnswered: m.sessionAnswered === true,
+    };
+  }
+
+  private withMeta(
+    answers: QuestionnaireAnswers,
+    meta: IntakeChatMeta,
+  ): QuestionnaireAnswers {
+    return { ...answers, [IntakeChatService.CHAT_META_KEY]: meta };
+  }
+
+  /** Meta for answers finished elsewhere (e.g. already-submitted rows). */
+  private completedMeta(answers: QuestionnaireAnswers): IntakeChatMeta {
+    return {
+      skillsAnswered: true,
+      sessionAnswered: true,
+      exposureDone: asSkillEvidence(answers, 'skills').map((e) => e.skillSlug),
+    };
+  }
+
+  private chatPending(
+    answers: QuestionnaireAnswers,
+    meta: IntakeChatMeta,
+  ): string[] {
+    const schema = this.schemaService.getSchema();
+    return listChatPendingFields(
+      schema,
+      answers,
+      meta,
+      listMissingFields(answers, schema),
+    );
+  }
+
+  // ---------------------------------------------------------------- flow
 
   async start(userId: string): Promise<ChatTurnResponse> {
     await this.assertChatEnabled(userId);
@@ -110,7 +168,11 @@ export class IntakeChatService {
     }
 
     row.chatTranscript = [];
-    if (row.status !== QuestionnaireResponseStatus.Submitted) {
+    if (row.status === QuestionnaireResponseStatus.Submitted) {
+      // Keep submitted answers; mark chat-only questions as already covered.
+      const answers = normalizeDraftAnswers(row.answers ?? {}, schema);
+      row.answers = this.withMeta(answers, this.completedMeta(answers));
+    } else {
       row.status = QuestionnaireResponseStatus.Draft;
       row.answers = emptyQuestionnaireAnswers();
     }
@@ -141,17 +203,16 @@ export class IntakeChatService {
       return this.applySelectionAndContinue(userId, input.selection);
     }
 
-    // Career goal must use chip selection — no free-typed path.
+    // Track selection must use chip picks — no free-typed path.
     const schema = this.schemaService.getSchema();
     const row = await this.responsesRepo.findOne({ where: { userId } });
+    const meta = this.readMeta(row?.answers);
     const answers = normalizeDraftAnswers(row?.answers ?? {}, schema);
-    const pending = await this.suggestionsFor(userId, answers);
+    const pending = await this.suggestionsFor(userId, answers, meta);
     if (pending?.fieldId === 'goal') {
       throw new AppException(
         AuthErrorCode.VALIDATION_ERROR,
-        pending.selection === 'multi'
-          ? 'Pick one or more listed career paths — free text is disabled for this step'
-          : 'Pick a listed career path — free text is disabled for this step',
+        'Pick listed career paths — first pick becomes your primary track; free text is disabled for this step',
         HttpStatus.BAD_REQUEST,
       );
     }
@@ -162,7 +223,18 @@ export class IntakeChatService {
     });
   }
 
-  async complete(userId: string) {
+  /**
+   * Wrap up the chat draft.
+   *
+   * Preferred flow: saves the normalized draft and returns
+   * `{ readyForReview: true, answers, incompleteFields }` so the client
+   * routes the user to the review screen; the final submit happens via
+   * `POST /questionnaire/submit`.
+   *
+   * Backward compat: pass `{ submit: true }` to submit immediately when the
+   * draft is already complete (legacy clients). Review is still preferred.
+   */
+  async complete(userId: string, opts: { submit?: boolean } = {}) {
     await this.assertChatEnabled(userId);
     const schema = this.schemaService.getSchema();
     const row = await this.responsesRepo.findOne({ where: { userId } });
@@ -174,24 +246,42 @@ export class IntakeChatService {
       );
     }
 
+    const meta = this.readMeta(row.answers);
     const answers = normalizeDraftAnswers(row.answers, schema);
     const missing = listMissingFields(answers, schema);
-    if (missing.length) {
+
+    // Persist the normalized draft so the review screen reads a clean snapshot.
+    row.answers = this.withMeta(answers, meta);
+    row.schemaVersion = schema.schemaVersion;
+    if (row.status !== QuestionnaireResponseStatus.Submitted) {
+      row.status = QuestionnaireResponseStatus.Draft;
+    }
+    await this.responsesRepo.save(row);
+
+    if (opts.submit && !missing.length) {
+      // Legacy immediate-submit path.
+      const result = await this.questionnaireService.submit(userId, answers);
       return {
-        ok: false as const,
-        missingFields: missing,
-        answers,
-        transcript: row.chatTranscript ?? [],
-        suggestions: await this.suggestionsFor(userId, answers),
+        ok: true as const,
+        readyForReview: false,
+        missingFields: [] as string[],
+        incompleteFields: [] as string[],
+        suggestions: null,
+        ...result,
       };
     }
 
-    const result = await this.questionnaireService.submit(userId, answers);
     return {
-      ok: true as const,
-      missingFields: [] as string[],
-      suggestions: null,
-      ...result,
+      ok: missing.length === 0,
+      readyForReview: true,
+      answers,
+      incompleteFields: missing,
+      /** @deprecated alias of incompleteFields kept for older clients */
+      missingFields: missing,
+      transcript: row.chatTranscript ?? [],
+      suggestions: missing.length
+        ? await this.suggestionsFor(userId, answers, meta)
+        : null,
     };
   }
 
@@ -199,9 +289,10 @@ export class IntakeChatService {
     await this.assertChatEnabled(userId);
     const schema = this.schemaService.getSchema();
     const row = await this.responsesRepo.findOne({ where: { userId } });
+    const meta = this.readMeta(row?.answers);
     const answers = normalizeDraftAnswers(row?.answers ?? {}, schema);
     const transcript = row?.chatTranscript ?? [];
-    const missing = listMissingFields(answers, schema);
+    const pending = this.chatPending(answers, meta);
     const lastAssistant = [...transcript]
       .reverse()
       .find((m) => m.role === 'assistant');
@@ -211,15 +302,19 @@ export class IntakeChatService {
         'Say hi when you are ready to start your goal interview.',
       answers,
       transcript,
-      missingFields: missing,
-      done: missing.length === 0,
+      missingFields: pending,
+      done: pending.length === 0,
       promptVersion: INTAKE_CHAT_PROMPT_VERSION,
       model: null,
-      suggestions: await this.suggestionsFor(userId, answers),
+      suggestions: pending.length
+        ? await this.suggestionsFor(userId, answers, meta)
+        : null,
     };
   }
 
-  /** Validate chip selection against schema (+ role recipes for goal). */
+  // ----------------------------------------------------------- selections
+
+  /** Validate chip selection against schema v4 structured answers. */
   private async applySelectionAndContinue(
     userId: string,
     selection: IntakeChatSelectionDto,
@@ -247,114 +342,471 @@ export class IntakeChatService {
       });
     }
 
+    const meta = this.readMeta(row.answers);
     const prior = normalizeDraftAnswers(row.answers ?? {}, schema);
     const patch: QuestionnaireAnswers = { ...prior };
     let display = '';
 
-    if (step.uiKind === 'schedule') {
-      const daysAllowed = new Set(step.scheduleDays ?? []);
-      const timesAllowed = new Set(
-        (step.scheduleTimes ?? []).map((t) => t.value),
-      );
-      const days = (selection.days ?? []).filter((d) => daysAllowed.has(d));
-      const times = (selection.times ?? selection.values ?? []).filter((t) =>
-        timesAllowed.has(t),
-      );
-      if (!days.length || !times.length) {
-        throw new AppException(
-          AuthErrorCode.VALIDATION_ERROR,
-          'Schedule requires at least one valid day and time',
-          HttpStatus.BAD_REQUEST,
+    const values = selection.values.map((v) => v.trim()).filter(Boolean);
+
+    switch (step.uiKind) {
+      case 'schedule':
+        display = this.applyScheduleSelection(step, selection, patch);
+        break;
+      case 'track-select':
+        display = await this.applyTrackSelection(step, values, patch);
+        break;
+      case 'skill-evidence':
+        display = this.applySkillSelection(
+          step,
+          selection,
+          values,
+          prior,
+          patch,
+          meta,
         );
-      }
-      patch[step.id] = { days, times };
-      display = `Schedule: ${days.join(', ')} · ${times.join(', ')}`;
-    } else {
-      const allowed = new Set(allowedValuesForStep(step));
-      if (step.id === 'goal') {
-        for (const role of await this.listActiveRoleOptions()) {
-          allowed.add(role.value);
-        }
-      }
-
-      let values = selection.values.map((v) => v.trim()).filter(Boolean);
-
-      if (step.id === 'goal') {
-        // Career path must be a listed role — never free "other".
-        values = values.filter((v) => v !== 'other');
-      }
-
-      if (step.id === 'skills') {
-        values = values.filter(
-          (v) =>
-            v === 'none' ||
-            v === 'other' ||
-            isFreeSkillToken(v) ||
-            allowed.has(v),
+        break;
+      case 'capacity':
+        display = this.applyCapacitySelection(
+          step,
+          selection,
+          values,
+          prior,
+          patch,
+          meta,
         );
-        if (values.includes('none') && values.length > 1) {
-          values = ['none'];
-        }
-      } else {
-        values = values.filter((v) => allowed.has(v));
-      }
-
-      if (!values.length) {
-        throw new AppException(
-          AuthErrorCode.VALIDATION_ERROR,
-          `Invalid ${step.id} selection — pick a listed option`,
-          HttpStatus.BAD_REQUEST,
+        break;
+      case 'outcome':
+        display = this.applyOutcomeSelection(step, selection, values, prior, patch);
+        break;
+      case 'context':
+        display = this.applyContextSelection(step, selection, values, prior, patch);
+        break;
+      case 'confidence-barriers':
+        display = this.applyConfidenceBarriersSelection(
+          step,
+          selection,
+          values,
+          prior,
+          patch,
         );
-      }
-
-      if (step.selection === 'multi') {
-        patch[step.id] = values;
-      } else {
-        patch[step.id] = values[0]!;
-      }
-
-      if (values.includes('other') && selection.otherText?.trim()) {
-        patch[`${step.id}Other`] = selection.otherText.trim();
-      }
-
-      const labelByValue = new Map([
-        ...step.options.map((o) => [o.value, o.label] as const),
-        ...(await this.listActiveRoleOptions()).map(
-          (o) => [o.value, o.label] as const,
-        ),
-      ]);
-      if (step.id === 'skills') {
-        const goal =
-          asString(prior, 'goal').trim() || asString(prior, 'goalOther').trim();
-        const cached = goal ? this.skillSuggestCache.get(goal) : undefined;
-        for (const o of cached?.options ?? []) {
-          labelByValue.set(o.value, o.label);
-        }
-      }
-      display = values
-        .map((v) =>
-          v === 'other' && selection.otherText?.trim()
-            ? selection.otherText.trim()
-            : (labelByValue.get(v) ?? v),
-        )
-        .join(', ');
+        break;
+      default:
+        display = this.applyPlainOptionsSelection(step, selection, values, patch);
+        break;
     }
 
     const answers = normalizeDraftAnswers(patch, schema);
-    row.answers = answers;
+    row.answers = this.withMeta(answers, meta);
     row.schemaVersion = schema.schemaVersion;
     if (row.status !== QuestionnaireResponseStatus.Submitted) {
       row.status = QuestionnaireResponseStatus.Draft;
     }
     await this.responsesRepo.save(row);
 
-    // Chip/schedule already applied — skip LLM (next Q from schema title).
+    // Chip already applied — skip LLM (next question from schema/suggestions).
     return this.runTurn(userId, display, {
       isStart: false,
       skipLlm: true,
       preAnswers: answers,
+      preMeta: meta,
     });
   }
+
+  private applyScheduleSelection(
+    step: QuestionnaireStepDto,
+    selection: IntakeChatSelectionDto,
+    patch: QuestionnaireAnswers,
+  ): string {
+    const daysAllowed = new Set(step.scheduleDays ?? []);
+    const timesAllowed = new Set((step.scheduleTimes ?? []).map((t) => t.value));
+    const days = (selection.days ?? []).filter((d) => daysAllowed.has(d));
+    const times = (selection.times ?? selection.values ?? []).filter((t) =>
+      timesAllowed.has(t),
+    );
+    if (!days.length || !times.length) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'Schedule requires at least one valid day and time',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    patch[step.id] = { days, times };
+    return `Schedule: ${days.join(', ')} · ${times.join(', ')}`;
+  }
+
+  /** Multi pick — first value is the primary track, rest are secondary. */
+  private async applyTrackSelection(
+    step: QuestionnaireStepDto,
+    values: string[],
+    patch: QuestionnaireAnswers,
+  ): Promise<string> {
+    const roles = await this.listActiveRoleOptions();
+    const allowed = new Set(step.options.map((o) => o.value));
+    for (const role of roles) allowed.add(role.value);
+
+    const picked = values.filter((v) => v !== 'other' && allowed.has(v));
+    if (!picked.length) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'Pick a listed career path — the first pick becomes your primary track',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const primary = picked[0]!;
+    const secondary = [...new Set(picked.slice(1))].filter(
+      (v) => v !== primary,
+    );
+    patch[step.id] = { primary, secondary };
+
+    const labelByValue = new Map([
+      ...step.options.map((o) => [o.value, o.label] as const),
+      ...roles.map((o) => [o.value, o.label] as const),
+    ]);
+    const label = (v: string) => labelByValue.get(v) ?? v;
+    return secondary.length
+      ? `Primary: ${label(primary)} · Also: ${secondary.map(label).join(', ')}`
+      : `Primary: ${label(primary)}`;
+  }
+
+  /**
+   * Two-phase skill-evidence:
+   * 1. skill picks (multi) → evidence entries with default exposure;
+   * 2. per-skill exposure (single, `skillSlug` set) → update that entry.
+   */
+  private applySkillSelection(
+    step: QuestionnaireStepDto,
+    selection: IntakeChatSelectionDto,
+    values: string[],
+    prior: QuestionnaireAnswers,
+    patch: QuestionnaireAnswers,
+    meta: IntakeChatMeta,
+  ): string {
+    const exposureAllowed = (step.exposureOptions ?? []).map((o) => o.value);
+    const defaultExposure = exposureAllowed[0] ?? 'heard_of';
+
+    // Phase 2 — exposure for one selected skill.
+    if (selection.skillSlug || selection.subField === 'exposure') {
+      const skillSlug = selection.skillSlug?.trim() ?? '';
+      const exposure = values[0] ?? '';
+      if (!skillSlug || !exposureAllowed.includes(exposure)) {
+        throw new AppException(
+          AuthErrorCode.VALIDATION_ERROR,
+          'Exposure selection requires a known skill and a listed level',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      const entries = asSkillEvidence(prior, step.id);
+      const target = entries.find((e) => e.skillSlug === skillSlug);
+      if (!target) {
+        throw new AppException(
+          AuthErrorCode.VALIDATION_ERROR,
+          `Skill ${skillSlug} is not in your selected skills`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      target.exposureLevel = exposure;
+      patch[step.id] = entries;
+      meta.exposureDone = [
+        ...new Set([...(meta.exposureDone ?? []), skillSlug]),
+      ];
+      const exposureLabel =
+        (step.exposureOptions ?? []).find((o) => o.value === exposure)
+          ?.label ?? exposure;
+      return `${this.skillLabel(step, skillSlug)}: ${exposureLabel}`;
+    }
+
+    // Phase 1 — skill picks.
+    const allowed = new Set(allowedValuesForStep(step));
+    let picked = values.filter(
+      (v) =>
+        v === 'none' || v === 'other' || isFreeSkillToken(v) || allowed.has(v),
+    );
+    if (picked.includes('none') && picked.length > 1) {
+      picked = ['none'];
+    }
+    if (!picked.length) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        `Invalid ${step.id} selection — pick a listed option`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const priorExposure = new Map(
+      asSkillEvidence(prior, step.id).map(
+        (e) => [e.skillSlug, e.exposureLevel] as const,
+      ),
+    );
+    const slugs = [...new Set(picked.filter((v) => v !== 'none' && v !== 'other'))];
+    if (picked.includes('other') && selection.otherText?.trim()) {
+      const otherText = selection.otherText.trim();
+      patch[`${step.id}Other`] = otherText;
+      const slug = slugifySkillLabel(otherText);
+      if (!slugs.includes(slug)) slugs.push(slug);
+    }
+    patch[step.id] = slugs.map(
+      (skillSlug): SkillEvidenceAnswer => ({
+        skillSlug,
+        exposureLevel: priorExposure.get(skillSlug) ?? defaultExposure,
+      }),
+    );
+    meta.skillsAnswered = true;
+    // Only keep exposure progress for skills that are still selected.
+    meta.exposureDone = (meta.exposureDone ?? []).filter((s) =>
+      slugs.includes(s),
+    );
+
+    if (!slugs.length) return 'Skills: none yet';
+    return `Skills: ${slugs.map((s) => this.skillLabel(step, s)).join(', ')}`;
+  }
+
+  /** studyHours first, then preferredSessionMinutes. */
+  private applyCapacitySelection(
+    step: QuestionnaireStepDto,
+    selection: IntakeChatSelectionDto,
+    values: string[],
+    prior: QuestionnaireAnswers,
+    patch: QuestionnaireAnswers,
+    meta: IntakeChatMeta,
+  ): string {
+    const hoursAllowed = new Set(step.options.map((o) => o.value));
+    const sessionAllowed = new Set(
+      (step.sessionOptions ?? []).map((o) => o.value),
+    );
+    const value = values[0] ?? '';
+    const isSession =
+      selection.subField === 'preferredSessionMinutes' ||
+      (!hoursAllowed.has(value) && sessionAllowed.has(value)) ||
+      (Boolean(asString(prior, step.id)) && sessionAllowed.has(value));
+
+    if (isSession) {
+      if (!sessionAllowed.has(value)) {
+        throw new AppException(
+          AuthErrorCode.VALIDATION_ERROR,
+          'Pick a listed session length',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      patch.preferredSessionMinutes = value;
+      meta.sessionAnswered = true;
+      const label =
+        (step.sessionOptions ?? []).find((o) => o.value === value)?.label ??
+        `${value} minutes`;
+      return `Session length: ${label}`;
+    }
+
+    if (!hoursAllowed.has(value)) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        `Invalid ${step.id} selection — pick a listed option`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    patch[step.id] = value;
+    const label = step.options.find((o) => o.value === value)?.label ?? value;
+    return `Weekly time: ${label}`;
+  }
+
+  /** targetOutcome first, then deadline. */
+  private applyOutcomeSelection(
+    step: QuestionnaireStepDto,
+    selection: IntakeChatSelectionDto,
+    values: string[],
+    prior: QuestionnaireAnswers,
+    patch: QuestionnaireAnswers,
+  ): string {
+    const outcomeAllowed = new Set(step.options.map((o) => o.value));
+    const deadlineAllowed = new Set(
+      (step.secondaryOptions ?? []).map((o) => o.value),
+    );
+    const value = values[0] ?? '';
+    const isDeadline =
+      selection.subField === 'deadline' ||
+      (!outcomeAllowed.has(value) && deadlineAllowed.has(value)) ||
+      (Boolean(asString(prior, step.id)) && deadlineAllowed.has(value));
+
+    if (isDeadline) {
+      if (!deadlineAllowed.has(value)) {
+        throw new AppException(
+          AuthErrorCode.VALIDATION_ERROR,
+          'Pick a listed deadline',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      patch.deadline = value;
+      const label =
+        (step.secondaryOptions ?? []).find((o) => o.value === value)?.label ??
+        value;
+      return `Deadline: ${label}`;
+    }
+
+    if (!outcomeAllowed.has(value)) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        `Invalid ${step.id} selection — pick a listed option`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    patch[step.id] = value;
+    const label = step.options.find((o) => o.value === value)?.label ?? value;
+    return `Outcome: ${label}`;
+  }
+
+  /** currentContext first, then useFrequency. */
+  private applyContextSelection(
+    step: QuestionnaireStepDto,
+    selection: IntakeChatSelectionDto,
+    values: string[],
+    prior: QuestionnaireAnswers,
+    patch: QuestionnaireAnswers,
+  ): string {
+    const contextAllowed = new Set(allowedValuesForStep(step));
+    const freqAllowed = new Set(
+      (step.secondaryOptions ?? []).map((o) => o.value),
+    );
+    const value = values[0] ?? '';
+    const hasContext =
+      Boolean(asString(prior, step.id)) ||
+      Boolean(asString(prior, `${step.id}Other`).trim());
+    const isFrequency =
+      selection.subField === 'useFrequency' ||
+      (!contextAllowed.has(value) && freqAllowed.has(value)) ||
+      (hasContext && freqAllowed.has(value));
+
+    if (isFrequency) {
+      if (!freqAllowed.has(value)) {
+        throw new AppException(
+          AuthErrorCode.VALIDATION_ERROR,
+          'Pick a listed usage frequency',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      patch.useFrequency = value;
+      const label =
+        (step.secondaryOptions ?? []).find((o) => o.value === value)?.label ??
+        value;
+      return `Usage: ${label}`;
+    }
+
+    if (!contextAllowed.has(value)) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        `Invalid ${step.id} selection — pick a listed option`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    patch[step.id] = value;
+    if (value === 'other' && selection.otherText?.trim()) {
+      patch[`${step.id}Other`] = selection.otherText.trim();
+    }
+    const label =
+      value === 'other' && selection.otherText?.trim()
+        ? selection.otherText.trim()
+        : (step.options.find((o) => o.value === value)?.label ?? value);
+    return `Context: ${label}`;
+  }
+
+  /** confidence (single) first, then barriers (multi). */
+  private applyConfidenceBarriersSelection(
+    step: QuestionnaireStepDto,
+    selection: IntakeChatSelectionDto,
+    values: string[],
+    prior: QuestionnaireAnswers,
+    patch: QuestionnaireAnswers,
+  ): string {
+    const confidenceAllowed = new Set(step.options.map((o) => o.value));
+    const barrierAllowed = new Set(
+      (step.secondaryOptions ?? []).map((o) => o.value),
+    );
+    const isConfidence =
+      selection.subField === 'confidence' ||
+      (!asString(prior, 'confidence') &&
+        values.some((v) => confidenceAllowed.has(v)));
+
+    if (isConfidence) {
+      const value = values.find((v) => confidenceAllowed.has(v)) ?? '';
+      if (!value) {
+        throw new AppException(
+          AuthErrorCode.VALIDATION_ERROR,
+          'Pick a listed confidence level',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      patch.confidence = value;
+      const label =
+        step.options.find((o) => o.value === value)?.label ?? value;
+      return `Confidence: ${label}`;
+    }
+
+    const barriers = [...new Set(values.filter((v) => barrierAllowed.has(v)))];
+    if (!barriers.length) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'Pick at least one listed barrier',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    patch[step.id] = barriers;
+    if (values.includes('other') && selection.otherText?.trim()) {
+      patch[`${step.id}Other`] = selection.otherText.trim();
+    }
+    const labelByValue = new Map(
+      (step.secondaryOptions ?? []).map((o) => [o.value, o.label] as const),
+    );
+    return `Barriers: ${barriers
+      .map((v) => labelByValue.get(v) ?? v)
+      .join(', ')}`;
+  }
+
+  private applyPlainOptionsSelection(
+    step: QuestionnaireStepDto,
+    selection: IntakeChatSelectionDto,
+    values: string[],
+    patch: QuestionnaireAnswers,
+  ): string {
+    const allowed = new Set(allowedValuesForStep(step));
+    const picked = values.filter((v) => allowed.has(v));
+    if (!picked.length) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        `Invalid ${step.id} selection — pick a listed option`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (step.selection === 'multi') {
+      patch[step.id] = picked;
+    } else {
+      patch[step.id] = picked[0]!;
+    }
+    if (picked.includes('other') && selection.otherText?.trim()) {
+      patch[`${step.id}Other`] = selection.otherText.trim();
+    }
+
+    const labelByValue = new Map(
+      step.options.map((o) => [o.value, o.label] as const),
+    );
+    return picked
+      .map((v) =>
+        v === 'other' && selection.otherText?.trim()
+          ? selection.otherText.trim()
+          : (labelByValue.get(v) ?? v),
+      )
+      .join(', ');
+  }
+
+  private skillLabel(step: QuestionnaireStepDto, slug: string): string {
+    const fromStep = step.options.find((o) => o.value === slug)?.label;
+    if (fromStep) return fromStep;
+    for (const cached of this.skillSuggestCache.values()) {
+      const hit = cached.options.find((o) => o.value === slug);
+      if (hit) return hit.label;
+    }
+    return humanizeSkillSlug(slug);
+  }
+
+  // ---------------------------------------------------------------- turns
 
   private async runTurn(
     userId: string,
@@ -363,9 +815,10 @@ export class IntakeChatService {
       isStart: boolean;
       skipLlm: boolean;
       preAnswers?: QuestionnaireAnswers;
+      preMeta?: IntakeChatMeta;
     },
   ): Promise<ChatTurnResponse> {
-    const { isStart, skipLlm, preAnswers } = opts;
+    const { isStart, skipLlm, preAnswers, preMeta } = opts;
     const schema = this.schemaService.getSchema();
     let row = await this.responsesRepo.findOne({ where: { userId } });
     if (!row) {
@@ -380,54 +833,43 @@ export class IntakeChatService {
       });
     }
 
+    const meta = preMeta ?? this.readMeta(row.answers);
     const priorAnswers = normalizeDraftAnswers(
       preAnswers ?? row.answers ?? {},
       schema,
     );
-    const missingBefore = listMissingFields(priorAnswers, schema);
+    const pendingBefore = this.chatPending(priorAnswers, meta);
     const transcript = [...(row.chatTranscript ?? [])];
     if (userMessage) {
       transcript.push({ role: 'user', content: userMessage });
     }
 
-    const withSuggestions = async (
-      partial: Omit<ChatTurnResponse, 'suggestions'>,
-      answers: QuestionnaireAnswers,
-    ): Promise<ChatTurnResponse> => ({
-      ...partial,
-      suggestions: partial.done
-        ? null
-        : await this.suggestionsFor(userId, answers),
-    });
-
-    // Chip/start/done — ask from schema title, zero LLM tokens.
-    if (skipLlm || (!isStart && missingBefore.length === 0)) {
+    // Chip/start/done — ask from suggestion title, zero LLM tokens.
+    if (skipLlm || (!isStart && pendingBefore.length === 0)) {
+      const focus = await this.suggestionsFor(userId, priorAnswers, meta);
       const assistantMessage = buildDeterministicAssistantMessage(
-        schema,
-        priorAnswers,
+        focus?.title ?? null,
         { isStart },
       );
-      const done = missingBefore.length === 0;
+      const done = pendingBefore.length === 0;
       transcript.push({ role: 'assistant', content: assistantMessage });
-      row.answers = priorAnswers;
+      row.answers = this.withMeta(priorAnswers, meta);
       row.schemaVersion = schema.schemaVersion;
       row.chatTranscript = transcript;
       if (row.status !== QuestionnaireResponseStatus.Submitted) {
         row.status = QuestionnaireResponseStatus.Draft;
       }
       await this.responsesRepo.save(row);
-      return withSuggestions(
-        {
-          assistantMessage,
-          answers: priorAnswers,
-          transcript,
-          missingFields: missingBefore,
-          done,
-          promptVersion: INTAKE_CHAT_PROMPT_VERSION,
-          model: null,
-        },
-        priorAnswers,
-      );
+      return {
+        assistantMessage,
+        answers: priorAnswers,
+        transcript,
+        missingFields: pendingBefore,
+        done,
+        promptVersion: INTAKE_CHAT_PROMPT_VERSION,
+        model: null,
+        suggestions: done ? null : focus,
+      };
     }
 
     const clientConfigured = this.llm.isConfigured();
@@ -437,32 +879,32 @@ export class IntakeChatService {
       `[intake-llm] start user=${userId} model=${model} provider=${provider?.id ?? 'unknown'} base=${provider?.baseURL ?? '?'} configured=${clientConfigured}`,
     );
 
+    const focus = await this.suggestionsFor(userId, priorAnswers, meta);
+
     if (!clientConfigured) {
       const fallback =
         'LLM is not configured. Switch to form intake, or set CEREBRAS_API_KEY / provider API key.';
       transcript.push({ role: 'assistant', content: fallback });
       row.chatTranscript = transcript;
-      row.answers = priorAnswers;
+      row.answers = this.withMeta(priorAnswers, meta);
       await this.responsesRepo.save(row);
-      return withSuggestions(
-        {
-          assistantMessage: fallback,
-          answers: priorAnswers,
-          transcript,
-          missingFields: missingBefore,
-          done: false,
-          promptVersion: INTAKE_CHAT_PROMPT_VERSION,
-          model: null,
-        },
-        priorAnswers,
-      );
+      return {
+        assistantMessage: fallback,
+        answers: priorAnswers,
+        transcript,
+        missingFields: pendingBefore,
+        done: false,
+        promptVersion: INTAKE_CHAT_PROMPT_VERSION,
+        model: null,
+        suggestions: focus,
+      };
     }
 
-    const system = buildIntakeChatSystemPrompt(schema, priorAnswers);
+    const system = buildIntakeChatSystemPrompt(focus);
     const user = buildIntakeChatUserPrompt({
       transcript,
       partialAnswers: priorAnswers,
-      missingFields: missingBefore,
+      missingFields: pendingBefore,
       userMessage: isStart ? null : userMessage,
     });
 
@@ -476,16 +918,19 @@ export class IntakeChatService {
       model = modelUsed;
 
       const parsed = parseIntakeChatLlmResponse(JSON.parse(content));
-      const mergedRaw = {
-        ...priorAnswers,
-        ...(parsed.partialAnswers ?? {}),
-      };
+      const partial = this.mergeLlmSkillPartial(
+        parsed.partialAnswers ?? {},
+        priorAnswers,
+        focus,
+      );
+      const mergedRaw = { ...priorAnswers, ...partial };
       const answers = normalizeDraftAnswers(mergedRaw, schema);
-      const missing = listMissingFields(answers, schema);
+      const nextMeta = this.metaAfterLlm(meta, partial, focus);
+      const missing = this.chatPending(answers, nextMeta);
       const assistantMessage = parsed.assistantMessage.trim().slice(0, 200);
 
       transcript.push({ role: 'assistant', content: assistantMessage });
-      row.answers = answers;
+      row.answers = this.withMeta(answers, nextMeta);
       row.schemaVersion = schema.schemaVersion;
       row.chatTranscript = transcript;
       if (row.status !== QuestionnaireResponseStatus.Submitted) {
@@ -493,18 +938,20 @@ export class IntakeChatService {
       }
       await this.responsesRepo.save(row);
 
-      return withSuggestions(
-        {
-          assistantMessage,
-          answers,
-          transcript,
-          missingFields: missing,
-          done: missing.length === 0 && parsed.done,
-          promptVersion: INTAKE_CHAT_PROMPT_VERSION,
-          model,
-        },
+      const done = missing.length === 0 && parsed.done;
+      return {
+        assistantMessage,
         answers,
-      );
+        transcript,
+        missingFields: missing,
+        done,
+        promptVersion: INTAKE_CHAT_PROMPT_VERSION,
+        model,
+        suggestions:
+          missing.length === 0
+            ? null
+            : await this.suggestionsFor(userId, answers, nextMeta),
+      };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.warn(
@@ -512,80 +959,132 @@ export class IntakeChatService {
       );
       const fallback = this.userFacingLlmError(message, model);
       transcript.push({ role: 'assistant', content: fallback });
-      row.answers = priorAnswers;
+      row.answers = this.withMeta(priorAnswers, meta);
       row.chatTranscript = transcript;
       await this.responsesRepo.save(row);
-      return withSuggestions(
-        {
-          assistantMessage: fallback,
-          answers: priorAnswers,
-          transcript,
-          missingFields: missingBefore,
-          done: false,
-          promptVersion: INTAKE_CHAT_PROMPT_VERSION,
-          model,
-        },
-        priorAnswers,
-      );
+      return {
+        assistantMessage: fallback,
+        answers: priorAnswers,
+        transcript,
+        missingFields: pendingBefore,
+        done: false,
+        promptVersion: INTAKE_CHAT_PROMPT_VERSION,
+        model,
+        suggestions: focus,
+      };
     }
   }
+
+  /**
+   * When the LLM answers an exposure sub-question with a partial `skills`
+   * array, merge into the prior entries by slug instead of replacing the
+   * whole list (protects already-selected skills).
+   */
+  private mergeLlmSkillPartial(
+    partial: Record<string, unknown>,
+    prior: QuestionnaireAnswers,
+    focus: IntakeSuggestions | null,
+  ): Record<string, unknown> {
+    if (
+      focus?.fieldId !== 'skills' ||
+      focus.subField !== 'exposure' ||
+      !Array.isArray(partial.skills)
+    ) {
+      return partial;
+    }
+    const bySlug = new Map(
+      asSkillEvidence(prior, 'skills').map((e) => [e.skillSlug, { ...e }]),
+    );
+    for (const item of partial.skills) {
+      if (!isSkillEvidenceAnswer(item)) continue;
+      const slug = item.skillSlug.trim();
+      if (!slug) continue;
+      bySlug.set(slug, { skillSlug: slug, exposureLevel: item.exposureLevel });
+    }
+    return { ...partial, skills: [...bySlug.values()] };
+  }
+
+  /** Update chat progress markers after an LLM-extracted partial answer. */
+  private metaAfterLlm(
+    meta: IntakeChatMeta,
+    partial: Record<string, unknown>,
+    focus: IntakeSuggestions | null,
+  ): IntakeChatMeta {
+    const next: IntakeChatMeta = {
+      ...meta,
+      exposureDone: [...(meta.exposureDone ?? [])],
+    };
+    if ('skills' in partial) {
+      next.skillsAnswered = true;
+      if (
+        focus?.fieldId === 'skills' &&
+        focus.subField === 'exposure' &&
+        focus.skillSlug &&
+        !next.exposureDone!.includes(focus.skillSlug)
+      ) {
+        next.exposureDone!.push(focus.skillSlug);
+      }
+    }
+    if ('preferredSessionMinutes' in partial) {
+      next.sessionAnswered = true;
+    }
+    return next;
+  }
+
+  // ----------------------------------------------------------- suggestions
 
   private async suggestionsFor(
     userId: string,
     answers: QuestionnaireAnswers,
+    meta: IntakeChatMeta,
   ): Promise<IntakeSuggestions | null> {
     const schema = this.schemaService.getSchema();
-    const base = buildIntakeSuggestions(schema, answers);
+    const base = buildIntakeSuggestions(schema, answers, meta);
     if (!base) return null;
 
-    if (base.fieldId === 'goal') {
+    const step = schema.steps.find((s) => s.id === base.fieldId);
+
+    if (step?.uiKind === 'track-select') {
       const roles = await this.listActiveRoleOptions();
       if (roles.length) {
-        const byValue = new Map<string, { value: string; label: string }>();
-        for (const o of [...roles, ...base.options]) {
-          if (o.value === 'other') continue;
-          if (!byValue.has(o.value)) byValue.set(o.value, o);
-        }
+        // Chips = unit-pool domains only (Frontend, ...). No career/schema roles.
         return {
           ...base,
-          // Career path = catalog only (role recipes / schema). No custom type-in.
           allowOther: false,
-          options: [...byValue.values()],
+          options: roles.filter((o) => o.value !== 'other'),
         };
       }
-      return {
-        ...base,
-        allowOther: false,
-        options: base.options.filter((o) => o.value !== 'other'),
-      };
+      return base;
     }
 
-    if (base.fieldId === 'skills') {
+    // Skill pick phase only — exposure phase already carries its own chips.
+    if (step?.uiKind === 'skill-evidence' && !base.subField) {
       return this.aiSkillSuggestions(userId, base, answers);
     }
 
     return base;
   }
 
-  /** Goal-keyed skill chips — deterministic pools (no LLM). */
+  /** Primary-track-keyed skill chips — deterministic pools (no LLM). */
   private async aiSkillSuggestions(
     userId: string,
     base: IntakeSuggestions,
     answers: QuestionnaireAnswers,
   ): Promise<IntakeSuggestions> {
     void userId;
-    const goal =
-      asString(answers, 'goal').trim() || asString(answers, 'goalOther').trim();
+    const track = asTrackSelection(answers, 'goal');
+    const primary =
+      track.primary || asString(answers, 'goalOther').trim();
     const sentinels: IntakeSuggestionOption[] = [
       { value: 'none', label: 'None of the above' },
       ...(base.allowOther ? [{ value: 'other', label: 'Other' }] : []),
     ];
 
-    if (!goal) {
+    if (!primary) {
       return { ...base, options: sentinels };
     }
 
-    const cached = this.skillSuggestCache.get(goal);
+    const cached = this.skillSuggestCache.get(primary);
     if (
       cached &&
       Date.now() - cached.at < IntakeChatService.SKILL_SUGGEST_TTL_MS
@@ -593,14 +1092,14 @@ export class IntakeChatService {
       return { ...base, options: [...cached.options, ...sentinels] };
     }
 
-    const options = this.fallbackSkillSuggestions(goal).slice(0, 8);
-    this.skillSuggestCache.set(goal, { at: Date.now(), options });
+    const options = this.fallbackSkillSuggestions(primary).slice(0, 8);
+    this.skillSuggestCache.set(primary, { at: Date.now(), options });
     return { ...base, options: [...options, ...sentinels] };
   }
 
-  /** Goal → 8 skill chips. No LLM — covers seed roles + soft fallback. */
-  private fallbackSkillSuggestions(goal: string): IntakeSuggestionOption[] {
-    const g = goal.toLowerCase();
+  /** Primary domain → 8 skill chips. No LLM — covers seed domains + soft fallback. */
+  private fallbackSkillSuggestions(primary: string): IntakeSuggestionOption[] {
+    const g = primary.toLowerCase();
     let labels: string[];
     if (/front|react|ui|ux-design|ux_designer|designer/.test(g)) {
       labels = [
@@ -697,26 +1196,21 @@ export class IntakeChatService {
     }));
   }
 
+  /** Track chips = distinct domains from the active units pool. */
   private async listActiveRoleOptions(): Promise<
     Array<{ value: string; label: string }>
   > {
     try {
-      const recipes = await this.recipesRepo.find({
-        where: { isActive: true },
-        order: { title: 'ASC' },
-        take: 40,
-      });
-      return recipes.map((r) => ({
-        value: r.targetRoleSlug,
-        label: r.title,
-      }));
+      return await this.unitsCatalog.listActiveDomains();
     } catch (err) {
       this.logger.warn(
-        `Role recipe lookup failed: ${err instanceof Error ? err.message : err}`,
+        `Unit domain lookup failed: ${err instanceof Error ? err.message : err}`,
       );
       return [];
     }
   }
+
+  // ------------------------------------------------------------------ llm
 
   private async completeWithFallback(
     userId: string,

@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body class="bg-mist text-moss font-sans antialiased">
+    <div class="shell min-h-screen">
+      {{> shell-sidebar}}
+      <main class="relative flex-1 min-w-0 overflow-x-hidden">
+        <div class="relative px-5 pb-20 pt-6 md:px-10 lg:px-12">
+          {{#if flashOk}}
+            <p class="mb-5 rounded-2xl bg-leaf px-4 py-3 text-sm font-medium text-moss" role="status">{{flashOk}}</p>
+          {{/if}}
+          {{#if flashErr}}
+            <p class="mb-5 rounded-2xl bg-[#fde8e6] px-4 py-3 text-sm font-medium text-coral" role="alert">{{flashErr}}</p>
+          {{/if}}
+
+          <section class="relative mb-10">
+            <div class="relative overflow-hidden rounded-blob bg-gradient-to-br from-moss via-[#243f36] to-[#314f44] px-7 py-9 text-mist shadow-soft md:w-[82%] md:px-10 md:py-11">
+              <p class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-leaf/80">Content pool</p>
+              <h1 class="font-display max-w-[14ch] text-4xl font-semibold leading-[1.05] tracking-tight md:text-5xl">
+                Units
+              </h1>
+              <p class="mt-4 max-w-lg text-sm text-mist/60">
+                Flattened curriculum. Import a units JSON (skills_index + units) to add a whole course at runtime — no redeploy.
+              </p>
+              <div class="mt-6 flex flex-wrap gap-2">
+                <span class="inline-flex items-center gap-2 rounded-full bg-leaf/90 px-3 py-1 text-xs font-semibold text-moss">
+                  {{unitCount}} unit{{#unless unitCountSingular}}s{{/unless}}
+                </span>
+                <span class="inline-flex items-center gap-2 rounded-full bg-mist/15 px-3 py-1 text-xs font-semibold text-mist">
+                  {{skillCount}} skill{{#unless skillCountSingular}}s{{/unless}}
+                </span>
+              </div>
+            </div>
+          </section>
+
+          <div class="admin-tabs md:max-w-5xl" data-admin-tabs data-default="catalog" data-err-tab="import">
+            <div class="mb-6 flex gap-0 overflow-x-auto" role="tablist" aria-label="Units sections">
+              <button type="button" role="tab" id="tab-catalog" aria-controls="panel-catalog" aria-selected="true" data-tab="catalog" class="shrink-0">
+                Catalog
+              </button>
+              <button type="button" role="tab" id="tab-import" aria-controls="panel-import" aria-selected="false" data-tab="import" class="shrink-0">
+                Import JSON
+              </button>
+              <button type="button" role="tab" id="tab-skills" aria-controls="panel-skills" aria-selected="false" data-tab="skills" class="shrink-0">
+                Skills index
+              </button>
+            </div>
+
+            <div id="panel-catalog" role="tabpanel" aria-labelledby="tab-catalog" data-panel="catalog">
+              <form
+                method="post"
+                action="/admin/units/bulk-remove"
+                data-bulk-remove
+                onsubmit="return window.confirm('Permanently delete the selected units? This cannot be undone.')"
+              >
+                <div class="mb-4 flex items-center gap-3">
+                  <p class="mr-auto text-sm text-sage" data-bulk-count>No units selected</p>
+                  <button
+                    type="submit"
+                    disabled
+                    data-bulk-submit
+                    class="rounded-full bg-coral px-5 py-2.5 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Delete selected
+                  </button>
+                </div>
+                <div class="overflow-hidden rounded-blob border border-[#d5ddd7] bg-foam/95 shadow-lift">
+                  <table class="w-full text-left text-sm">
+                    <thead class="border-b border-[#d5ddd7] bg-mist/40 text-xs uppercase tracking-wide text-sage">
+                      <tr>
+                        <th class="w-10 px-4 py-3">
+                          <input type="checkbox" data-bulk-all aria-label="Select all units" class="h-4 w-4 accent-fern" />
+                        </th>
+                        <th class="px-4 py-3">Id</th>
+                        <th class="px-4 py-3">Title</th>
+                        <th class="px-4 py-3">Type</th>
+                        <th class="px-4 py-3">Stack</th>
+                        <th class="px-4 py-3">Min</th>
+                        <th class="px-4 py-3">XP</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {{#each units}}
+                        <tr class="border-b border-[#e8eee9] last:border-0 transition hover:bg-mist/40">
+                          <td class="px-4 py-3">
+                            <input type="checkbox" name="ids" value="{{id}}" data-bulk-row aria-label="Select {{id}}" class="h-4 w-4 accent-fern" />
+                          </td>
+                          <td class="px-4 py-3 font-mono text-[12px]">
+                            <a href="/admin/units/{{id}}" class="underline decoration-leaf underline-offset-2 hover:text-fern">{{id}}</a>
+                          </td>
+                          <td class="px-4 py-3 font-medium">
+                            <a href="/admin/units/{{id}}" class="hover:text-fern">{{title}}</a>
+                          </td>
+                          <td class="px-4 py-3">{{lessonType}}</td>
+                          <td class="px-4 py-3">{{stack}}</td>
+                          <td class="px-4 py-3 tabular-nums">{{estimatedMinutes}}</td>
+                          <td class="px-4 py-3 tabular-nums">{{xp}}</td>
+                        </tr>
+                      {{else}}
+                        <tr>
+                          <td colspan="7" class="px-4 py-8 text-center text-sage">No units yet. Import a JSON package.</td>
+                        </tr>
+                      {{/each}}
+                    </tbody>
+                  </table>
+                </div>
+              </form>
+            </div>
+
+            <div id="panel-import" role="tabpanel" aria-labelledby="tab-import" data-panel="import" hidden>
+              <div class="mb-4 flex flex-wrap items-center gap-3 rounded-blob border border-[#d5ddd7] bg-foam/95 p-4 shadow-lift">
+                <p class="mr-auto text-sm text-sage">Not sure about the format? Grab a template or export the current pool.</p>
+                <a
+                  href="/admin/units/example.json"
+                  download
+                  class="inline-flex items-center gap-2 rounded-full border border-moss/25 px-4 py-2 text-sm font-semibold text-moss transition hover:bg-leaf/60"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4"><path d="M10 3a1 1 0 0 1 1 1v6.586l1.793-1.793a1 1 0 1 1 1.414 1.414l-3.5 3.5a1 1 0 0 1-1.414 0l-3.5-3.5a1 1 0 1 1 1.414-1.414L9 10.586V4a1 1 0 0 1 1-1Z"/><path d="M4 14a1 1 0 0 1 1 1v1h10v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1Z"/></svg>
+                  Download example JSON
+                </a>
+                <a
+                  href="/admin/units/export.json"
+                  download
+                  class="inline-flex items-center gap-2 rounded-full border border-moss/25 px-4 py-2 text-sm font-semibold text-moss transition hover:bg-leaf/60"
+                >
+                  Export current pool
+                </a>
+              </div>
+              <form method="post" action="/admin/units/import" class="rounded-blob border border-[#d5ddd7] bg-foam/95 p-6 shadow-lift space-y-4">
+                <div class="flex flex-wrap items-center gap-3 rounded-2xl border border-dashed border-[#c3cec6] bg-mist/40 px-4 py-3">
+                  <label
+                    for="units-json-file"
+                    class="inline-flex cursor-pointer items-center gap-2 rounded-full border border-moss/25 bg-foam px-4 py-2 text-sm font-semibold text-moss transition hover:bg-leaf/60"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4"><path d="M10 17a1 1 0 0 1-1-1V9.414l-1.793 1.793a1 1 0 1 1-1.414-1.414l3.5-3.5a1 1 0 0 1 1.414 0l3.5 3.5a1 1 0 1 1-1.414 1.414L11 9.414V16a1 1 0 0 1-1 1Z"/><path d="M4 3a1 1 0 0 1 1-1h10a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Z"/></svg>
+                    Choose JSON file
+                  </label>
+                  <input type="file" id="units-json-file" accept=".json,application/json" class="sr-only" data-import-file />
+                  <p class="text-sm text-sage" data-import-file-status>No file chosen — contents fill the box below.</p>
+                </div>
+                <label class="block text-sm font-semibold">
+                  Units JSON
+                  <textarea
+                    name="payload"
+                    rows="16"
+                    required
+                    class="mt-2 w-full rounded-2xl border border-[#d5ddd7] bg-mist/40 px-4 py-3 font-mono text-xs"
+                    placeholder='{"skills_index":[...],"units":[...]}'
+                  >{{samplePayload}}</textarea>
+                </label>
+                <label class="flex items-center gap-2 text-sm">
+                  <input type="checkbox" name="deactivateMissing" value="true" />
+                  Deactivate skills/units missing from this file
+                </label>
+                <button type="submit" class="rounded-full bg-moss px-5 py-2.5 text-sm font-semibold text-mist">
+                  Import package
+                </button>
+              </form>
+            </div>
+
+            <div id="panel-skills" role="tabpanel" aria-labelledby="tab-skills" data-panel="skills" hidden>
+              <div class="overflow-hidden rounded-blob border border-[#d5ddd7] bg-foam/95 shadow-lift">
+                <table class="w-full text-left text-sm">
+                  <thead class="border-b border-[#d5ddd7] bg-mist/40 text-xs uppercase tracking-wide text-sage">
+                    <tr>
+                      <th class="px-4 py-3">Id</th>
+                      <th class="px-4 py-3">Title</th>
+                      <th class="px-4 py-3">Level</th>
+                      <th class="px-4 py-3">Prerequisites</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {{#each skills}}
+                      <tr class="border-b border-[#e8eee9] last:border-0 transition hover:bg-mist/40">
+                        <td class="px-4 py-3 font-mono text-[12px]">
+                          <a href="/admin/units/skills/{{id}}" class="underline decoration-leaf underline-offset-2 hover:text-fern">{{id}}</a>
+                        </td>
+                        <td class="px-4 py-3 font-medium">
+                          <a href="/admin/units/skills/{{id}}" class="hover:text-fern">{{title}}</a>
+                        </td>
+                        <td class="px-4 py-3 tabular-nums">{{level}}</td>
+                        <td class="px-4 py-3 font-mono text-[11px] text-sage">{{prerequisitesLabel}}</td>
+                      </tr>
+                    {{else}}
+                      <tr>
+                        <td colspan="4" class="px-4 py-8 text-center text-sage">No skills yet.</td>
+                      </tr>
+                    {{/each}}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+    {{> admin-tabs-script}}
+    <script>
+      (function () {
+        var form = document.querySelector('[data-bulk-remove]');
+        if (!form) return;
+        var all = form.querySelector('[data-bulk-all]');
+        var rows = Array.prototype.slice.call(form.querySelectorAll('[data-bulk-row]'));
+        var submit = form.querySelector('[data-bulk-submit]');
+        var count = form.querySelector('[data-bulk-count]');
+
+        function sync() {
+          var checked = rows.filter(function (r) { return r.checked; }).length;
+          submit.disabled = checked === 0;
+          count.textContent =
+            checked === 0
+              ? 'No units selected'
+              : checked + ' unit' + (checked === 1 ? '' : 's') + ' selected';
+          if (all) {
+            all.checked = checked > 0 && checked === rows.length;
+            all.indeterminate = checked > 0 && checked < rows.length;
+          }
+        }
+
+        if (all) {
+          all.addEventListener('change', function () {
+            rows.forEach(function (r) { r.checked = all.checked; });
+            sync();
+          });
+        }
+        rows.forEach(function (r) { r.addEventListener('change', sync); });
+        sync();
+      })();
+
+      (function () {
+        var input = document.querySelector('[data-import-file]');
+        if (!input) return;
+        var status = document.querySelector('[data-import-file-status]');
+        var textarea = document.querySelector('textarea[name="payload"]');
+
+        input.addEventListener('change', function () {
+          var file = input.files && input.files[0];
+          if (!file) return;
+          var reader = new FileReader();
+          reader.onload = function () {
+            var text = String(reader.result || '');
+            try {
+              JSON.parse(text);
+            } catch (e) {
+              status.textContent = file.name + ' is not valid JSON: ' + e.message;
+              status.classList.add('text-coral');
+              return;
+            }
+            textarea.value = text;
+            status.textContent = 'Loaded ' + file.name + ' (' + Math.round(file.size / 1024) + ' KB). Review below, then import.';
+            status.classList.remove('text-coral');
+          };
+          reader.onerror = function () {
+            status.textContent = 'Could not read ' + file.name;
+            status.classList.add('text-coral');
+          };
+          reader.readAsText(file);
+        });
+      })();
+    </script>
+  </body>
+</html>

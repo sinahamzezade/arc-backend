@@ -1,7 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { LlmService } from '../common/llm/llm.service';
 import { Lesson } from '../roadmaps/entities/lesson.entity';
-import type { LessonPlayOutline } from './lesson-play.types';
+import {
+  isQuizContent,
+  isReadingContent,
+  isTaskContent,
+  stripPlaySecrets,
+  type UnitPlayContent,
+} from './lesson-play.types';
 import { SystemFlagsService } from '../system-flags/system-flags.service';
 import { SystemFlagKey } from '../system-flags/system-flag.keys';
 
@@ -33,7 +39,7 @@ export class LessonArloService {
   async chat(input: {
     userId: string;
     lesson: Lesson;
-    outline: LessonPlayOutline;
+    content: UnitPlayContent;
     message: string;
   }): Promise<{ reply: string; source: 'ai' | 'stub' }> {
     const message = input.message.trim().slice(0, 1000);
@@ -64,13 +70,13 @@ export class LessonArloService {
   }
 
   private async generateAiReply(
-    input: { userId: string; lesson: Lesson; outline: LessonPlayOutline },
+    input: { userId: string; lesson: Lesson; content: UnitPlayContent },
     message: string,
   ): Promise<string | null> {
     if (!this.llm.isConfigured()) return null;
 
     const model = await this.llm.getModel('arlo');
-    const contentSummary = this.summarizeOutline(input.outline);
+    const contentSummary = this.summarizeContent(input.content);
 
     const completion = await this.llm.chatCompletion({
       purpose: 'arlo',
@@ -89,7 +95,7 @@ export class LessonArloService {
               'If asked for answers, give a hint toward the concept instead.',
               'If asked for a recap, summarize the objective and key ideas in under 60 seconds of reading.',
               `Lesson title: ${input.lesson.title}`,
-              `Objective: ${input.outline.objective}`,
+              `Objective: ${input.content.objective}`,
               contentSummary
                 ? `Teaching outline:\n${contentSummary}`
                 : 'Teaching outline: (not available — coach from title + objective).',
@@ -104,19 +110,46 @@ export class LessonArloService {
     return content || null;
   }
 
-  private summarizeOutline(outline: LessonPlayOutline): string {
-    const pages = Array.isArray(outline.content) ? outline.content : [];
-    return pages
-      .slice(0, 4)
-      .map((page) => {
-        const blocks = Array.isArray(page?.blocks) ? page.blocks : [];
-        const texts = blocks
-          .filter((b) => b.type === 'text' || b.type === 'callout')
-          .map((b) => ('body' in b ? b.body : ''))
-          .join(' ');
-        return `${page?.title ?? 'Page'}: ${texts.slice(0, 240)}`;
-      })
-      .join('\n');
+  /** Type-specific summary — secrets (quiz answers/explanations) stripped. */
+  private summarizeContent(content: UnitPlayContent): string {
+    const safe = stripPlaySecrets(content);
+    if (isReadingContent(safe)) {
+      const sections = safe.sections.slice(0, 4).map((s, i) => {
+        if (typeof s === 'string') {
+          return `Section ${i + 1}: ${s.slice(0, 240)}`;
+        }
+        const title = s.title?.trim() || `Section ${i + 1}`;
+        const body = (s.blocks ?? [])
+          .map((b) => b.body || b.code || b.title || '')
+          .filter(Boolean)
+          .join(' ')
+          .slice(0, 240);
+        return `${title}: ${body}`;
+      });
+      const takeaways = safe.keyTakeaways.length
+        ? `Key takeaways: ${safe.keyTakeaways.join('; ').slice(0, 400)}`
+        : '';
+      return [...sections, takeaways].filter(Boolean).join('\n');
+    }
+    if (isTaskContent(safe)) {
+      return [
+        `Task: ${safe.task.slice(0, 400)}`,
+        safe.acceptanceCriteria.length
+          ? `Acceptance criteria: ${safe.acceptanceCriteria.join('; ').slice(0, 400)}`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
+    }
+    if (isQuizContent(safe)) {
+      return safe.questions
+        .slice(0, 6)
+        .map((q, i) => `Q${i + 1}: ${q.q.slice(0, 200)}`)
+        .join('\n');
+    }
+    return 'note' in safe && typeof safe.note === 'string'
+      ? `Video note: ${safe.note.slice(0, 400)}`
+      : '';
   }
 
   private stubReply(input: string, lessonTitle: string): string {

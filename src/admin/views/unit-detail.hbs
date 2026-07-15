@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body class="bg-mist text-moss font-sans antialiased">
+    <div class="shell min-h-screen">
+      {{> shell-sidebar}}
+      <main class="relative flex-1 min-w-0 overflow-x-hidden">
+        <div class="relative px-5 pb-20 pt-6 md:px-10 lg:px-12">
+          {{#if flashOk}}
+            <p class="mb-5 rounded-2xl bg-leaf px-4 py-3 text-sm font-medium text-moss" role="status">{{flashOk}}</p>
+          {{/if}}
+          {{#if flashErr}}
+            <p class="mb-5 rounded-2xl bg-[#fde8e6] px-4 py-3 text-sm font-medium text-coral" role="alert">{{flashErr}}</p>
+          {{/if}}
+
+          <nav class="mb-6 text-sm text-sage">
+            <a href="/admin/units" class="hover:text-fern">Units</a>
+            <span class="mx-2">/</span>
+            <span class="font-mono text-[12px]">{{unit.id}}</span>
+          </nav>
+
+          <section class="relative mb-10">
+            <div class="relative overflow-hidden rounded-blob bg-gradient-to-br from-moss via-[#243f36] to-[#314f44] px-7 py-9 text-mist shadow-soft md:w-[82%] md:px-10 md:py-11">
+              <p class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-leaf/80">Unit · {{unit.lessonType}}</p>
+              <h1 class="font-display max-w-[20ch] text-3xl font-semibold leading-[1.05] tracking-tight md:text-4xl">
+                {{unit.title}}
+              </h1>
+              <div class="mt-6 flex flex-wrap gap-2">
+                <span class="inline-flex items-center gap-2 rounded-full bg-leaf/90 px-3 py-1 text-xs font-semibold text-moss">{{unit.stack}}</span>
+                <span class="inline-flex items-center gap-2 rounded-full bg-mist/15 px-3 py-1 text-xs font-semibold text-mist">{{unit.estimatedMinutes}} min · {{unit.xp}} XP</span>
+                {{#if unit.isActive}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-mist/15 px-3 py-1 text-xs font-semibold text-mist">Active</span>
+                {{else}}
+                  <span class="inline-flex items-center gap-2 rounded-full bg-[#fde8e6] px-3 py-1 text-xs font-semibold text-coral">Inactive</span>
+                {{/if}}
+              </div>
+            </div>
+          </section>
+
+          <div class="md:max-w-5xl space-y-6">
+            <form method="post" action="/admin/units/{{unit.id}}" class="rounded-blob border border-[#d5ddd7] bg-foam/95 p-6 shadow-lift space-y-5">
+              <div class="grid gap-4 md:grid-cols-2">
+                <label class="block text-sm font-semibold">
+                  Title
+                  <input name="title" value="{{unit.title}}" required class="mt-2 w-full rounded-2xl border border-[#d5ddd7] bg-mist/40 px-4 py-2.5 text-sm font-normal" />
+                </label>
+                <label class="block text-sm font-semibold">
+                  Lesson type
+                  <select name="lessonType" class="mt-2 w-full rounded-2xl border border-[#d5ddd7] bg-mist/40 px-4 py-2.5 text-sm font-normal">
+                    {{#each lessonTypes}}
+                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{value}}</option>
+                    {{/each}}
+                  </select>
+                </label>
+                <label class="block text-sm font-semibold">
+                  Stack
+                  <input name="stack" value="{{unit.stack}}" required class="mt-2 w-full rounded-2xl border border-[#d5ddd7] bg-mist/40 px-4 py-2.5 font-mono text-xs" />
+                </label>
+                <label class="block text-sm font-semibold">
+                  Domain
+                  <input name="domain" value="{{unit.domain}}" class="mt-2 w-full rounded-2xl border border-[#d5ddd7] bg-mist/40 px-4 py-2.5 font-mono text-xs" />
+                </label>
+                <label class="block text-sm font-semibold">
+                  Provider
+                  <input name="provider" value="{{unit.provider}}" class="mt-2 w-full rounded-2xl border border-[#d5ddd7] bg-mist/40 px-4 py-2.5 text-sm font-normal" />
+                </label>
+                <label class="block text-sm font-semibold">
+                  URL
+                  <input name="url" value="{{unit.url}}" type="url" class="mt-2 w-full rounded-2xl border border-[#d5ddd7] bg-mist/40 px-4 py-2.5 font-mono text-xs" />
+                </label>
+              </div>
+
+              <div class="grid gap-4 md:grid-cols-3">
+                <label class="block text-sm font-semibold">
+                  Level
+                  <input name="level" value="{{unit.level}}" type="number" min="1" class="mt-2 w-full rounded-2xl border border-[#d5ddd7] bg-mist/40 px-4 py-2.5 text-sm font-normal tabular-nums" />
+                </label>
+                <label class="block text-sm font-semibold">
+                  Estimated minutes
+                  <input name="estimatedMinutes" value="{{unit.estimatedMinutes}}" type="number" min="1" class="mt-2 w-full rounded-2xl border border-[#d5ddd7] bg-mist/40 px-4 py-2.5 text-sm font-normal tabular-nums" />
+                </label>
+                <label class="block text-sm font-semibold">
+                  XP
+                  <input name="xp" value="{{unit.xp}}" type="number" min="0" class="mt-2 w-full rounded-2xl border border-[#d5ddd7] bg-mist/40 px-4 py-2.5 text-sm font-normal tabular-nums" />
+                </label>
+              </div>
+
+              <div class="grid gap-4 md:grid-cols-3">
+                <label class="block text-sm font-semibold">
+                  Unit role
+                  <select name="unitRole" class="mt-2 w-full rounded-2xl border border-[#d5ddd7] bg-mist/40 px-4 py-2.5 text-sm font-normal">
+                    {{#each unitRoles}}
+                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{value}}</option>
+                    {{/each}}
+                  </select>
+                  <span class="mt-1 block text-xs font-normal text-sage">How the roadmap uses this unit: teach, refresh, validate, apply, or prove.</span>
+                </label>
+                <label class="block text-sm font-semibold">
+                  Serves stages
+                  <input name="servesStage" value="{{unit.servesStageCsv}}" class="mt-2 w-full rounded-2xl border border-[#d5ddd7] bg-mist/40 px-4 py-2.5 font-mono text-xs" placeholder="1, 2" />
+                  <span class="mt-1 block text-xs font-normal text-sage">Comma-separated learner stages this unit is appropriate for.</span>
+                </label>
+                <label class="block text-sm font-semibold">
+                  Profile skill slug
+                  <input name="profileSkillSlug" value="{{unit.profileSkillSlug}}" class="mt-2 w-full rounded-2xl border border-[#d5ddd7] bg-mist/40 px-4 py-2.5 font-mono text-xs" placeholder="html-css" />
+                  <span class="mt-1 block text-xs font-normal text-sage">Coarse skill matched against learner profile estimates.</span>
+                </label>
+              </div>
+
+              <div class="grid gap-4 md:grid-cols-3">
+                <label class="block text-sm font-semibold">
+                  Skills taught
+                  <input name="skillsTaught" value="{{unit.skillsTaughtCsv}}" class="mt-2 w-full rounded-2xl border border-[#d5ddd7] bg-mist/40 px-4 py-2.5 font-mono text-xs" placeholder="stack:skill-a, stack:skill-b" />
+                  <span class="mt-1 block text-xs font-normal text-sage">Comma-separated skill ids from the skills index.</span>
+                </label>
+                <label class="block text-sm font-semibold">
+                  Prerequisites
+                  <input name="prerequisites" value="{{unit.prerequisitesCsv}}" class="mt-2 w-full rounded-2xl border border-[#d5ddd7] bg-mist/40 px-4 py-2.5 font-mono text-xs" placeholder="stack:skill-a" />
+                  <span class="mt-1 block text-xs font-normal text-sage">Skill ids required before this unit.</span>
+                </label>
+                <label class="block text-sm font-semibold">
+                  Formats
+                  <input name="formats" value="{{unit.formatsCsv}}" class="mt-2 w-full rounded-2xl border border-[#d5ddd7] bg-mist/40 px-4 py-2.5 font-mono text-xs" placeholder="reading, doing, videos" />
+                  <span class="mt-1 block text-xs font-normal text-sage">Learner format tags used by the roadmap picker.</span>
+                </label>
+              </div>
+
+              <label class="block text-sm font-semibold">
+                Content JSON
+                <textarea name="content" rows="18" class="mt-2 w-full rounded-2xl border border-[#d5ddd7] bg-mist/40 px-4 py-3 font-mono text-xs">{{unit.contentJson}}</textarea>
+                <span class="mt-1 block text-xs font-normal text-sage">Shape depends on lesson type. Quiz answers stay server-side; they are stripped before play.</span>
+              </label>
+
+              <div class="flex flex-wrap items-center gap-4 pt-2">
+                <label class="flex items-center gap-2 text-sm">
+                  <input type="checkbox" name="isActive" value="true" {{#if unit.isActive}}checked{{/if}} />
+                  Active (selectable by the roadmap pipeline)
+                </label>
+                <button type="submit" class="ml-auto rounded-full bg-moss px-6 py-2.5 text-sm font-semibold text-mist">
+                  Save unit
+                </button>
+              </div>
+            </form>
+
+            <div class="rounded-blob border border-[#d5ddd7] bg-foam/95 p-6 shadow-lift">
+              <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-sage">Skills index reference</h2>
+              <div class="flex flex-wrap gap-2">
+                {{#each skills}}
+                  <a href="/admin/units/skills/{{id}}" class="rounded-full border border-moss/20 px-3 py-1 font-mono text-[11px] transition hover:bg-leaf/60" title="{{title}} (level {{level}})">{{id}}</a>
+                {{else}}
+                  <p class="text-sm text-sage">No active skills.</p>
+                {{/each}}
+              </div>
+            </div>
+
+            <div class="rounded-blob border border-coral/30 bg-[#fff7f6] p-6 shadow-lift">
+              <h2 class="text-sm font-semibold uppercase tracking-wide text-coral">Remove unit</h2>
+              <p class="mt-2 text-sm text-sage">
+                Permanently deletes this unit from content pool. Existing roadmap lessons keep their saved snapshots.
+              </p>
+              <form
+                method="post"
+                action="/admin/units/{{unit.id}}/remove"
+                class="mt-4"
+                onsubmit="return window.confirm('Permanently remove this unit? This cannot be undone.')"
+              >
+                <button type="submit" class="rounded-full bg-coral px-5 py-2.5 text-sm font-semibold text-white">
+                  Remove unit
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

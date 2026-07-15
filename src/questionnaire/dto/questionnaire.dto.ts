@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsIn,
   IsObject,
   IsOptional,
@@ -24,6 +25,22 @@ export class UpsertQuestionnaireDto {
 export class SubmitQuestionnaireDto {
   @ApiProperty({
     description: 'Complete questionnaire answers for final submit',
+    type: 'object',
+    additionalProperties: true,
+  })
+  @IsObject()
+  answers: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    description: 'Client schema version — rejects if stale',
+  })
+  @IsOptional()
+  schemaVersion?: number;
+}
+
+export class ProfilePreviewRequestDto {
+  @ApiProperty({
+    description: 'Partial or full answers for non-persistent preview',
     type: 'object',
     additionalProperties: true,
   })
@@ -58,6 +75,23 @@ export class IntakeChatSelectionDto {
   otherText?: string;
 
   @ApiPropertyOptional({
+    description:
+      'Compound-step sub-question this selection answers (e.g. preferredSessionMinutes, deadline, useFrequency, confidence, exposure)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  subField?: string;
+
+  @ApiPropertyOptional({
+    description: 'Skill slug when answering an exposure sub-question',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  skillSlug?: string;
+
+  @ApiPropertyOptional({
     description: 'Schedule days when field is schedule',
     type: [String],
   })
@@ -74,6 +108,16 @@ export class IntakeChatSelectionDto {
   @IsArray()
   @IsString({ each: true })
   times?: string[];
+}
+
+export class IntakeChatCompleteDto {
+  @ApiPropertyOptional({
+    description:
+      'Legacy: submit immediately when complete. Preferred flow leaves this unset — chat/complete then returns readyForReview and the client finalizes via POST /questionnaire/submit.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  submit?: boolean;
 }
 
 export class IntakeChatMessageDto {

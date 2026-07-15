@@ -10,7 +10,8 @@ import { QuestionnaireOption } from '../questionnaire/entities/questionnaire-opt
 import {
   QuestionnaireSelection,
   QuestionnaireStep,
-  QuestionnaireUiKind,
+  type QuestionnaireUiKindValue,
+  type StepOptionLite,
 } from '../questionnaire/entities/questionnaire-step.entity';
 import { QuestionnaireSchemaService } from '../questionnaire/questionnaire-schema.service';
 import {
@@ -26,6 +27,63 @@ function slugify(raw: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 64);
+}
+
+const QUESTIONNAIRE_UI_KINDS: readonly QuestionnaireUiKindValue[] = [
+  'options',
+  'schedule',
+  'track-select',
+  'skill-evidence',
+  'capacity',
+  'outcome',
+  'context',
+  'confidence-barriers',
+];
+
+const REQUIRED_FIELD_KEYS = [
+  'goal',
+  'motivation',
+  'skills',
+  'selfStage',
+  'studyHours',
+  'schedule',
+  'targetOutcome',
+  'learningStyle',
+] as const;
+
+function parseUiKind(value?: string): QuestionnaireUiKindValue {
+  return QUESTIONNAIRE_UI_KINDS.includes(value as QuestionnaireUiKindValue)
+    ? (value as QuestionnaireUiKindValue)
+    : 'options';
+}
+
+function parseJsonArray(raw: string, label: string): StepOptionLite[] | null {
+  const text = raw.trim();
+  if (!text) return null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!Array.isArray(parsed)) throw new Error('must be an array');
+    return parsed as StepOptionLite[];
+  } catch {
+    throw new BadRequestException(`${label} must be a valid JSON array`);
+  }
+}
+
+function parseJsonObject(
+  raw: string,
+  label: string,
+): Record<string, unknown> | null {
+  const text = raw.trim();
+  if (!text) return null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('must be an object');
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    throw new BadRequestException(`${label} must be a valid JSON object`);
+  }
 }
 
 @Injectable()
@@ -68,11 +126,9 @@ export class AdminQuestionnaireService {
 
     if (mode === 'blank') {
       if (activate) {
-        await this.definitions
-          .createQueryBuilder()
-          .update(QuestionnaireDefinition)
-          .set({ isActive: false })
-          .execute();
+        throw new BadRequestException(
+          'Cannot activate a blank questionnaire definition',
+        );
       }
       const created = await this.definitions.save(
         this.definitions.create({
@@ -110,6 +166,8 @@ export class AdminQuestionnaireService {
       return this.createDefinition({ mode: 'blank', activate });
     }
 
+    if (activate) this.validateActivationSteps(source.steps ?? []);
+
     const createdId = await this.dataSource.transaction(async (manager) => {
       if (activate) {
         await manager
@@ -142,6 +200,9 @@ export class AdminQuestionnaireService {
             reviewIcon: srcStep.reviewIcon,
             scheduleDays: srcStep.scheduleDays,
             scheduleTimes: srcStep.scheduleTimes,
+            exposureOptions: srcStep.exposureOptions,
+            sessionOptions: srcStep.sessionOptions,
+            secondaryOptions: srcStep.secondaryOptions,
             visibleWhen: srcStep.visibleWhen,
           }),
         );
@@ -156,6 +217,7 @@ export class AdminQuestionnaireService {
                 icon: opt.icon,
                 iconClassName: opt.iconClassName,
                 sortOrder: opt.sortOrder,
+                profileSignal: opt.profileSignal,
               }),
             ),
           );
@@ -186,6 +248,7 @@ export class AdminQuestionnaireService {
 
   async activate(id: string) {
     const row = await this.getDefinition(id);
+    this.validateActivationSteps(row.steps ?? []);
     await this.definitions
       .createQueryBuilder()
       .update(QuestionnaireDefinition)
@@ -195,6 +258,25 @@ export class AdminQuestionnaireService {
     await this.definitions.save(row);
     await this.schema.reloadCache();
     return row;
+  }
+
+  private validateActivationSteps(steps: QuestionnaireStep[]): void {
+    const normalizedKeys = new Set(
+      steps.map((step) =>
+        step.fieldKey.replace(/[^a-z0-9]/gi, '').toLowerCase(),
+      ),
+    );
+    const missing: string[] = REQUIRED_FIELD_KEYS.filter(
+      (key) => !normalizedKeys.has(key.toLowerCase()),
+    );
+    const hasContextDimension =
+      normalizedKeys.has('barriers') || normalizedKeys.has('currentcontext');
+    if (!hasContextDimension) missing.push('barriers (or currentContext)');
+    if (missing.length) {
+      throw new BadRequestException(
+        `Cannot activate questionnaire: missing critical field keys: ${missing.join(', ')}`,
+      );
+    }
   }
 
   async getStep(id: string) {
@@ -257,10 +339,7 @@ export class AdminQuestionnaireService {
       input.selection === 'single'
         ? QuestionnaireSelection.Single
         : QuestionnaireSelection.Multi;
-    const uiKind =
-      input.uiKind === 'schedule'
-        ? QuestionnaireUiKind.Schedule
-        : QuestionnaireUiKind.Options;
+    const uiKind = parseUiKind(input.uiKind);
 
     const title = input.title.trim() || fieldKey;
     const step = await this.steps.save(
@@ -276,11 +355,11 @@ export class AdminQuestionnaireService {
         reviewLabel: input.reviewLabel?.trim() || title,
         reviewIcon: input.reviewIcon?.trim() || 'target',
         scheduleDays:
-          uiKind === QuestionnaireUiKind.Schedule
+          uiKind === 'schedule'
             ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
             : null,
         scheduleTimes:
-          uiKind === QuestionnaireUiKind.Schedule
+          uiKind === 'schedule'
             ? [
                 { value: 'morning', label: 'Morning' },
                 { value: 'afternoon', label: 'Afternoon' },
@@ -308,6 +387,9 @@ export class AdminQuestionnaireService {
       fieldKey?: string;
       scheduleDays?: string;
       scheduleTimesJson?: string;
+      exposureOptionsJson?: string;
+      sessionOptionsJson?: string;
+      secondaryOptionsJson?: string;
     },
   ) {
     const step = await this.getStep(id);
@@ -359,10 +441,7 @@ export class AdminQuestionnaireService {
           : QuestionnaireSelection.Multi;
     }
     if (input.uiKind !== undefined) {
-      step.uiKind =
-        input.uiKind === 'schedule'
-          ? QuestionnaireUiKind.Schedule
-          : QuestionnaireUiKind.Options;
+      step.uiKind = parseUiKind(input.uiKind);
     }
 
     if (input.scheduleDays !== undefined) {
@@ -395,6 +474,24 @@ export class AdminQuestionnaireService {
           );
         }
       }
+    }
+    if (input.exposureOptionsJson !== undefined) {
+      step.exposureOptions = parseJsonArray(
+        input.exposureOptionsJson,
+        'exposureOptions',
+      );
+    }
+    if (input.sessionOptionsJson !== undefined) {
+      step.sessionOptions = parseJsonArray(
+        input.sessionOptionsJson,
+        'sessionOptions',
+      );
+    }
+    if (input.secondaryOptionsJson !== undefined) {
+      step.secondaryOptions = parseJsonArray(
+        input.secondaryOptionsJson,
+        'secondaryOptions',
+      );
     }
 
     await this.steps.save(step);
@@ -462,6 +559,7 @@ export class AdminQuestionnaireService {
       value?: string;
       icon?: string;
       sortOrder?: number;
+      profileSignalJson?: string;
     },
   ) {
     const opt = await this.options.findOne({
@@ -489,14 +587,18 @@ export class AdminQuestionnaireService {
       }
     }
     if (input.icon !== undefined) {
-      const icon = input.icon.trim()
-        ? normalizeIconName(input.icon)
-        : null;
+      const icon = input.icon.trim() ? normalizeIconName(input.icon) : null;
       opt.icon = icon;
       opt.iconClassName = icon ? DEFAULT_ICON_CLASS : null;
     }
     if (input.sortOrder !== undefined && Number.isFinite(input.sortOrder)) {
       opt.sortOrder = input.sortOrder;
+    }
+    if (input.profileSignalJson !== undefined) {
+      opt.profileSignal = parseJsonObject(
+        input.profileSignalJson,
+        'profileSignal',
+      );
     }
 
     await this.options.save(opt);

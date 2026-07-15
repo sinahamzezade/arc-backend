@@ -1,12 +1,12 @@
 /**
  * §16.8 adaptive remediation acceptance — unit/integration style.
  */
-import { LessonContentService } from './lesson-content.service';
 import { LessonRemediationService } from './lesson-remediation.service';
 import { RewardCalculatorService } from '../gamification/reward-calculator.service';
 import {
   assertConceptTagsPresent,
   collectSecretKeyHits,
+  stripPlaySecrets,
   type LessonPlayOutline,
 } from './lesson-play.types';
 import {
@@ -112,12 +112,11 @@ describe('§16.8 Adaptive Remediation acceptance', () => {
     }
   });
 
-  it('GET play strip leaks zero secret keys incl. remediation bodies', () => {
-    const publicBody = new LessonContentService().toPublicPlayBody(GOLDEN);
+  it('secret strip leaks zero secret keys incl. remediation bodies', () => {
+    const publicBody = stripPlaySecrets(GOLDEN) as Record<string, unknown>;
     expect(collectSecretKeyHits(publicBody)).toEqual([]);
     expect(publicBody).not.toHaveProperty('remediation');
     expect(JSON.stringify(publicBody)).not.toMatch(/correctOptionId|feedbackIncorrect|badgeCandidateKey/);
-    expect(publicBody.adaptive.concepts.length).toBeGreaterThan(0);
   });
 
   it('wrong answer returns fresh recovery item (never verbatim primary)', async () => {

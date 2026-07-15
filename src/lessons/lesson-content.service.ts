@@ -1,52 +1,50 @@
-import { HttpStatus, Injectable, Optional } from '@nestjs/common';
+import { HttpStatus, Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
-import { ContentQueryService } from '../content-pool/content-query.service';
-import type { LessonVersionBody } from '../content-pool/entities/lesson-version.entity';
+import { UnitsCatalogService } from '../content-pool/units-catalog.service';
 import { Lesson } from '../roadmaps/entities/lesson.entity';
-import { LessonTemplate } from '../skill-graph/entities/lesson-template.entity';
 import {
-  isPlayOutline,
-  type LessonContentBlock,
-  type LessonContentPage,
-  type LessonPlayOutline,
+  isQuizContent,
+  isUnitPlayContent,
+  normalizeUnitPlayContent,
+  stripPlaySecrets,
+  type QuizPlayContent,
+  type QuizQuestion,
+  type UnitPlayContent,
 } from './lesson-play.types';
 
-export type ResolvedPlayOutline = {
-  outline: LessonPlayOutline;
-  contentVersionId: string;
-  contentSchemaVersion: number;
-  source: 'play_content' | 'lesson_version' | 'template_outline';
+export type QuizGradeInput = {
+  questionId?: string;
+  questionIndex?: number;
+  optionIndex?: number;
+  booleanAnswer?: boolean;
 };
 
-/** Fisher–Yates — copy so outline / callers stay untouched. */
-function shuffleOptions<T>(items: T[]): T[] {
-  const out = [...items];
-  for (let i = out.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
-  }
-  return out;
-}
+export type QuizGradeResult = {
+  questionId: string;
+  correct: boolean;
+  /** Revealed after the check only. */
+  answer: number | boolean;
+  explain: string | null;
+};
 
 @Injectable()
 export class LessonContentService {
   constructor(
-    @Optional() private readonly contentQuery?: ContentQueryService,
+    @InjectRepository(Lesson)
+    private readonly lessonsRepo: Repository<Lesson>,
+    private readonly unitsCatalog: UnitsCatalogService,
   ) {}
 
   /**
-   * Sync resolve (legacy / tests). Prefer resolveAuthoritative for play APIs.
+   * Authoritative body — prefer lesson.play_content snapshot; if missing or
+   * rejected by an older validator, hydrate once from units.content and persist.
    */
-  resolveOutline(
-    lesson: Lesson,
-    template: LessonTemplate | null | undefined,
-  ): LessonPlayOutline {
-    if (isPlayOutline(lesson.playContent)) {
-      return lesson.playContent;
-    }
-    if (template && isPlayOutline(template.contentOutline)) {
-      return template.contentOutline as LessonPlayOutline;
+  resolvePlayContent(lesson: Lesson): UnitPlayContent {
+    if (isUnitPlayContent(lesson.playContent)) {
+      return normalizeUnitPlayContent(lesson.playContent);
     }
     throw new AppException(
       AuthErrorCode.LESSON_CONTENT_NOT_READY,
@@ -56,96 +54,26 @@ export class LessonContentService {
   }
 
   /**
-   * Prefer published LessonVersion body → play_content → template outline.
-   * Pins contentVersionId to the version used (never newest draft).
+   * Async variant used by play APIs — backfills play_content from the unit
+   * catalog when the snapshot was never written (e.g. structured sections
+   * rejected by a prior validator).
    */
-  async resolveAuthoritative(
-    lesson: Lesson,
-    template: LessonTemplate | null | undefined,
-    pinnedVersionId?: string | null,
-  ): Promise<ResolvedPlayOutline> {
-    // 1) Explicit pin (attempt's snapshotted version) OR lesson instance pin
-    const pin = pinnedVersionId ?? lesson.sourceVersionId;
-    if (pin && this.contentQuery) {
-      const version = await this.contentQuery.getLessonVersionById(pin);
-      if (version) {
-        const mapped = this.mapBodyToOutline(
-          version.body,
-          lesson,
-          template,
-          version.schemaVersion,
-        );
-        if (mapped) {
-          return {
-            outline: mapped,
-            contentVersionId: version.id,
-            contentSchemaVersion: version.schemaVersion,
-            source: 'lesson_version',
-          };
+  async ensurePlayContent(lesson: Lesson): Promise<UnitPlayContent> {
+    if (isUnitPlayContent(lesson.playContent)) {
+      return normalizeUnitPlayContent(lesson.playContent);
+    }
+
+    if (lesson.unitId) {
+      const unit = await this.unitsCatalog.getUnitById(lesson.unitId);
+      if (unit && isUnitPlayContent(unit.content)) {
+        const normalized = normalizeUnitPlayContent(unit.content);
+        lesson.playContent = normalized as unknown as Record<string, unknown>;
+        if (!lesson.objective?.trim()) {
+          lesson.objective = normalized.objective;
         }
+        await this.lessonsRepo.save(lesson);
+        return normalized;
       }
-    }
-
-    // 2) Personalization override on lesson row
-    if (isPlayOutline(lesson.playContent)) {
-      return {
-        outline: lesson.playContent,
-        contentVersionId:
-          pinnedVersionId ??
-          template?.publishedVersionId ??
-          lesson.lessonTemplateId ??
-          lesson.id,
-        contentSchemaVersion: 1,
-        source: 'play_content',
-      };
-    }
-
-    // 3) Published content-pool version for template
-    if (template?.id && this.contentQuery) {
-      try {
-        const playable = await this.contentQuery.getPlayableLessonVersion(
-          template.id,
-        );
-        const mapped = this.mapBodyToOutline(
-          playable.body,
-          lesson,
-          template,
-          playable.version ?? 1,
-        );
-        if (mapped) {
-          return {
-            outline: mapped,
-            contentVersionId:
-              playable.lessonVersionId ??
-              template.publishedVersionId ??
-              template.id,
-            contentSchemaVersion:
-              typeof playable.body === 'object' &&
-              playable.body &&
-              'schemaVersion' in playable.body &&
-              typeof (playable.body as { schemaVersion?: unknown })
-                .schemaVersion === 'number'
-                ? (playable.body as { schemaVersion: number }).schemaVersion
-                : 1,
-            source: playable.lessonVersionId
-              ? 'lesson_version'
-              : 'template_outline',
-          };
-        }
-      } catch {
-        /* fall through to outline */
-      }
-    }
-
-    // 4) Template jsonb outline
-    if (template && isPlayOutline(template.contentOutline)) {
-      return {
-        outline: template.contentOutline as LessonPlayOutline,
-        contentVersionId:
-          template.publishedVersionId ?? template.id ?? lesson.id,
-        contentSchemaVersion: 1,
-        source: 'template_outline',
-      };
     }
 
     throw new AppException(
@@ -155,170 +83,118 @@ export class LessonContentService {
     );
   }
 
-  /**
-   * Public play payload — strip grading keys, feedbackIncorrect, remediation bodies,
-   * and rewardPresentation.badgeCandidateKey (§4.1 + §16.6).
-   * Options shuffled so correct ≠ always first.
-   */
-  toPublicPlayBody(outline: LessonPlayOutline) {
-    const concepts = new Set<string>();
-    if (outline.practice?.conceptTag) {
-      concepts.add(outline.practice.conceptTag);
-    }
-    for (const q of outline.quiz ?? []) {
-      if (q.conceptTag) concepts.add(q.conceptTag);
-    }
+  /** Public play payload — deep-strips answer/explain and legacy secret keys. */
+  toPublicPlayBody(content: UnitPlayContent): Record<string, unknown> {
+    return stripPlaySecrets(
+      normalizeUnitPlayContent(content),
+    ) as unknown as Record<string, unknown>;
+  }
 
-    const rewardPresentation = outline.rewardPresentation
-      ? {
-          rewardClass: outline.rewardPresentation.rewardClass,
-          arloLine: outline.rewardPresentation.arloLine,
-          // badgeCandidateKey intentionally omitted
-        }
-      : undefined;
+  /** Quiz total for score/reward computations (0 for non-quiz bodies). */
+  quizTotal(content: UnitPlayContent): number {
+    return isQuizContent(content) ? content.questions.length : 0;
+  }
+
+  requireQuizContent(content: UnitPlayContent): QuizPlayContent {
+    if (!isQuizContent(content)) {
+      throw new AppException(
+        AuthErrorCode.LESSON_INVALID_ANSWER,
+        'Lesson has no quiz',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    return content;
+  }
+
+  /** Look up a question by normalized id (`q0`..) or by index. */
+  findQuizQuestion(
+    content: QuizPlayContent,
+    input: Pick<QuizGradeInput, 'questionId' | 'questionIndex'>,
+  ): { question: QuizQuestion; questionId: string } | null {
+    const normalized = normalizeUnitPlayContent(content) as QuizPlayContent;
+    let question: QuizQuestion | undefined;
+    if (input.questionId != null) {
+      question = normalized.questions.find((q) => q.id === input.questionId);
+    } else if (
+      input.questionIndex != null &&
+      Number.isInteger(input.questionIndex)
+    ) {
+      question = normalized.questions[input.questionIndex];
+    }
+    if (!question) return null;
+    return { question, questionId: question.id! };
+  }
+
+  /** Grade one quiz question server-side from the secret-bearing snapshot. */
+  gradeQuizQuestion(
+    content: UnitPlayContent,
+    input: QuizGradeInput,
+  ): QuizGradeResult {
+    const quiz = this.requireQuizContent(content);
+    const found = this.findQuizQuestion(quiz, input);
+    if (!found) {
+      throw new AppException(
+        AuthErrorCode.LESSON_INVALID_ANSWER,
+        'Unknown quiz question',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const { question, questionId } = found;
+
+    let correct: boolean;
+    if (question.type === 'mcq') {
+      if (
+        input.optionIndex == null ||
+        !Number.isInteger(input.optionIndex) ||
+        input.optionIndex < 0 ||
+        input.optionIndex >= (question.options?.length ?? 0)
+      ) {
+        throw new AppException(
+          AuthErrorCode.LESSON_INVALID_ANSWER,
+          'optionIndex is required for mcq questions',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      correct = input.optionIndex === question.answer;
+    } else {
+      if (typeof input.booleanAnswer !== 'boolean') {
+        throw new AppException(
+          AuthErrorCode.LESSON_INVALID_ANSWER,
+          'booleanAnswer is required for boolean questions',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      correct = input.booleanAnswer === question.answer;
+    }
 
     return {
-      objective: outline.objective,
-      arloPrompt: outline.arloPrompt,
-      suggestedArlo: outline.suggestedArlo ?? [],
-      content: outline.content,
-      practice: {
-        id: outline.practice.id,
-        prompt: outline.practice.prompt,
-        hint: outline.practice.hint,
-        conceptTag: outline.practice.conceptTag,
-        options: shuffleOptions(
-          outline.practice.options.map((o) => ({
-            id: o.id,
-            label: o.label,
-          })),
-        ),
-        feedbackCorrect: outline.practice.feedbackCorrect,
-        // feedbackIncorrect stripped — server-only until after check
-      },
-      quiz: (outline.quiz ?? []).map((q) => ({
-        id: q.id,
-        prompt: q.prompt,
-        conceptTag: q.conceptTag,
-        options: shuffleOptions(
-          q.options.map((o) => ({ id: o.id, label: o.label })),
-        ),
-      })),
-      rewardPresentation,
-      adaptive: {
-        enabled: concepts.size > 0,
-        attemptBudgetPerConcept: outline.attemptBudgetPerConcept ?? 2,
-        concepts: [...concepts],
-      },
+      questionId,
+      correct,
+      answer: question.answer,
+      explain: question.explain ?? null,
     };
   }
 
-  /** Validate option/question IDs exist on this outline version. */
-  hasValidAnswerIds(
-    outline: LessonPlayOutline,
-    input: {
-      practiceOptionId?: string | null;
-      quizAnswers?: Record<string, string>;
-    },
-  ): boolean {
-    if (input.practiceOptionId) {
-      const ok = outline.practice.options.some(
-        (o) => o.id === input.practiceOptionId,
-      );
-      if (!ok) return false;
+  /**
+   * Score persisted answers (`{ q0: 2, q1: true }`) against the snapshot.
+   */
+  scoreQuiz(
+    content: UnitPlayContent,
+    answers: Record<string, number | boolean>,
+  ): { correct: number; total: number; scorePercent: number } {
+    if (!isQuizContent(content)) {
+      return { correct: 0, total: 0, scorePercent: 100 };
     }
-    if (input.quizAnswers) {
-      for (const [qid, oid] of Object.entries(input.quizAnswers)) {
-        const q = outline.quiz.find((x) => x.id === qid);
-        if (!q || !q.options.some((o) => o.id === oid)) return false;
-      }
+    const quiz = normalizeUnitPlayContent(content) as QuizPlayContent;
+    let correct = 0;
+    for (const q of quiz.questions) {
+      if (q.id && answers[q.id] === q.answer) correct += 1;
     }
-    return true;
-  }
-
-  gemsForDifficulty(difficulty: string): number {
-    switch ((difficulty || 'beginner').toLowerCase()) {
-      case 'easy':
-      case 'beginner':
-        return 2;
-      case 'medium':
-      case 'intermediate':
-        return 3;
-      case 'hard':
-      case 'advanced':
-        return 5;
-      case 'expert':
-        return 8;
-      default:
-        return 2;
-    }
-  }
-
-  private mapBodyToOutline(
-    body: unknown,
-    _lesson: Lesson,
-    template: LessonTemplate | null | undefined,
-    _schemaVersion: number,
-  ): LessonPlayOutline | null {
-    if (isPlayOutline(body)) return body;
-
-    const fallback =
-      template && isPlayOutline(template.contentOutline)
-        ? (template.contentOutline as LessonPlayOutline)
-        : null;
-
-    // LessonVersionBody schema v2: sections + practiceIds/quizIds
-    if (body && typeof body === 'object') {
-      const b = body as Partial<LessonVersionBody> & Record<string, unknown>;
-      if (Array.isArray(b.sections) && b.sections.length > 0) {
-        const content: LessonContentPage[] = b.sections.map((s) => ({
-          id: String(s.id),
-          title: String(s.title),
-          blocks: (s.blocks ?? [])
-            .map((block) => this.normalizeBlock(block))
-            .filter((x): x is LessonContentBlock => Boolean(x)),
-        }));
-
-        if (fallback) {
-          return {
-            ...fallback,
-            objective:
-              typeof b.objective === 'string'
-                ? b.objective
-                : fallback.objective,
-            content: content.length ? content : fallback.content,
-          };
-        }
-
-        // Sections alone are not a full play outline (need practice + quiz).
-        return null;
-      }
-    }
-
-    return fallback;
-  }
-
-  private normalizeBlock(
-    block: Record<string, unknown>,
-  ): LessonContentBlock | null {
-    const type = String(block.type ?? '');
-    if (type === 'text' && typeof block.body === 'string') {
-      return { type: 'text', body: block.body };
-    }
-    if (
-      type === 'callout' &&
-      typeof block.title === 'string' &&
-      typeof block.body === 'string'
-    ) {
-      return { type: 'callout', title: block.title, body: block.body };
-    }
-    if (
-      type === 'code' &&
-      typeof block.label === 'string' &&
-      typeof block.code === 'string'
-    ) {
-      return { type: 'code', label: block.label, code: block.code };
-    }
-    return null;
+    const total = quiz.questions.length;
+    return {
+      correct,
+      total,
+      scorePercent: total > 0 ? Math.round((correct / total) * 100) : 100,
+    };
   }
 }

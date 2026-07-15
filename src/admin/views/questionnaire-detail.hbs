@@ -192,8 +192,9 @@
                     <div class="admin-field">
                       <label for="uiKind">UI kind</label>
                       <select id="uiKind" name="uiKind">
-                        <option value="options">options</option>
-                        <option value="schedule">schedule</option>
+                        {{#each uiKinds}}
+                          <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                        {{/each}}
                       </select>
                     </div>
                     <div class="admin-field">

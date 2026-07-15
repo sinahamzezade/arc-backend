@@ -10,7 +10,12 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiHeader,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
   CurrentUser,
@@ -63,7 +68,10 @@ export class LessonsController {
   }
 
   @Post(':lessonId/practice/check')
-  @ApiOperation({ summary: 'Grade practice MCQ' })
+  @ApiOperation({
+    summary:
+      'Self-attest task completion (practice / mini_project / interactive)',
+  })
   checkPractice(
     @CurrentUser() user: AuthUserPayload,
     @Param('lessonId', ParseUUIDPipe) lessonId: string,
@@ -73,7 +81,10 @@ export class LessonsController {
   }
 
   @Post(':lessonId/quiz/check')
-  @ApiOperation({ summary: 'Grade one quiz question' })
+  @ApiOperation({
+    summary:
+      'Grade one quiz question by id (q0..) or index — server-side answers',
+  })
   checkQuiz(
     @CurrentUser() user: AuthUserPayload,
     @Param('lessonId', ParseUUIDPipe) lessonId: string,

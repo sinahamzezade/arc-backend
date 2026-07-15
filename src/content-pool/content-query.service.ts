@@ -390,6 +390,16 @@ export class ContentQueryService {
 
     const materializedLessonIds: string[] = [];
     for (const lesson of batch) {
+      // Units model: playContent already snapshotted at roadmap persist.
+      if (lesson.unitId || lesson.playContent) {
+        lesson.materializedWindow = fromWeek;
+        if (!lesson.rewardClassSnapshot) {
+          lesson.rewardClassSnapshot = 'standard';
+        }
+        await this.userLessonsRepo.save(lesson);
+        materializedLessonIds.push(lesson.id);
+        continue;
+      }
       if (!lesson.lessonTemplateId) continue;
       try {
         const playable = await this.getPlayableLessonVersion(

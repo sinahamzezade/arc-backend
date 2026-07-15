@@ -18,6 +18,18 @@ export enum QuestionnaireSelection {
   Multi = 'multi',
 }
 
+/** Stored as varchar so schema can add compound uiKinds without enum migrations. */
+export type QuestionnaireUiKindValue =
+  | 'options'
+  | 'schedule'
+  | 'track-select'
+  | 'skill-evidence'
+  | 'capacity'
+  | 'outcome'
+  | 'context'
+  | 'confidence-barriers';
+
+/** @deprecated Use QuestionnaireUiKindValue strings; kept for existing imports. */
 export enum QuestionnaireUiKind {
   Options = 'options',
   Schedule = 'schedule',
@@ -26,6 +38,14 @@ export enum QuestionnaireUiKind {
 export type ScheduleTimeOption = {
   value: string;
   label: string;
+};
+
+export type StepOptionLite = {
+  value: string;
+  label: string;
+  icon?: string;
+  iconClassName?: string;
+  profileHint?: string;
 };
 
 @Entity('questionnaire_steps')
@@ -68,11 +88,10 @@ export class QuestionnaireStep {
 
   @Column({
     name: 'ui_kind',
-    type: 'enum',
-    enum: QuestionnaireUiKind,
-    default: QuestionnaireUiKind.Options,
+    type: 'varchar',
+    default: 'options',
   })
-  uiKind: QuestionnaireUiKind;
+  uiKind: QuestionnaireUiKindValue;
 
   @Column({ name: 'review_label', type: 'varchar' })
   reviewLabel: string;
@@ -85,6 +104,18 @@ export class QuestionnaireStep {
 
   @Column({ name: 'schedule_times', type: 'jsonb', nullable: true })
   scheduleTimes: ScheduleTimeOption[] | null;
+
+  /** Exposure levels for skill-evidence */
+  @Column({ name: 'exposure_options', type: 'jsonb', nullable: true })
+  exposureOptions: StepOptionLite[] | null;
+
+  /** Session lengths for capacity */
+  @Column({ name: 'session_options', type: 'jsonb', nullable: true })
+  sessionOptions: StepOptionLite[] | null;
+
+  /** Secondary choices for compound screens */
+  @Column({ name: 'secondary_options', type: 'jsonb', nullable: true })
+  secondaryOptions: StepOptionLite[] | null;
 
   /** Adaptive branch rules; null = always show. */
   @Column({ name: 'visible_when', type: 'jsonb', nullable: true })

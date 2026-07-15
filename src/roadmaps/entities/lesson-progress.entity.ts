@@ -67,8 +67,8 @@ export class LessonProgress {
   sessionState: {
     contentStep?: number;
     practiceDone?: boolean;
-    practiceOptionId?: string | null;
-    quizAnswers?: Record<string, string>;
+    /** Keyed by question id (q0..); option index for mcq, boolean otherwise. */
+    quizAnswers?: Record<string, number | boolean>;
     quizIndex?: number;
   };
 

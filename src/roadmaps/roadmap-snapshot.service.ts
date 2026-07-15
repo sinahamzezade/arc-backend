@@ -3,6 +3,7 @@ import { createHash } from 'crypto';
 import Redis from 'ioredis';
 import { resolveRedisUrl } from '../common/redis/resolve-redis-url';
 import { Goal } from '../goals/entities/goal.entity';
+import type { LearnerProfileSnapshot } from '../questionnaire/entities/learner-profile-snapshot.entity';
 import { SkillGraphService } from '../skill-graph/skill-graph.service';
 import type {
   ContentSnapshotDto,
@@ -50,8 +51,9 @@ export class RoadmapSnapshotService {
   toProfile(
     goal: Goal,
     provenMasteredSkillIds: string[] = [],
+    profileSnapshot?: LearnerProfileSnapshot | null,
   ): LearnerProfileDto {
-    return {
+    const base: LearnerProfileDto = {
       user_id: goal.userId,
       goal_id: goal.id,
       goal_revision: this.goalRevision(goal),
@@ -69,6 +71,27 @@ export class RoadmapSnapshotService {
       language: 'en',
       interview_signals: {},
       proven_mastered_skill_ids: provenMasteredSkillIds,
+    };
+    if (!profileSnapshot) return base;
+
+    return {
+      ...base,
+      skill_estimates: (profileSnapshot.skillEstimates ?? []).map((e) => ({
+        skill_slug: e.skillSlug,
+        self_exposure_level: e.selfExposureLevel,
+        provisional_stage: e.provisionalStage,
+        verified_stage: e.verifiedStage,
+        confidence: e.confidence,
+        // Placement gates any skip on unverified skills until it clears.
+        diagnostic_required:
+          profileSnapshot.diagnosticRequired && e.verifiedStage == null,
+      })),
+      current_stage:
+        profileSnapshot.verifiedStage ?? profileSnapshot.provisionalStage,
+      target_stage: profileSnapshot.targetStage,
+      weekly_effective_minutes: profileSnapshot.weeklyEffectiveMinutes,
+      learning_style_weights: profileSnapshot.learningStyleWeights ?? {},
+      pace_class: profileSnapshot.paceClass,
     };
   }
 

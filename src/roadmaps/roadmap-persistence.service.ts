@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
-import { isPlayOutline } from '../lessons/lesson-play.types';
+import {
+  isPlayOutline,
+  isUnitPlayContent,
+  normalizeUnitPlayContent,
+} from '../lessons/lesson-play.types';
 import { Goal } from '../goals/entities/goal.entity';
 import { TechStack } from '../skill-graph/entities/tech-stack.entity';
 import { SkillNode } from '../skill-graph/entities/skill-node.entity';
@@ -13,6 +17,14 @@ import type {
   RoadmapPlanDto,
   SelectedPhaseDto,
 } from './dto/roadmap-engine.types';
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Units-model plans carry slug ids; those can't hit uuid FK columns. */
+function isUuid(value: string): boolean {
+  return UUID_RE.test(value);
+}
 
 @Injectable()
 export class RoadmapPersistenceService {
@@ -154,7 +166,10 @@ export class RoadmapPersistenceService {
     for (let mi = 0; mi < planned.milestones.length; mi++) {
       const pm = planned.milestones[mi]!;
       let skillNodeId = pm.skill_node_id || null;
-      if (skillNodeId) {
+      if (skillNodeId && !isUuid(skillNodeId)) {
+        // Units model: skill slug — no SkillNode row to reference.
+        skillNodeId = null;
+      } else if (skillNodeId) {
         const skillOk = await manager.getRepository(SkillNode).exists({
           where: { id: skillNodeId },
         });
@@ -179,8 +194,20 @@ export class RoadmapPersistenceService {
         const outline = isPlayOutline(pl.content_outline)
           ? pl.content_outline
           : null;
+        // Units model keeps the unit body snapshot on the lesson row.
+        // Quiz questions get stable index ids (q0..) at materialization.
+        const unitContent =
+          !outline && isUnitPlayContent(pl.content_outline)
+            ? (normalizeUnitPlayContent(pl.content_outline) as Record<
+                string,
+                unknown
+              >)
+            : null;
         let lessonTemplateId = pl.source_template_id || null;
-        if (lessonTemplateId) {
+        if (lessonTemplateId && !isUuid(lessonTemplateId)) {
+          // Units model: unit slug id — no LessonTemplate row to reference.
+          lessonTemplateId = null;
+        } else if (lessonTemplateId) {
           const tplOk = await manager.getRepository(LessonTemplate).exists({
             where: { id: lessonTemplateId },
           });
@@ -194,7 +221,15 @@ export class RoadmapPersistenceService {
         await manager.save(
           manager.create(Lesson, {
             milestoneId: milestone.id,
+            unitId: pl.unit_id ?? null,
             lessonTemplateId,
+            provider: pl.provider ?? null,
+            url: pl.url ?? null,
+            level: pl.level ?? null,
+            skillsTaught: pl.skills_taught ?? [],
+            unitRole: pl.unit_role ?? null,
+            servesStage: pl.serves_stage ?? [],
+            entryAction: pl.entry_action ?? null,
             title: pl.title,
             missionName: pl.mission_name,
             lessonType: pl.lesson_type,
@@ -209,19 +244,24 @@ export class RoadmapPersistenceService {
                 : pl.status === 'completed'
                   ? LessonStatus.Completed
                   : LessonStatus.Locked,
-            playContent: outline,
+            playContent: outline ?? unitContent,
             sourceVersionId: pl.source_version_id,
             rewardClassSnapshot: pl.reward_class ?? 'standard',
             materializedWindow: null,
-            objective:
-              outline && typeof outline === 'object' && 'objective' in outline
-                ? String((outline as { objective: string }).objective)
-                : null,
+            objective: this.extractObjective(outline ?? unitContent),
           }),
         );
       }
     }
 
     return phase;
+  }
+
+  private extractObjective(
+    content: Record<string, unknown> | null,
+  ): string | null {
+    if (!content || typeof content !== 'object') return null;
+    const objective = (content as { objective?: unknown }).objective;
+    return typeof objective === 'string' && objective.trim() ? objective : null;
   }
 }

@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { CareerRole } from '../../content-pool/entities/career-role.entity';
 
+/** @deprecated Kept for TypeORM jsonb compat; prefer requiredSkillIds. */
 export type StackPlanPhase = {
   key: string;
   title: string;
@@ -53,10 +54,28 @@ export class RoleRecipe {
   @Column({ name: 'default_timeline_weeks', type: 'int', default: 24 })
   defaultTimelineWeeks: number;
 
-  /** Legacy phase blueprint (kept for generator). */
-  @Column({ name: 'stack_plan', type: 'jsonb' })
+  /** Legacy — empty under units model. */
+  @Column({ name: 'stack_plan', type: 'jsonb', default: () => "'{\"phases\":[]}'" })
   stackPlan: StackPlan;
 
+  /** Skill slug ids from skills table (source of truth for gap calc). */
+  @Column({
+    name: 'required_skill_ids',
+    type: 'text',
+    array: true,
+    default: '{}',
+  })
+  requiredSkillIds: string[];
+
+  @Column({
+    name: 'optional_skill_ids',
+    type: 'text',
+    array: true,
+    default: '{}',
+  })
+  optionalSkillIds: string[];
+
+  /** @deprecated UUID skill-node refs — unused under units model. */
   @Column({
     name: 'required_skill_node_ids',
     type: 'uuid',
@@ -65,6 +84,7 @@ export class RoleRecipe {
   })
   requiredSkillNodeIds: string[];
 
+  /** @deprecated */
   @Column({
     name: 'optional_skill_node_ids',
     type: 'uuid',

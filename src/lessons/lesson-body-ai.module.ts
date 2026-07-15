@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { resolveRedisUrl } from '../common/redis/resolve-redis-url';
 import { Goal } from '../goals/entities/goal.entity';
+import { LearnerProfileSnapshot } from '../questionnaire/entities/learner-profile-snapshot.entity';
 import { QuestionnaireResponse } from '../questionnaire/entities/questionnaire-response.entity';
 import { Lesson } from '../roadmaps/entities/lesson.entity';
 import { Roadmap } from '../roadmaps/entities/roadmap.entity';
@@ -42,7 +43,13 @@ const bullProviders = redisUrl ? [LessonBodyPersonalizationBullProcessor] : [];
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Lesson, Roadmap, Goal, QuestionnaireResponse]),
+    TypeOrmModule.forFeature([
+      Lesson,
+      Roadmap,
+      Goal,
+      QuestionnaireResponse,
+      LearnerProfileSnapshot,
+    ]),
     SystemFlagsModule,
     ...bullImports,
   ],

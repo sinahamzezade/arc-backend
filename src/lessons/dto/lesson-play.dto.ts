@@ -22,18 +22,14 @@ export class UpdateLessonProgressDto {
   @IsBoolean()
   practiceDone?: boolean;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  practiceOptionId?: string;
-
   @ApiPropertyOptional({
+    description: 'Answers keyed by question id (q0..): option index or boolean',
     type: 'object',
-    additionalProperties: { type: 'string' },
+    additionalProperties: { oneOf: [{ type: 'number' }, { type: 'boolean' }] },
   })
   @IsOptional()
   @IsObject()
-  quizAnswers?: Record<string, string>;
+  quizAnswers?: Record<string, number | boolean>;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -49,29 +45,24 @@ export class UpdateLessonProgressDto {
   @Min(0)
   timeSpentMinutes?: number;
 
-  @ApiPropertyOptional({ description: 'Active attempt — validates answer IDs' })
+  @ApiPropertyOptional({ description: 'Active attempt from start/play' })
   @IsOptional()
   @IsString()
   attemptId?: string;
 }
 
+/** Self-attest for practice / mini_project / interactive tasks. */
 export class CheckPracticeDto {
   @ApiProperty({ description: 'Active attempt id from start/play' })
   @IsString()
   attemptId!: string;
 
-  @ApiProperty({ description: 'Selected option id' })
-  @IsString()
-  optionId!: string;
-
-  @ApiPropertyOptional({
-    description: 'Practice or recovery item id (defaults to practice.id)',
-  })
+  @ApiPropertyOptional({ description: 'Learner attests the task is done' })
   @IsOptional()
-  @IsString()
-  itemId?: string;
+  @IsBoolean()
+  done?: boolean;
 
-  @ApiPropertyOptional({ description: 'True if learner opened the hint' })
+  @ApiPropertyOptional({ description: 'True if learner opened a hint' })
   @IsOptional()
   @IsBoolean()
   hintUsed?: boolean;
@@ -82,37 +73,40 @@ export class CheckQuizDto {
   @IsString()
   attemptId!: string;
 
-  @ApiProperty({ description: 'Selected option id' })
-  @IsString()
-  optionId!: string;
-
-  @ApiPropertyOptional({
-    description: 'Quiz question or recovery item id (§16.4)',
-  })
-  @IsOptional()
-  @IsString()
-  itemId?: string;
-
-  /** @deprecated Prefer itemId — kept for older clients */
-  @ApiPropertyOptional({ description: 'Alias for itemId' })
+  @ApiPropertyOptional({ description: 'Question id (q0, q1, ...)' })
   @IsOptional()
   @IsString()
   questionId?: string;
+
+  @ApiPropertyOptional({ description: 'Question index — fallback for id' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  questionIndex?: number;
+
+  @ApiPropertyOptional({ description: 'Selected option index (mcq)' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  optionIndex?: number;
+
+  @ApiPropertyOptional({ description: 'Selected answer (boolean questions)' })
+  @IsOptional()
+  @IsBoolean()
+  booleanAnswer?: boolean;
 }
 
 export class CompleteLessonDto {
   @ApiPropertyOptional({
+    description: 'Answers keyed by question id (q0..): option index or boolean',
     type: 'object',
-    additionalProperties: { type: 'string' },
+    additionalProperties: { oneOf: [{ type: 'number' }, { type: 'boolean' }] },
   })
   @IsOptional()
   @IsObject()
-  quizAnswers?: Record<string, string>;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  practiceOptionId?: string;
+  quizAnswers?: Record<string, number | boolean>;
 
   @ApiPropertyOptional()
   @IsOptional()

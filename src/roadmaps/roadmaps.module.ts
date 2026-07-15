@@ -5,6 +5,7 @@ import { AuthModule } from '../auth/auth.module';
 import { ContentPoolModule } from '../content-pool/content-pool.module';
 import { CourseTimingModule } from '../course-timing/course-timing.module';
 import { Goal } from '../goals/entities/goal.entity';
+import { LearnerProfileSnapshot } from '../questionnaire/entities/learner-profile-snapshot.entity';
 import { QuestionnaireResponse } from '../questionnaire/entities/questionnaire-response.entity';
 import { CourseTemplate } from '../content-pool/entities/course-template.entity';
 import { ModuleTemplate } from '../content-pool/entities/module-template.entity';
@@ -28,7 +29,9 @@ import {
 import { RoadmapGeneratorService } from './roadmap-generator.service';
 import { RoadmapLegacyAssembler } from './roadmap-legacy.assembler';
 import { RoadmapLlmPlannerService } from './roadmap-llm-planner.service';
+import { RoadmapNarratorService } from './roadmap-narrator.service';
 import { RoadmapPersistenceService } from './roadmap-persistence.service';
+import { RoadmapPipelineService } from './roadmap-pipeline.service';
 import { RoadmapReplanBullProcessor } from './roadmap-replan.processor';
 import { RoadmapSnapshotService } from './roadmap-snapshot.service';
 import { RoadmapsService } from './roadmaps.service';
@@ -71,6 +74,7 @@ const bullProviders = redisUrl
       LessonProgress,
       RoadmapGenerationJob,
       Goal,
+      LearnerProfileSnapshot,
       QuestionnaireResponse,
       CourseTemplate,
       ModuleTemplate,
@@ -88,6 +92,8 @@ const bullProviders = redisUrl
     RoadmapGeneratorService,
     RoadmapLegacyAssembler,
     RoadmapLlmPlannerService,
+    RoadmapNarratorService,
+    RoadmapPipelineService,
     RoadmapJobsProcessor,
     RoadmapEngineClient,
     RoadmapSnapshotService,

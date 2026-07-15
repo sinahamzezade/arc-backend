@@ -3,6 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { LlmService } from '../common/llm/llm.service';
 import { Goal } from '../goals/entities/goal.entity';
+import {
+  LearnerProfileSnapshot,
+  LearnerProfileStatus,
+} from '../questionnaire/entities/learner-profile-snapshot.entity';
 import { QuestionnaireResponse } from '../questionnaire/entities/questionnaire-response.entity';
 import { Lesson } from '../roadmaps/entities/lesson.entity';
 import { Roadmap } from '../roadmaps/entities/roadmap.entity';
@@ -13,14 +17,19 @@ import {
   buildLessonBodyPersonalizerUserPrompt,
   buildLessonBodyUserPacket,
   LESSON_BODY_PERSONALIZER_PROMPT_VERSION,
-  type LessonBodyPageDraft,
+  type LessonBodySafeFields,
 } from './lesson-body-personalizer.prompt';
 import {
+  extractSafeFields,
   isAlreadyPersonalized,
   mergeLessonBodyRewrite,
   parseLessonBodyRewrite,
 } from './lesson-body-personalizer.schema';
-import { isPlayOutline, type LessonPlayOutline } from './lesson-play.types';
+import {
+  isUnitPlayContent,
+  normalizeUnitPlayContent,
+  type UnitPlayContent,
+} from './lesson-play.types';
 
 export type PersonalizeResult =
   | { ok: true; model: string; skipped?: never }
@@ -41,6 +50,8 @@ export class LessonBodyPersonalizerService {
     private readonly goalsRepo: Repository<Goal>,
     @InjectRepository(QuestionnaireResponse)
     private readonly responsesRepo: Repository<QuestionnaireResponse>,
+    @InjectRepository(LearnerProfileSnapshot)
+    private readonly learnerProfilesRepo: Repository<LearnerProfileSnapshot>,
   ) {}
 
   async isEnabled(userId?: string | null): Promise<boolean> {
@@ -74,15 +85,29 @@ export class LessonBodyPersonalizerService {
     if (isAlreadyPersonalized(lesson.playContent)) {
       return { ok: false, skipped: 'already_personalized' };
     }
-    if (!isPlayOutline(lesson.playContent)) {
+    if (!isUnitPlayContent(lesson.playContent)) {
       return { ok: false, skipped: 'scaffold_not_ready' };
     }
 
-    const scaffold = lesson.playContent as LessonPlayOutline;
-    const goal = await this.loadGoal(input.roadmapId, input.userId);
+    const scaffold = normalizeUnitPlayContent(
+      lesson.playContent,
+    ) as UnitPlayContent;
+    const roadmap = await this.roadmapsRepo.findOne({
+      where: { id: input.roadmapId, userId: input.userId },
+    });
+    if (!roadmap) {
+      return { ok: false, skipped: 'goal_missing' };
+    }
+    const goal = await this.goalsRepo.findOne({
+      where: { id: roadmap.goalId, userId: input.userId },
+    });
     if (!goal) {
       return { ok: false, skipped: 'goal_missing' };
     }
+
+    // Prefer the profile pinned at roadmap generation over the mutable Goal;
+    // fall back to the latest active profile, then to Goal-only fields.
+    const profile = await this.loadLearnerProfile(roadmap, input.userId);
 
     const transcript = await this.loadChatTranscript(input.userId);
     const user = buildLessonBodyUserPacket({
@@ -93,28 +118,34 @@ export class LessonBodyPersonalizerService {
       motivation: goal.motivation?.values ?? [],
       rawAnswers: (goal.rawAnswers as Record<string, unknown>) ?? {},
       chatTranscript: transcript,
+      profile: profile
+        ? {
+            primaryTrackSlug: profile.primaryTrackSlug,
+            provisionalStage: profile.provisionalStage,
+            targetStage: profile.targetStage,
+            learningStyleWeights: profile.learningStyleWeights ?? {},
+            weeklyEffectiveMinutes: profile.weeklyEffectiveMinutes,
+          }
+        : null,
     });
 
-    const pages: LessonBodyPageDraft[] = scaffold.content.map((p) => ({
-      id: p.id,
-      title: p.title,
-      blocks: p.blocks as LessonBodyPageDraft['blocks'],
-    }));
+    // Only rewrite-safe fields leave the server — never questions/answers,
+    // acceptanceCriteria, keyTakeaways, starterHtml or URLs.
+    const fields = extractSafeFields(scaffold);
 
     const draftResult = await this.callLlm({
       userId: input.userId,
       user,
       lessonTitle: lesson.title,
-      objective: scaffold.objective,
-      pages,
+      lessonType: lesson.lessonType,
+      fields,
     });
     if (!draftResult) {
       return { ok: false, skipped: 'llm_soft_fail' };
     }
 
     try {
-      const allowed = new Set(pages.map((p) => p.id));
-      const draft = parseLessonBodyRewrite(draftResult.raw, allowed);
+      const draft = parseLessonBodyRewrite(draftResult.raw, fields);
       const merged = mergeLessonBodyRewrite(scaffold, draft, {
         source: 'llm',
         model: draftResult.model,
@@ -140,17 +171,37 @@ export class LessonBodyPersonalizerService {
     }
   }
 
-  private async loadGoal(
-    roadmapId: string,
+  /**
+   * Pinned profile from roadmap.generationMeta.learnerProfileId, falling back
+   * to the user's latest active (provisional/verified) profile snapshot.
+   */
+  private async loadLearnerProfile(
+    roadmap: Roadmap,
     userId: string,
-  ): Promise<Goal | null> {
-    const roadmap = await this.roadmapsRepo.findOne({
-      where: { id: roadmapId, userId },
-    });
-    if (!roadmap) return null;
-    return this.goalsRepo.findOne({
-      where: { id: roadmap.goalId, userId },
-    });
+  ): Promise<LearnerProfileSnapshot | null> {
+    try {
+      const pinnedId = (
+        roadmap.generationMeta as { learnerProfileId?: unknown } | null
+      )?.learnerProfileId;
+      if (typeof pinnedId === 'string' && pinnedId) {
+        const pinned = await this.learnerProfilesRepo.findOne({
+          where: { id: pinnedId, userId },
+        });
+        if (pinned) return pinned;
+      }
+      return await this.learnerProfilesRepo.findOne({
+        where: [
+          { userId, status: LearnerProfileStatus.Provisional },
+          { userId, status: LearnerProfileStatus.Verified },
+        ],
+        order: { version: 'DESC' },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Learner profile load failed: ${err instanceof Error ? err.message : err}`,
+      );
+      return null;
+    }
   }
 
   private async loadChatTranscript(
@@ -171,8 +222,8 @@ export class LessonBodyPersonalizerService {
     userId: string;
     user: ReturnType<typeof buildLessonBodyUserPacket>;
     lessonTitle: string;
-    objective: string;
-    pages: LessonBodyPageDraft[];
+    lessonType: string;
+    fields: LessonBodySafeFields;
   }): Promise<{ raw: unknown; model: string } | null> {
     if (!this.llm.isConfigured()) return null;
 
@@ -196,8 +247,8 @@ export class LessonBodyPersonalizerService {
               content: buildLessonBodyPersonalizerUserPrompt({
                 user: input.user,
                 lessonTitle: input.lessonTitle,
-                objective: input.objective,
-                pages: input.pages,
+                lessonType: input.lessonType,
+                fields: input.fields,
               }),
             },
           ],

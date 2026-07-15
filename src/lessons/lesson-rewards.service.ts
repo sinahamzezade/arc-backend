@@ -9,7 +9,6 @@ import {
   type LessonActionKind,
 } from '../gamification/reward-calculator.constants';
 import { RewardCalculatorService } from '../gamification/reward-calculator.service';
-import type { LessonPlayOutline } from './lesson-play.types';
 
 export type ComputedReward = {
   xp: number;
@@ -28,7 +27,6 @@ export class LessonRewardsService {
 
   computeReward(input: {
     lesson: Lesson;
-    outline: LessonPlayOutline;
     quizCorrect: number;
     quizTotal: number;
     alreadyCompleted: boolean;
@@ -38,41 +36,24 @@ export class LessonRewardsService {
     attemptKind?: 'first' | 'review_7d' | 'review_later' | 'after_solution';
     weeklyOnTrack?: boolean;
     actionKind?: LessonActionKind;
-    conceptsMastered?: number;
-    conceptsTotal?: number;
-    remediationRoundsUsed?: number;
-    hasShakyConcepts?: boolean;
   }): ComputedReward {
-    const { lesson, outline, quizCorrect, quizTotal, alreadyCompleted } =
-      input;
+    const { lesson, quizCorrect, quizTotal, alreadyCompleted } = input;
 
     if (alreadyCompleted) {
       return {
         xp: 0,
         gems: 0,
         coins: 0,
-        arloLine:
-          outline.reward?.arloLine ??
-          `“${lesson.title}” stays on the map — no double loot.`,
+        arloLine: `“${lesson.title}” stays on the map — no double loot.`,
         firstTime: false,
       };
     }
 
-    const rewardClass =
-      lesson.rewardClassSnapshot ??
-      lesson.lessonTemplate?.rewardClass ??
-      outline.rewardPresentation?.rewardClass ??
-      undefined;
+    const rewardClass = lesson.rewardClassSnapshot ?? undefined;
 
     const actionKind =
       input.actionKind ??
       actionKindFromLessonType(lesson.lessonType, rewardClass);
-
-    let assistance = input.assistance ?? 'none';
-    // Remediation counts as assistance (like hints) — §16.5
-    if ((input.remediationRoundsUsed ?? 0) > 0 && assistance === 'none') {
-      assistance = 'hint';
-    }
 
     const calc = this.calculator.compute({
       actionKind,
@@ -85,42 +66,26 @@ export class LessonRewardsService {
       pathPercentile: input.pathPercentile,
       quizCorrect,
       quizTotal,
-      assistance,
+      assistance: input.assistance ?? 'none',
       attemptKind: input.attemptKind ?? 'first',
       weeklyOnTrack: input.weeklyOnTrack,
       isFirstLessonEver: input.isFirstLessonEver,
-      conceptsMastered: input.conceptsMastered,
-      conceptsTotal: input.conceptsTotal,
-      remediationRoundsUsed: input.remediationRoundsUsed,
-      hasShakyConcepts: input.hasShakyConcepts,
     });
 
-    let badgeId = outline.reward?.badgeId ?? undefined;
-    let badgeLabel = outline.reward?.badgeLabel ?? undefined;
+    let badgeId: string | undefined;
+    let badgeLabel: string | undefined;
     if (input.isFirstLessonEver) {
       badgeId = 'first-step';
       badgeLabel = 'First Step';
-    } else if (badgeId === 'first-step') {
-      badgeId = undefined;
-      badgeLabel = undefined;
-    }
-
-    // Shaky concepts withhold perfect-run / mastery badges (not first-step)
-    if (input.hasShakyConcepts && badgeId && badgeId !== 'first-step') {
-      badgeId = undefined;
-      badgeLabel = undefined;
     }
 
     return {
       xp: calc.xp,
       gems: calc.gems,
       coins: calc.coins,
-      badgeId: badgeId ?? undefined,
-      badgeLabel: badgeLabel ?? undefined,
-      arloLine:
-        outline.reward?.arloLine ??
-        outline.rewardPresentation?.arloLine ??
-        `Nice — “${lesson.title}” is on the map now.`,
+      badgeId,
+      badgeLabel,
+      arloLine: `Nice — “${lesson.title}” is on the map now.`,
       firstTime: calc.firstTime,
       calcMetadata: calc.metadata,
     };
@@ -128,14 +93,13 @@ export class LessonRewardsService {
 
   previewReward(input: {
     lesson: Lesson;
-    outline: LessonPlayOutline;
+    quizTotal: number;
     isFirstLessonEver: boolean;
     pathPercentile?: number;
   }) {
     return this.computeReward({
       ...input,
-      quizCorrect: input.outline.quiz.length,
-      quizTotal: input.outline.quiz.length,
+      quizCorrect: input.quizTotal,
       alreadyCompleted: false,
     });
   }
