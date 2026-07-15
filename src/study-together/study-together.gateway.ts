@@ -6,11 +6,12 @@ import {
   MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
+import { Namespace, Socket } from 'socket.io';
 import type { AccessTokenPayload } from '../auth/services/token.service';
 import { UsersService } from '../users/users.service';
 import { StudyTogetherService } from './study-together.service';
@@ -23,10 +24,10 @@ import { StudyTogetherService } from './study-together.service';
   },
 })
 export class StudyTogetherGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer()
-  server!: Server;
+  server!: Namespace;
 
   private readonly logger = new Logger(StudyTogetherGateway.name);
   private readonly socketSessions = new Map<string, string>();
@@ -38,31 +39,42 @@ export class StudyTogetherGateway
     private readonly study: StudyTogetherService,
   ) {}
 
-  async handleConnection(client: Socket) {
-    try {
-      const raw =
-        (client.handshake.auth?.token as string | undefined) ||
-        (client.handshake.headers?.authorization as string | undefined);
-      const token = raw?.replace(/^Bearer\s+/i, '').trim();
-      if (!token) {
-        client.disconnect(true);
-        return;
+  /**
+   * Auth in middleware so `connect` only fires after userId is set.
+   * Async handleConnection races with client `join` and drops room membership.
+   */
+  afterInit(server: Namespace) {
+    server.use(async (socket, next) => {
+      try {
+        const raw =
+          (socket.handshake.auth?.token as string | undefined) ||
+          (socket.handshake.headers?.authorization as string | undefined);
+        const token = raw?.replace(/^Bearer\s+/i, '').trim();
+        if (!token) {
+          next(new Error('Unauthorized'));
+          return;
+        }
+        const payload = this.jwt.verify<AccessTokenPayload>(token, {
+          secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
+        });
+        const user = await this.users.findById(payload.sub);
+        if (!user?.isActive || user.deletedAt) {
+          next(new Error('Unauthorized'));
+          return;
+        }
+        socket.data.userId = user.id;
+        next();
+      } catch (err) {
+        this.logger.debug(
+          `WS auth failed: ${err instanceof Error ? err.message : err}`,
+        );
+        next(new Error('Unauthorized'));
       }
-      const payload = this.jwt.verify<AccessTokenPayload>(token, {
-        secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
-      });
-      const user = await this.users.findById(payload.sub);
-      if (!user?.isActive || user.deletedAt) {
-        client.disconnect(true);
-        return;
-      }
-      client.data.userId = user.id;
-    } catch (err) {
-      this.logger.debug(
-        `WS auth failed: ${err instanceof Error ? err.message : err}`,
-      );
-      client.disconnect(true);
-    }
+    });
+  }
+
+  handleConnection(client: Socket) {
+    this.logger.debug(`WS connected ${client.id} user=${client.data.userId}`);
   }
 
   handleDisconnect(client: Socket) {
@@ -128,7 +140,7 @@ export class StudyTogetherGateway
       appVisible: body.appVisible,
       focusActive: body.focusActive,
     });
-    this.broadcastState(body.sessionId, state);
+    // Only echo back to this socket — state is role-personalized.
     return state;
   }
 
@@ -144,7 +156,10 @@ export class StudyTogetherGateway
     const result = await this.study.ackRead(userId, body.sessionId, {
       soloAdvance: body.soloAdvance,
     });
-    this.broadcastState(body.sessionId, result.state);
+    // Notify room to refresh (each client re-fetches own personalized state).
+    this.server
+      .to(this.roomName(body.sessionId))
+      .emit('state_dirty', { sessionId: body.sessionId });
     if (result.step) {
       this.server.to(this.roomName(body.sessionId)).emit('step', result.step);
     }

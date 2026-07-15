@@ -5,7 +5,13 @@ services:
       dockerfile: Dockerfile.dev
     ports:
       - '9000:9000'
+    # JWT / admin secrets come from .env (single source of truth).
+    # Hardcoding JWT here previously caused WS "invalid signature" + REST 401
+    # when host .env used a different secret than the compose defaults.
+    env_file:
+      - .env
     environment:
+      # Docker-network overrides only
       DB_HOST: db
       DB_PORT: 5432
       DB_USERNAME: arc
@@ -13,15 +19,24 @@ services:
       DB_NAME: arc
       DB_SYNC: 'true'
       NODE_ENV: development
-      JWT_ACCESS_SECRET: dev-access-secret-change-me
-      JWT_ACCESS_TTL: 15m
-      JWT_REFRESH_SECRET: dev-refresh-secret-change-me
-      JWT_REFRESH_TTL: 30d
-      CORS_ORIGIN: http://localhost:3000
-      ADMIN_SESSION_SECRET: dev-admin-session-secret-change-me
+      REDIS_URL: redis://redis:6379
+      ROADMAP_ENGINE_URL: http://roadmap-engine:8080
+      ROADMAP_ENGINE_VERSION: '2'
+      ROADMAP_ENGINE_MODE: llm
+      ROADMAP_GENERATION_MAX_RETRIES: '3'
+      ROADMAP_SAFETY_FACTOR: '0.85'
+      ROADMAP_WEEKLY_SLACK: '0.10'
+      # LAN + localhost (phones / second device on Wi-Fi)
+      CORS_ORIGIN: http://localhost:3000,http://127.0.0.1:3000,http://192.168.254.23:3000
+      # Pass through from project .env (compose interpolation) — must match Nest JWT issuer
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-30d}
+      ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:-dev-admin-session-secret-change-me}
+      ADMIN_SEED_EMAIL: ${ADMIN_SEED_EMAIL:-ops.ctrl.9f2a@arc.internal}
+      ADMIN_SEED_PASSWORD: ${ADMIN_SEED_PASSWORD:-K7#mQ9$$vL2!pR4xW8nT}
       ADMIN_SEED: 'true'
-      ADMIN_SEED_EMAIL: ops.ctrl.9f2a@arc.internal
-      ADMIN_SEED_PASSWORD: 'K7#mQ9$$vL2!pR4xW8nT'
       EMAIL_FROM: "${EMAIL_FROM:-Arc <onboarding@resend.dev>}"
       EMAIL_PROVIDER_API_KEY: "${EMAIL_PROVIDER_API_KEY:-}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
@@ -49,15 +64,7 @@ services:
       LLM_APP_TITLE: "${LLM_APP_TITLE:-Arc}"
       INTAKE_DEFAULT_MODE: "${INTAKE_DEFAULT_MODE:-form}"
       INTAKE_CHAT_ENABLED: "${INTAKE_CHAT_ENABLED:-true}"
-      REDIS_URL: redis://redis:6379
-      ROADMAP_ENGINE_URL: http://roadmap-engine:8080
-      ROADMAP_ENGINE_VERSION: '2'
-      # Force LLM planner (python engine kept for fallback mode only)
-      ROADMAP_ENGINE_MODE: llm
       ROADMAP_GENERATION_TIMEOUT_MS: "${ROADMAP_GENERATION_TIMEOUT_MS:-45000}"
-      ROADMAP_GENERATION_MAX_RETRIES: '3'
-      ROADMAP_SAFETY_FACTOR: '0.85'
-      ROADMAP_WEEKLY_SLACK: '0.10'
     volumes:
       - .:/app # mount your source code
       - /app/node_modules # keep container's node_modules
