@@ -91,7 +91,9 @@ export class RanksService implements OnModuleInit {
         existing.minimumActiveDays = seed.minimumActiveDays;
         existing.gateRules = seed.gateRules;
         existing.rewardConfig = seed.rewardConfig;
-        existing.iconAssetKey = seed.iconAssetKey;
+        if (!existing.iconAssetKey?.trim()) {
+          existing.iconAssetKey = seed.iconAssetKey;
+        }
         existing.displayOrder = seed.level;
         existing.isActive = true;
         await this.definitionsRepo.save(existing);

@@ -49,6 +49,10 @@
               <button type="button" role="tab" id="tab-skills" aria-controls="panel-skills" aria-selected="false" data-tab="skills" class="shrink-0">
                 Skills index
               </button>
+              <button type="button" role="tab" id="tab-guide" aria-controls="panel-guide" aria-selected="false" data-tab="guide" class="shrink-0">
+                <i class="fa-regular fa-circle-question mr-1.5 text-xs opacity-70" aria-hidden="true"></i>
+                Guide
+              </button>
             </div>
 
             <div id="panel-catalog" role="tabpanel" aria-labelledby="tab-catalog" data-panel="catalog">
@@ -193,6 +197,196 @@
                     {{/each}}
                   </tbody>
                 </table>
+              </div>
+            </div>
+
+            <div id="panel-guide" role="tabpanel" aria-labelledby="tab-guide" data-panel="guide" hidden>
+              <div class="space-y-6">
+                <section class="relative overflow-hidden rounded-blob bg-moss px-6 py-7 text-mist shadow-lift md:px-8">
+                  <div class="pointer-events-none absolute -right-12 -top-14 h-40 w-40 rounded-full bg-leaf/20 blur-3xl" aria-hidden="true"></div>
+                  <p class="text-xs font-semibold uppercase tracking-[0.16em] text-leaf">Units tutorial</p>
+                  <h2 class="font-display mt-2 text-3xl font-semibold">Publish a course in four steps</h2>
+                  <p class="mt-3 max-w-2xl text-sm leading-relaxed text-mist/65">
+                    One JSON package defines the skill graph and every playable lesson. Importing updates matching IDs and creates new ones without a redeploy.
+                  </p>
+                  <div class="mt-5 flex flex-wrap gap-3">
+                    <a href="/admin/units/example.json" download class="inline-flex items-center gap-2 rounded-full bg-leaf px-4 py-2 text-sm font-semibold text-moss transition hover:bg-[#c8e0d1]">
+                      <i class="fa-solid fa-download" aria-hidden="true"></i>
+                      Download starter file
+                    </a>
+                    <button type="button" data-jump="import" class="inline-flex cursor-pointer items-center gap-2 rounded-full border border-mist/25 px-4 py-2 text-sm font-semibold text-mist transition hover:bg-white/10">
+                      <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+                      Open importer
+                    </button>
+                  </div>
+                </section>
+
+                <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Import steps">
+                  <article class="rounded-blob border border-[#d5ddd7] bg-foam p-5 shadow-lift">
+                    <span class="flex h-9 w-9 items-center justify-center rounded-full bg-moss font-display text-sm font-semibold text-mist">1</span>
+                    <h3 class="mt-4 font-display text-lg font-semibold">Define skills</h3>
+                    <p class="mt-1.5 text-sm leading-relaxed text-sage">Add stable IDs to <code>skills_index</code>. Prerequisites must reference another skill ID.</p>
+                  </article>
+                  <article class="rounded-blob border border-[#d5ddd7] bg-foam p-5 shadow-lift">
+                    <span class="flex h-9 w-9 items-center justify-center rounded-full bg-moss font-display text-sm font-semibold text-mist">2</span>
+                    <h3 class="mt-4 font-display text-lg font-semibold">Author units</h3>
+                    <p class="mt-1.5 text-sm leading-relaxed text-sage">Choose lesson type, stage, role, duration, reward, and type-specific content.</p>
+                  </article>
+                  <article class="rounded-blob border border-[#d5ddd7] bg-foam p-5 shadow-lift">
+                    <span class="flex h-9 w-9 items-center justify-center rounded-full bg-moss font-display text-sm font-semibold text-mist">3</span>
+                    <h3 class="mt-4 font-display text-lg font-semibold">Validate</h3>
+                    <p class="mt-1.5 text-sm leading-relaxed text-sage">Use unique IDs, resolve every prerequisite, and keep the skill graph cycle-free.</p>
+                  </article>
+                  <article class="rounded-blob border border-[#d5ddd7] bg-foam p-5 shadow-lift">
+                    <span class="flex h-9 w-9 items-center justify-center rounded-full bg-moss font-display text-sm font-semibold text-mist">4</span>
+                    <h3 class="mt-4 font-display text-lg font-semibold">Import &amp; verify</h3>
+                    <p class="mt-1.5 text-sm leading-relaxed text-sage">Upload the file, import it, then inspect Catalog and Skills index before generating paths.</p>
+                  </article>
+                </section>
+
+                <section class="grid gap-6 lg:grid-cols-[1fr_1.15fr]">
+                  <div class="rounded-blob border border-[#d5ddd7] bg-foam p-6 shadow-lift">
+                    <p class="text-xs font-semibold uppercase tracking-[0.14em] text-fern">Package anatomy</p>
+                    <h3 class="font-display mt-2 text-2xl font-semibold">Required fields</h3>
+                    <div class="mt-5 space-y-4 text-sm">
+                      <div>
+                        <p class="font-semibold text-moss"><code>skills_index[]</code></p>
+                        <p class="mt-1 text-sage"><code>id</code>, <code>title</code>, <code>prerequisites[]</code>, <code>level</code></p>
+                      </div>
+                      <div class="border-t border-[#e1e8e2] pt-4">
+                        <p class="font-semibold text-moss"><code>units[]</code></p>
+                        <p class="mt-1 leading-relaxed text-sage">
+                          <code>id</code>, <code>title</code>, <code>skills_taught[]</code>, <code>prerequisites[]</code>,
+                          <code>level</code>, <code>estimated_minutes</code>, <code>formats[]</code>, <code>lesson_type</code>,
+                          <code>domain</code>, <code>stack</code>, <code>xp</code>, <code>content</code>
+                        </p>
+                      </div>
+                      <div class="border-t border-[#e1e8e2] pt-4">
+                        <p class="font-semibold text-moss">Optional targeting</p>
+                        <p class="mt-1 leading-relaxed text-sage">
+                          <code>serves_stage[]</code>, <code>unit_role</code>, <code>profile_skill_slug</code>,
+                          <code>provider</code>, <code>url</code>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="overflow-hidden rounded-blob border border-[#d5ddd7] bg-[#172c25] shadow-lift">
+                    <div class="flex items-center justify-between border-b border-white/10 px-5 py-3">
+                      <p class="text-xs font-semibold uppercase tracking-[0.14em] text-leaf">Minimal package</p>
+                      <span class="rounded-full bg-white/10 px-2.5 py-1 font-mono text-[10px] text-mist/70">units.json</span>
+                    </div>
+                    <pre class="overflow-x-auto p-5 font-mono text-[11px] leading-relaxed text-mist/80"><code>{
+  "skills_index": [{
+    "id": "html-css:html-intro",
+    "title": "HTML foundations",
+    "prerequisites": [],
+    "level": 1
+  }],
+  "units": [{
+    "id": "html-intro-read",
+    "title": "How HTML pages work",
+    "skills_taught": ["html-css:html-intro"],
+    "prerequisites": [],
+    "level": 1,
+    "estimated_minutes": 15,
+    "formats": ["reading"],
+    "lesson_type": "reading",
+    "domain": "frontend",
+    "stack": "html-css",
+    "xp": 30,
+    "serves_stage": [1, 2],
+    "unit_role": "foundation",
+    "content": {
+      "objective": "Understand page structure",
+      "sections": [{
+        "id": "structure",
+        "title": "Document structure",
+        "blocks": [{
+          "type": "text",
+          "body": "HTML gives a page structure."
+        }]
+      }],
+      "keyTakeaways": ["Structure comes before style"]
+    }
+  }]
+}</code></pre>
+                  </div>
+                </section>
+
+                <section class="rounded-blob border border-[#d5ddd7] bg-foam p-6 shadow-lift">
+                  <p class="text-xs font-semibold uppercase tracking-[0.14em] text-fern">Content recipes</p>
+                  <h3 class="font-display mt-2 text-2xl font-semibold">Shape content by lesson type</h3>
+                  <div class="mt-5 grid gap-4 md:grid-cols-2">
+                    <div class="rounded-2xl bg-mist/60 p-4">
+                      <p class="font-semibold">Reading</p>
+                      <p class="mt-1 text-sm text-sage"><code>objective</code>, <code>sections[]</code>, <code>keyTakeaways[]</code></p>
+                      <p class="mt-2 text-xs leading-relaxed text-sage">Section blocks support <strong>text</strong> (<code>body</code>), <strong>callout</strong> (<code>title</code> + <code>body</code>), and <strong>code</strong> (<code>label</code> + <code>code</code>).</p>
+                    </div>
+                    <div class="rounded-2xl bg-mist/60 p-4">
+                      <p class="font-semibold">Practice / project / interactive</p>
+                      <p class="mt-1 text-sm text-sage"><code>objective</code>, <code>task</code>, <code>acceptanceCriteria[]</code></p>
+                      <p class="mt-2 text-xs text-sage">Optional: <code>hints[]</code>, <code>starterHtml</code>.</p>
+                    </div>
+                    <div class="rounded-2xl bg-mist/60 p-4">
+                      <p class="font-semibold">Quiz</p>
+                      <p class="mt-1 text-sm text-sage"><code>objective</code>, <code>passScore</code>, <code>questions[]</code></p>
+                      <p class="mt-2 text-xs leading-relaxed text-sage">Question types: <code>mcq</code> with options + numeric answer index, or <code>boolean</code> with a boolean answer.</p>
+                    </div>
+                    <div class="rounded-2xl bg-mist/60 p-4">
+                      <p class="font-semibold">Video</p>
+                      <p class="mt-1 text-sm text-sage"><code>objective</code>, <code>note</code></p>
+                      <p class="mt-2 text-xs text-sage">Set unit-level <code>provider</code> and <code>url</code> for the external resource.</p>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="grid gap-6 md:grid-cols-2">
+                  <div class="rounded-blob border border-[#d5ddd7] bg-foam p-6 shadow-lift">
+                    <p class="text-xs font-semibold uppercase tracking-[0.14em] text-fern">Roles &amp; stages</p>
+                    <h3 class="font-display mt-2 text-xl font-semibold">Control roadmap placement</h3>
+                    <ul class="mt-4 space-y-2.5 text-sm text-sage">
+                      <li><strong class="text-moss">foundation</strong> — teaches a new skill.</li>
+                      <li><strong class="text-moss">refresher</strong> — restores prior knowledge.</li>
+                      <li><strong class="text-moss">checkpoint</strong> — verifies stage evidence.</li>
+                      <li><strong class="text-moss">project</strong> — applies several skills.</li>
+                      <li><strong class="text-moss">proof</strong> — creates demonstrable evidence.</li>
+                    </ul>
+                    <p class="mt-4 rounded-2xl bg-leaf/60 px-4 py-3 text-xs leading-relaxed text-moss">
+                      <code>serves_stage</code> accepts learner stages 1–5. Checkpoint and proof units are retained even when format preferences differ.
+                    </p>
+                  </div>
+
+                  <div class="rounded-blob border border-[#d5ddd7] bg-foam p-6 shadow-lift">
+                    <p class="text-xs font-semibold uppercase tracking-[0.14em] text-coral">Before importing</p>
+                    <h3 class="font-display mt-2 text-xl font-semibold">Safety checklist</h3>
+                    <ul class="mt-4 space-y-3 text-sm text-sage">
+                      <li class="flex gap-2"><i class="fa-solid fa-check mt-0.5 text-fern" aria-hidden="true"></i><span>Export the current pool as a backup.</span></li>
+                      <li class="flex gap-2"><i class="fa-solid fa-check mt-0.5 text-fern" aria-hidden="true"></i><span>Keep IDs stable; matching IDs are updated.</span></li>
+                      <li class="flex gap-2"><i class="fa-solid fa-check mt-0.5 text-fern" aria-hidden="true"></i><span>Ensure every prerequisite and taught skill exists.</span></li>
+                      <li class="flex gap-2"><i class="fa-solid fa-check mt-0.5 text-fern" aria-hidden="true"></i><span>Use “deactivate missing” only for a complete replacement package.</span></li>
+                      <li class="flex gap-2"><i class="fa-solid fa-check mt-0.5 text-fern" aria-hidden="true"></i><span>Existing roadmap lessons keep their saved content snapshots.</span></li>
+                    </ul>
+                  </div>
+                </section>
+
+                <section class="rounded-blob border border-[#ead7a0] bg-[#fffaf0] p-6 shadow-lift">
+                  <p class="text-xs font-semibold uppercase tracking-[0.14em] text-[#9a6b18]">Troubleshooting</p>
+                  <div class="mt-4 grid gap-4 text-sm md:grid-cols-3">
+                    <div>
+                      <p class="font-semibold text-moss">Invalid JSON</p>
+                      <p class="mt-1 text-sage">Check commas, quotes, and closing brackets. File selector validates syntax before filling the editor.</p>
+                    </div>
+                    <div>
+                      <p class="font-semibold text-moss">Graph validation failed</p>
+                      <p class="mt-1 text-sage">A prerequisite is missing or creates a cycle. Add the skill or remove the circular dependency.</p>
+                    </div>
+                    <div>
+                      <p class="font-semibold text-moss">Lesson content not ready</p>
+                      <p class="mt-1 text-sage">Verify the unit has a valid type-specific <code>content</code> object and regenerate or reopen the lesson.</p>
+                    </div>
+                  </div>
+                </section>
               </div>
             </div>
           </div>

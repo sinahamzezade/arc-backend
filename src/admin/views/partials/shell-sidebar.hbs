@@ -1,56 +1,76 @@
 <aside class="sidebar">
   <div class="sidebar-brand">
-    Arc Admin
-    <span>ops console</span>
+    <span class="sidebar-logo" aria-hidden="true">
+      <i class="fa-solid fa-seedling"></i>
+    </span>
+    <span class="sidebar-brand-text">
+      Arc Admin
+      <span>Ops console</span>
+    </span>
   </div>
   <nav class="sidebar-nav" aria-label="Admin">
+    <p class="sidebar-label">Overview</p>
     <a href="/admin" class="{{#if navDashboard}}active{{/if}}">
-      <i class="fa-solid fa-border-all" aria-hidden="true"></i>
+      <span class="nav-icon"><i class="fa-solid fa-border-all" aria-hidden="true"></i></span>
       Dashboard
     </a>
     <a href="/admin/users" class="{{#if navUsers}}active{{/if}}">
-      <i class="fa-solid fa-users" aria-hidden="true"></i>
+      <span class="nav-icon"><i class="fa-solid fa-users" aria-hidden="true"></i></span>
       Users
     </a>
+
+    <p class="sidebar-label">Engagement</p>
     <a href="/admin/ranks" class="{{#if navRanks}}active{{/if}}">
-      <i class="fa-solid fa-medal" aria-hidden="true"></i>
+      <span class="nav-icon"><i class="fa-solid fa-medal" aria-hidden="true"></i></span>
       Ranks
     </a>
     <a href="/admin/store" class="{{#if navStore}}active{{/if}}">
-      <i class="fa-solid fa-bag-shopping" aria-hidden="true"></i>
+      <span class="nav-icon"><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i></span>
       Store
     </a>
     <a href="/admin/badges" class="{{#if navBadges}}active{{/if}}">
-      <i class="fa-solid fa-certificate" aria-hidden="true"></i>
+      <span class="nav-icon"><i class="fa-solid fa-certificate" aria-hidden="true"></i></span>
       Badges
     </a>
     <a href="/admin/quests" class="{{#if navQuests}}active{{/if}}">
-      <i class="fa-solid fa-scroll" aria-hidden="true"></i>
+      <span class="nav-icon"><i class="fa-solid fa-scroll" aria-hidden="true"></i></span>
       Quests
     </a>
     <a href="/admin/wheel" class="{{#if navWheel}}active{{/if}}">
-      <i class="fa-solid fa-dharmachakra" aria-hidden="true"></i>
+      <span class="nav-icon"><i class="fa-solid fa-dharmachakra" aria-hidden="true"></i></span>
       Lucky Wheel
     </a>
+
+    <p class="sidebar-label">Learning</p>
     <a href="/admin/units" class="{{#if navUnits}}active{{/if}}">
-      <i class="fa-solid fa-cubes" aria-hidden="true"></i>
+      <span class="nav-icon"><i class="fa-solid fa-cubes" aria-hidden="true"></i></span>
       Units
     </a>
     <a href="/admin/questionnaire" class="{{#if navQuestionnaire}}active{{/if}}">
-      <i class="fa-solid fa-list-check" aria-hidden="true"></i>
+      <span class="nav-icon"><i class="fa-solid fa-list-check" aria-hidden="true"></i></span>
       Questionnaire
     </a>
     <a href="/admin/roadmap-engine" class="{{#if navRoadmapEngine}}active{{/if}}">
-      <i class="fa-solid fa-route" aria-hidden="true"></i>
+      <span class="nav-icon"><i class="fa-solid fa-route" aria-hidden="true"></i></span>
       Roadmap Engine
     </a>
+
+    <p class="sidebar-label">System</p>
     <a href="/admin/feature-flags" class="{{#if navFeatureFlags}}active{{/if}}">
-      <i class="fa-solid fa-toggle-on" aria-hidden="true"></i>
+      <span class="nav-icon"><i class="fa-solid fa-toggle-on" aria-hidden="true"></i></span>
       Feature flags
     </a>
   </nav>
   <div class="sidebar-foot">
-    <span class="email">{{email}}</span>
+    <div class="sidebar-account">
+      <span class="sidebar-avatar" aria-hidden="true">
+        <i class="fa-solid fa-user-shield"></i>
+      </span>
+      <span class="sidebar-account-meta">
+        <span class="role">Administrator</span>
+        <span class="email" title="{{email}}">{{email}}</span>
+      </span>
+    </div>
     <form method="post" action="/admin/logout">
       <button type="submit">
         <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
