@@ -58,6 +58,7 @@ export function toRoadmapTreeDto(roadmap: Roadmap) {
               orderIndex: lesson.orderIndex,
               status: lesson.status,
               required: lesson.required !== false,
+              unitId: lesson.unitId ?? null,
               resource: lesson.resource
                 ? {
                     id: lesson.resource.id,

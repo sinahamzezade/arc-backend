@@ -44,6 +44,8 @@ export function roadmapFromTreeDto(dto: RoadmapTreeCachePayload): Roadmap {
           xpReward: lessonDto.xpReward,
           orderIndex: lessonDto.orderIndex,
           status: lessonDto.status as LessonStatus,
+          required: lessonDto.required !== false,
+          unitId: lessonDto.unitId ?? null,
           milestoneId: milestoneDto.id,
           resource: lessonDto.resource,
         });

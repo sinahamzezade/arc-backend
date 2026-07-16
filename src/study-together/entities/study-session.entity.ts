@@ -43,6 +43,10 @@ export class StudySession {
   @Column({ type: 'varchar', length: 64 })
   subject: string;
 
+  /** Parent Unit co-roadmap (nullable for legacy rooms). */
+  @Column({ name: 'path_id', type: 'uuid', nullable: true })
+  pathId: string | null;
+
   @Column({ name: 'lesson_id', type: 'uuid', nullable: true })
   lessonId: string | null;
 

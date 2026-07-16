@@ -55,6 +55,16 @@ export enum StudySessionMode {
   ReadTogether = 'read_together',
 }
 
+/** Persistent Unit co-roadmap (1:1 with a friend). */
+export enum StudyPathStatus {
+  Invited = 'invited',
+  Active = 'active',
+  Completed = 'completed',
+  Declined = 'declined',
+  Cancelled = 'cancelled',
+  Abandoned = 'abandoned',
+}
+
 export enum StudyEventType {
   InviteSent = 'invite_sent',
   Accepted = 'accepted',
@@ -97,6 +107,10 @@ export const STUDY_INVITE_EXPIRY_SCHEDULED_AFTER_START_MS = 30 * 60 * 1000;
 export const STUDY_MESSAGE_MAX_LEN = 160;
 export const STUDY_CHAT_MESSAGE_MAX_LEN = 500;
 export const STUDY_MAX_CONCURRENT_ROOMS = 10;
+/** Soft cap on non-terminal co-roadmaps per user. */
+export const STUDY_MAX_ACTIVE_PATHS = 20;
+
+export const STUDY_PATH_INVITE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Study chat media limits */
 export const STUDY_CHAT_VOICE_MAX_MS = 60_000;

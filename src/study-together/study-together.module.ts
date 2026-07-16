@@ -9,6 +9,7 @@ import { ProfilesModule } from '../profiles/profiles.module';
 import { Profile } from '../profiles/entities/profile.entity';
 import { Lesson } from '../roadmaps/entities/lesson.entity';
 import { Roadmap } from '../roadmaps/entities/roadmap.entity';
+import { RoadmapsModule } from '../roadmaps/roadmaps.module';
 import { SocialModule } from '../social/social.module';
 import { UploadsModule } from '../uploads/uploads.module';
 import { User } from '../users/entities/user.entity';
@@ -17,10 +18,12 @@ import { StudySessionEvent } from './entities/study-session-event.entity';
 import { StudySessionMessage } from './entities/study-session-message.entity';
 import { StudySessionParticipant } from './entities/study-session-participant.entity';
 import { StudySession } from './entities/study-session.entity';
+import { StudyPath } from './entities/study-path.entity';
 import { StudyChatMediaSchemaService } from './study-chat-media-schema.service';
 import { StudyTogetherController } from './study-together.controller';
 import { StudyTogetherGateway } from './study-together.gateway';
 import { StudyTogetherService } from './study-together.service';
+import { Unit } from '../content-pool/entities/unit.entity';
 
 @Module({
   imports: [
@@ -29,10 +32,12 @@ import { StudyTogetherService } from './study-together.service';
       StudySessionParticipant,
       StudySessionEvent,
       StudySessionMessage,
+      StudyPath,
       Profile,
       User,
       Lesson,
       Roadmap,
+      Unit,
     ]),
     SocialModule,
     NotificationsModule,
@@ -40,6 +45,7 @@ import { StudyTogetherService } from './study-together.service';
     AuthModule,
     UsersModule,
     LessonsModule,
+    RoadmapsModule,
     UploadsModule,
     forwardRef(() => GamificationModule),
     forwardRef(() => BadgesModule),

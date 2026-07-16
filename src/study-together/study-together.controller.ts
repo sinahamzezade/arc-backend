@@ -23,6 +23,8 @@ import {
 import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
 import {
+  CreateStudyEpisodeDto,
+  CreateStudyPathDto,
   CreateStudySessionDto,
   StudyChatSendDto,
   StudyCompleteDto,
@@ -55,12 +57,82 @@ export class StudyTogetherController {
   ) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create Study Together invite' })
+  @ApiOperation({ summary: 'Create Study Together invite (legacy one-shot room)' })
   create(
     @CurrentUser() user: AuthUserPayload,
     @Body() dto: CreateStudySessionDto,
   ) {
     return this.study.create(user.userId, dto);
+  }
+
+  @Post('paths')
+  @ApiOperation({ summary: 'Create Unit co-roadmap invite' })
+  createPath(
+    @CurrentUser() user: AuthUserPayload,
+    @Body() dto: CreateStudyPathDto,
+  ) {
+    return this.study.createPath(user.userId, dto);
+  }
+
+  @Get('units')
+  @ApiOperation({
+    summary:
+      'Pickable stacks for Study Together (UI “Unit” = stack, e.g. digital-marketing)',
+  })
+  listUnits(@CurrentUser() user: AuthUserPayload) {
+    return this.study.listPickableUnits(user.userId);
+  }
+
+  @Get('paths')
+  @ApiOperation({ summary: 'List my Unit co-roadmaps' })
+  listPaths(@CurrentUser() user: AuthUserPayload) {
+    return this.study.listPaths(user.userId);
+  }
+
+  @Get('paths/:id')
+  @ApiOperation({ summary: 'Co-roadmap detail + progress' })
+  getPath(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.study.getPathState(user.userId, id);
+  }
+
+  @Post('paths/:id/accept')
+  acceptPath(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() _dto: StudyIdempotencyDto,
+  ) {
+    return this.study.acceptPath(user.userId, id);
+  }
+
+  @Post('paths/:id/decline')
+  declinePath(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() _dto: StudyIdempotencyDto,
+  ) {
+    return this.study.declinePath(user.userId, id);
+  }
+
+  @Post('paths/:id/cancel')
+  cancelPath(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() _dto: StudyIdempotencyDto,
+  ) {
+    return this.study.cancelPath(user.userId, id);
+  }
+
+  @Post('paths/:id/episodes')
+  @ApiOperation({ summary: 'Start a timed episode room on a path' })
+  createEpisode(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateStudyEpisodeDto,
+  ) {
+    return this.study.createEpisode(user.userId, id, dto);
   }
 
   @Get('rooms')

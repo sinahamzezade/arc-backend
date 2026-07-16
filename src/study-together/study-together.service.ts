@@ -19,9 +19,12 @@ import {
 import { RewardLedgerService } from '../gamification/reward-ledger.service';
 import {
   isReadingContent,
+  isUnitPlayContent,
+  normalizeUnitPlayContent,
   type UnitPlayContent,
 } from '../lessons/lesson-play.types';
 import { LessonContentService } from '../lessons/lesson-content.service';
+import { RoadmapCacheService } from '../roadmaps/roadmap-cache.service';
 import {
   NotificationChannel,
   NotificationType,
@@ -37,6 +40,8 @@ import { Roadmap, RoadmapStatus } from '../roadmaps/entities/roadmap.entity';
 import { SocialPermissionService } from '../social/social-permission.service';
 import { User } from '../users/entities/user.entity';
 import {
+  CreateStudyEpisodeDto,
+  CreateStudyPathDto,
   CreateStudySessionDto,
   StudyCompleteDto,
   StudyHeartbeatDto,
@@ -44,6 +49,9 @@ import {
 } from './dto/study-together.dto';
 import { randomUUID } from 'crypto';
 import { UploadsService } from '../uploads/uploads.service';
+import { Unit } from '../content-pool/entities/unit.entity';
+import { domainTitle } from '../content-pool/units-catalog.service';
+import { StudyPath } from './entities/study-path.entity';
 import { StudySessionEvent } from './entities/study-session-event.entity';
 import {
   StudySessionMessage,
@@ -64,9 +72,11 @@ import {
   STUDY_INVITE_EXPIRY_NOW_MS,
   STUDY_INVITE_EXPIRY_SCHEDULED_AFTER_START_MS,
   STUDY_INVITE_EXPIRY_WITHIN_MS,
+  STUDY_MAX_ACTIVE_PATHS,
   STUDY_MAX_CONCURRENT_ROOMS,
   STUDY_MIN_VERIFIED_MINUTES,
   STUDY_PAIR_DAILY_REWARD_CAP,
+  STUDY_PATH_INVITE_EXPIRY_MS,
   STUDY_QUALIFY_ACTIVE_RATIO,
   STUDY_SHARED_BONUS_COINS,
   STUDY_SHARED_BONUS_GEMS,
@@ -75,9 +85,11 @@ import {
   StudyEventType,
   StudyInvitationStatus,
   StudyParticipantRole,
+  StudyPathStatus,
   StudySessionMode,
   StudySessionStatus,
   StudyStartMode,
+  StudySubject,
 } from './study.constants';
 
 const OPEN_INVITE_STATUSES = [
@@ -103,6 +115,18 @@ const TERMINAL_STATUSES = [
   StudySessionStatus.Voided,
 ];
 
+const PATH_LIVE_STATUSES = [
+  StudyPathStatus.Invited,
+  StudyPathStatus.Active,
+];
+
+const PATH_TERMINAL_STATUSES = [
+  StudyPathStatus.Completed,
+  StudyPathStatus.Declined,
+  StudyPathStatus.Cancelled,
+  StudyPathStatus.Abandoned,
+];
+
 @Injectable()
 export class StudyTogetherService {
   private readonly logger = new Logger(StudyTogetherService.name);
@@ -126,6 +150,8 @@ export class StudyTogetherService {
     private readonly eventsRepo: Repository<StudySessionEvent>,
     @InjectRepository(StudySessionMessage)
     private readonly messagesRepo: Repository<StudySessionMessage>,
+    @InjectRepository(StudyPath)
+    private readonly pathsRepo: Repository<StudyPath>,
     @InjectRepository(Profile)
     private readonly profilesRepo: Repository<Profile>,
     private readonly profileCache: ProfileCacheService,
@@ -135,7 +161,400 @@ export class StudyTogetherService {
     private readonly lessonsRepo: Repository<Lesson>,
     @InjectRepository(Roadmap)
     private readonly roadmapsRepo: Repository<Roadmap>,
+    @InjectRepository(Unit)
+    private readonly unitsRepo: Repository<Unit>,
+    private readonly roadmapCache: RoadmapCacheService,
   ) {}
+
+  // ─── Unit co-roadmaps (paths) ─────────────────────────────────────────
+
+  /**
+   * Stacks pickable for a co-roadmap invite (e.g. digital-marketing, html-css).
+   * Prefer stacks from unlocked reading on path; else pool stacks for learner track.
+   */
+  async listPickableUnits(userId: string) {
+    const fromPath = await this.collectPathReadingStacks(userId);
+    if (fromPath.length > 0) {
+      return { items: fromPath };
+    }
+    return { items: await this.collectPoolReadingStacks(userId) };
+  }
+
+  async createPath(userId: string, dto: CreateStudyPathDto) {
+    if (!dto.stack && !dto.unitId && !dto.lessonId) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'stack, unitId, or lessonId required',
+      );
+    }
+    if (dto.partnerId === userId) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'Cannot invite yourself',
+      );
+    }
+
+    const partner = await this.usersRepo.findOne({
+      where: { id: dto.partnerId },
+    });
+    if (!partner) {
+      throw new AppException(
+        AuthErrorCode.SOCIAL_USER_NOT_FOUND,
+        'Partner not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const gate = await this.socialPermissions.canStudyInvite(
+      userId,
+      dto.partnerId,
+    );
+    if (!gate.allowed) {
+      throw new AppException(
+        AuthErrorCode.STUDY_INVITE_NOT_ALLOWED,
+        'Study invite not allowed',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    await this.assertPathCap(userId);
+    await this.assertPathCap(dto.partnerId);
+
+    const stack = await this.resolveStackSlug(userId, dto);
+    const readingUnits = await this.listReadingUnitsForStack(stack);
+    if (readingUnits.length === 0) {
+      throw new AppException(
+        AuthErrorCode.STUDY_TASK_NOT_AVAILABLE,
+        'No reading units in this stack',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const existing = await this.findOpenPathForPairStack(
+      userId,
+      dto.partnerId,
+      stack,
+    );
+    if (existing) {
+      throw new AppException(
+        AuthErrorCode.STUDY_SESSION_CONFLICT,
+        'You already have an open co-roadmap on this stack with this friend',
+      );
+    }
+
+    const firstUnit = readingUnits[0]!;
+    const lessonMeta = await this.ensureStudyReadingLesson(
+      userId,
+      firstUnit.id,
+    );
+    const category = (firstUnit.domain || stack || 'general').slice(0, 64);
+    const title = domainTitle(stack);
+    const message = dto.message?.trim() ? dto.message.trim() : null;
+    const now = new Date();
+    const inviteExpiresAt = new Date(
+      now.getTime() + STUDY_PATH_INVITE_EXPIRY_MS,
+    );
+
+    const path = await this.pathsRepo.save(
+      this.pathsRepo.create({
+        creatorId: userId,
+        partnerId: dto.partnerId,
+        stack,
+        creatorLessonId: lessonMeta.id,
+        category,
+        title,
+        status: StudyPathStatus.Invited,
+        contentStep: 0,
+        stepCount: readingUnits.length,
+        progressPercent: 0,
+        inviteMessage: message,
+        inviteExpiresAt,
+      }),
+    );
+
+    const creatorName = await this.displayName(userId);
+    await this.notifications.create({
+      userId: dto.partnerId,
+      type: NotificationType.StudyInvite,
+      title: 'Study Together path invite',
+      body: `${creatorName} invited you to learn "${title}" together.`,
+      actionUrl: `/study/path?id=${path.id}`,
+      payload: { pathId: path.id },
+      dedupeKey: `study_path_invite:${path.id}`,
+      channels: [NotificationChannel.InApp, NotificationChannel.Push],
+    });
+
+    return this.getPathState(userId, path.id);
+  }
+
+  async listPaths(userId: string) {
+    const paths = await this.pathsRepo.find({
+      where: [
+        { creatorId: userId, status: In(PATH_LIVE_STATUSES) },
+        { partnerId: userId, status: In(PATH_LIVE_STATUSES) },
+        { creatorId: userId, status: StudyPathStatus.Completed },
+        { partnerId: userId, status: StudyPathStatus.Completed },
+      ],
+      order: { updatedAt: 'DESC' },
+      take: 50,
+    });
+
+    const items = await Promise.all(
+      paths.map((p) => this.toPathDto(userId, p)),
+    );
+    return { items };
+  }
+
+  async getPathState(userId: string, pathId: string) {
+    const path = await this.requirePathParticipant(userId, pathId);
+    return this.toPathDto(userId, path);
+  }
+
+  async acceptPath(userId: string, pathId: string) {
+    const path = await this.requirePathParticipant(userId, pathId);
+    if (path.partnerId !== userId) {
+      throw new AppException(
+        AuthErrorCode.STUDY_SESSION_NOT_PARTICIPANT,
+        'Only partner can accept',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    if (path.status !== StudyPathStatus.Invited) {
+      throw new AppException(
+        AuthErrorCode.STUDY_INVALID_STATE,
+        'Path invite is not open',
+      );
+    }
+    this.assertPathInviteFresh(path);
+    path.status = StudyPathStatus.Active;
+    path.progressPercent = this.computePathProgress(path);
+    await this.pathsRepo.save(path);
+    return this.getPathState(userId, pathId);
+  }
+
+  async declinePath(userId: string, pathId: string) {
+    const path = await this.requirePathParticipant(userId, pathId);
+    if (path.partnerId !== userId) {
+      throw new AppException(
+        AuthErrorCode.STUDY_SESSION_NOT_PARTICIPANT,
+        'Only partner can decline',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    if (path.status !== StudyPathStatus.Invited) {
+      throw new AppException(
+        AuthErrorCode.STUDY_INVALID_STATE,
+        'Path invite is not open',
+      );
+    }
+    path.status = StudyPathStatus.Declined;
+    await this.pathsRepo.save(path);
+    return this.getPathState(userId, pathId);
+  }
+
+  async cancelPath(userId: string, pathId: string) {
+    const path = await this.requirePathParticipant(userId, pathId);
+    if (path.creatorId !== userId) {
+      throw new AppException(
+        AuthErrorCode.STUDY_SESSION_NOT_PARTICIPANT,
+        'Only creator can cancel',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    if (
+      ![StudyPathStatus.Invited, StudyPathStatus.Active].includes(path.status)
+    ) {
+      throw new AppException(
+        AuthErrorCode.STUDY_INVALID_STATE,
+        'Path cannot be cancelled now',
+      );
+    }
+    path.status = StudyPathStatus.Cancelled;
+    await this.pathsRepo.save(path);
+    return this.getPathState(userId, pathId);
+  }
+
+  async createEpisode(userId: string, pathId: string, dto: CreateStudyEpisodeDto) {
+    if (
+      !(STUDY_ALLOWED_DURATIONS_MIN as readonly number[]).includes(
+        dto.durationMinutes,
+      )
+    ) {
+      throw new AppException(
+        AuthErrorCode.STUDY_DURATION_INVALID,
+        'Duration must be 15, 25, 45, or 60 minutes',
+      );
+    }
+
+    const path = await this.requirePathParticipant(userId, pathId);
+    if (path.status !== StudyPathStatus.Active) {
+      throw new AppException(
+        AuthErrorCode.STUDY_INVALID_STATE,
+        'Path must be active to start a session',
+      );
+    }
+    if (path.contentStep >= path.stepCount && path.stepCount > 0) {
+      throw new AppException(
+        AuthErrorCode.STUDY_INVALID_STATE,
+        'Path already completed',
+      );
+    }
+
+    await this.assertRoomCap(path.creatorId);
+    await this.assertRoomCap(path.partnerId);
+
+    const liveOnPath = await this.sessionsRepo.count({
+      where: {
+        pathId: path.id,
+        status: In(LIVE_STATUSES),
+      },
+    });
+    if (liveOnPath > 0) {
+      throw new AppException(
+        AuthErrorCode.STUDY_SESSION_CONFLICT,
+        'This path already has a live session',
+      );
+    }
+
+    const now = new Date();
+    let scheduledStartAt: Date | null = null;
+    let scheduledEndAt: Date | null = null;
+    let inviteExpiresAt: Date;
+
+    if (dto.startMode === StudyStartMode.Now) {
+      inviteExpiresAt = new Date(now.getTime() + STUDY_INVITE_EXPIRY_NOW_MS);
+    } else if (dto.startMode === StudyStartMode.Within1Hour) {
+      scheduledStartAt = new Date(now.getTime() + 60 * 60 * 1000);
+      scheduledEndAt = new Date(
+        scheduledStartAt.getTime() + dto.durationMinutes * 60_000,
+      );
+      inviteExpiresAt = new Date(now.getTime() + STUDY_INVITE_EXPIRY_WITHIN_MS);
+    } else {
+      if (!dto.scheduledStartAt) {
+        throw new AppException(
+          AuthErrorCode.VALIDATION_ERROR,
+          'scheduledStartAt required for scheduled start',
+        );
+      }
+      scheduledStartAt = new Date(dto.scheduledStartAt);
+      if (scheduledStartAt.getTime() <= now.getTime()) {
+        throw new AppException(
+          AuthErrorCode.VALIDATION_ERROR,
+          'scheduledStartAt must be in the future',
+        );
+      }
+      scheduledEndAt = new Date(
+        scheduledStartAt.getTime() + dto.durationMinutes * 60_000,
+      );
+      inviteExpiresAt = new Date(
+        scheduledStartAt.getTime() +
+          STUDY_INVITE_EXPIRY_SCHEDULED_AFTER_START_MS,
+      );
+    }
+
+    const inviteeId =
+      path.creatorId === userId ? path.partnerId : path.creatorId;
+
+    const readingUnits = await this.listReadingUnitsForStack(path.stack);
+    const currentUnit =
+      readingUnits[Math.min(path.contentStep, Math.max(readingUnits.length - 1, 0))];
+    if (!currentUnit) {
+      throw new AppException(
+        AuthErrorCode.STUDY_TASK_NOT_AVAILABLE,
+        'No reading unit left on this stack',
+      );
+    }
+    const currentLesson = await this.ensureStudyReadingLesson(
+      path.creatorId,
+      currentUnit.id,
+    );
+    const playContent = await this.lessonContent.ensurePlayContent(currentLesson);
+    const episodeStepCount = this.computeStepCount(playContent);
+
+    if (path.creatorLessonId !== currentLesson.id) {
+      path.creatorLessonId = currentLesson.id;
+      await this.pathsRepo.save(path);
+    }
+
+    const session = await this.dataSource.transaction(async (manager) => {
+      const row = manager.create(StudySession, {
+        pathId: path.id,
+        creatorId: userId,
+        inviteeId,
+        subject: StudySubject.CurrentTrack,
+        lessonId: currentLesson.id,
+        unitId: currentUnit.id,
+        lessonTitle: currentUnit.title,
+        mode: StudySessionMode.ReadTogether,
+        contentStep: 0,
+        stepCount: episodeStepCount,
+        durationMinutes: dto.durationMinutes,
+        startMode: dto.startMode,
+        message: null,
+        status:
+          dto.startMode === StudyStartMode.Now
+            ? StudySessionStatus.Waiting
+            : StudySessionStatus.Accepted,
+        scheduledStartAt,
+        scheduledEndAt,
+        inviteExpiresAt,
+        completionOutcome: StudyCompletionOutcome.None,
+      });
+      const saved = await manager.save(row);
+
+      const priorStep = Math.max(path.contentStep - 1, -1);
+      await manager.save([
+        manager.create(StudySessionParticipant, {
+          sessionId: saved.id,
+          userId,
+          role: StudyParticipantRole.Creator,
+          invitationStatus: StudyInvitationStatus.Accepted,
+          joinedAt: now,
+          readyAt: now,
+          taskLabel: path.title,
+          ackedStep: priorStep,
+        }),
+        manager.create(StudySessionParticipant, {
+          sessionId: saved.id,
+          userId: inviteeId,
+          role: StudyParticipantRole.Invitee,
+          invitationStatus: StudyInvitationStatus.Accepted,
+          joinedAt: now,
+          taskLabel: path.title,
+          ackedStep: priorStep,
+        }),
+      ]);
+
+      await this.appendEvent(manager, {
+        sessionId: saved.id,
+        userId,
+        type: StudyEventType.InviteSent,
+        payload: {
+          pathId: path.id,
+          episode: true,
+          durationMinutes: dto.durationMinutes,
+          startMode: dto.startMode,
+          contentStep: path.contentStep,
+        },
+      });
+
+      return saved;
+    });
+
+    const starterName = await this.displayName(userId);
+    await this.notifications.create({
+      userId: inviteeId,
+      type: NotificationType.StudyInvite,
+      title: 'Study session started',
+      body: `${starterName} started a study session on "${path.title}".`,
+      actionUrl: `/study/room?id=${session.id}`,
+      payload: { sessionId: session.id, pathId: path.id },
+      dedupeKey: `study_episode:${session.id}`,
+      channels: [NotificationChannel.InApp, NotificationChannel.Push],
+    });
+
+    return this.getState(userId, session.id);
+  }
 
   async create(userId: string, dto: CreateStudySessionDto) {
     if (
@@ -838,6 +1257,9 @@ export class StudyTogetherService {
         }
         session.roomVersion += 1;
         await manager.save(session);
+        if (session.pathId) {
+          await this.advancePathStackUnit(manager, session.pathId);
+        }
         await this.appendEvent(manager, {
           sessionId,
           userId: null,
@@ -1243,6 +1665,7 @@ export class StudyTogetherService {
 
     return {
       id: session.id,
+      pathId: session.pathId ?? null,
       status: session.status,
       mode: session.mode,
       subject: session.subject,
@@ -1812,6 +2235,501 @@ export class StudyTogetherService {
         'Too many live Study Together rooms',
       );
     }
+  }
+
+  private async assertPathCap(userId: string) {
+    const count = await this.pathsRepo.count({
+      where: [
+        { creatorId: userId, status: In(PATH_LIVE_STATUSES) },
+        { partnerId: userId, status: In(PATH_LIVE_STATUSES) },
+      ],
+    });
+    if (count >= STUDY_MAX_ACTIVE_PATHS) {
+      throw new AppException(
+        AuthErrorCode.STUDY_SESSION_CONFLICT,
+        'Too many open Study Together paths',
+      );
+    }
+  }
+
+  private async findOpenPathForPairStack(
+    userA: string,
+    userB: string,
+    stack: string,
+  ) {
+    return this.pathsRepo.findOne({
+      where: [
+        {
+          creatorId: userA,
+          partnerId: userB,
+          stack,
+          status: In(PATH_LIVE_STATUSES),
+        },
+        {
+          creatorId: userB,
+          partnerId: userA,
+          stack,
+          status: In(PATH_LIVE_STATUSES),
+        },
+      ],
+    });
+  }
+
+  private async requirePathParticipant(userId: string, pathId: string) {
+    const path = await this.pathsRepo.findOne({ where: { id: pathId } });
+    if (!path) {
+      throw new AppException(
+        AuthErrorCode.STUDY_SESSION_NOT_FOUND,
+        'Path not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    if (path.creatorId !== userId && path.partnerId !== userId) {
+      throw new AppException(
+        AuthErrorCode.STUDY_SESSION_NOT_PARTICIPANT,
+        'Not a path participant',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    return path;
+  }
+
+  private assertPathInviteFresh(path: StudyPath) {
+    if (
+      path.inviteExpiresAt &&
+      path.inviteExpiresAt.getTime() < Date.now()
+    ) {
+      throw new AppException(
+        AuthErrorCode.STUDY_INVITE_EXPIRED,
+        'Path invite expired',
+      );
+    }
+  }
+
+  private computePathProgress(path: {
+    contentStep: number;
+    stepCount: number;
+    status: StudyPathStatus;
+  }): number {
+    if (path.status === StudyPathStatus.Completed) return 100;
+    const total = Math.max(path.stepCount, 1);
+    return Math.min(
+      100,
+      Math.round(((path.contentStep + 1) / total) * 100),
+    );
+  }
+
+  /** Finish current stack reading-unit; advance path index or complete. */
+  private async advancePathStackUnit(
+    manager: EntityManager,
+    pathId: string,
+  ) {
+    const path = await manager.findOne(StudyPath, { where: { id: pathId } });
+    if (!path || PATH_TERMINAL_STATUSES.includes(path.status)) return;
+
+    if (path.status === StudyPathStatus.Invited) {
+      path.status = StudyPathStatus.Active;
+    }
+
+    const isLastUnit = path.contentStep >= path.stepCount - 1;
+    if (isLastUnit) {
+      path.status = StudyPathStatus.Completed;
+      path.progressPercent = 100;
+      await manager.save(path);
+      return;
+    }
+
+    path.contentStep += 1;
+    const units = await this.listReadingUnitsForStack(path.stack);
+    const next = units[path.contentStep];
+    if (next) {
+      const lesson = await this.ensureStudyReadingLesson(
+        path.creatorId,
+        next.id,
+      );
+      path.creatorLessonId = lesson.id;
+    }
+    path.progressPercent = this.computePathProgress(path);
+    await manager.save(path);
+  }
+
+  private async toPathDto(viewerId: string, path: StudyPath) {
+    const partnerId =
+      path.creatorId === viewerId ? path.partnerId : path.creatorId;
+    const profiles = await this.profilesRepo.find({
+      where: { userId: In([path.creatorId, path.partnerId]) },
+    });
+    const profileMap = new Map(profiles.map((p) => [p.userId, p]));
+    const partnerProfile = profileMap.get(partnerId);
+    const partnerName =
+      partnerProfile?.displayName ||
+      partnerProfile?.username ||
+      'Learner';
+    const partnerInitial = partnerName.charAt(0).toUpperCase();
+
+    const liveSession = await this.sessionsRepo.findOne({
+      where: {
+        pathId: path.id,
+        status: In(LIVE_STATUSES),
+      },
+      order: { updatedAt: 'DESC' },
+    });
+
+    const recentEpisodes = await this.sessionsRepo.find({
+      where: { pathId: path.id },
+      order: { createdAt: 'DESC' },
+      take: 5,
+    });
+
+    const role: 'creator' | 'partner' =
+      path.creatorId === viewerId ? 'creator' : 'partner';
+
+    return {
+      id: path.id,
+      status: path.status,
+      stack: path.stack,
+      unitId: path.stack,
+      creatorLessonId: path.creatorLessonId,
+      category: path.category,
+      title: path.title,
+      contentStep: path.contentStep,
+      stepCount: path.stepCount,
+      progressPercent: path.progressPercent,
+      inviteMessage: path.inviteMessage,
+      inviteExpiresAt: path.inviteExpiresAt?.toISOString() ?? null,
+      role,
+      partner: {
+        userId: partnerId,
+        name: partnerName,
+        initial: partnerInitial,
+        avatarUrl: partnerProfile?.avatarUrl ?? null,
+      },
+      activeSessionId: liveSession?.id ?? null,
+      episodes: recentEpisodes.map((s) => ({
+        id: s.id,
+        status: s.status,
+        contentStep: s.contentStep,
+        stepCount: s.stepCount,
+        durationMinutes: s.durationMinutes,
+        createdAt: s.createdAt.toISOString(),
+      })),
+      createdAt: path.createdAt.toISOString(),
+      updatedAt: path.updatedAt.toISOString(),
+    };
+  }
+
+  private async resolveStackSlug(
+    userId: string,
+    dto: CreateStudyPathDto,
+  ): Promise<string> {
+    const direct = (dto.stack || dto.unitId)?.trim();
+    if (direct) {
+      // Accept stack slug, or a content-unit id → resolve its stack.
+      const asStack = await this.listReadingUnitsForStack(direct);
+      if (asStack.length > 0) return direct;
+
+      const unit = await this.unitsRepo.findOne({ where: { id: direct } });
+      if (unit?.stack?.trim()) return unit.stack.trim();
+
+      throw new AppException(
+        AuthErrorCode.STUDY_TASK_NOT_AVAILABLE,
+        'Unknown stack',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    if (dto.lessonId) {
+      const meta = await this.resolveCreatorLesson(userId, dto.lessonId);
+      if (!meta.unitId) {
+        throw new AppException(
+          AuthErrorCode.STUDY_TASK_NOT_AVAILABLE,
+          'Lesson has no unit binding',
+        );
+      }
+      const unit = await this.unitsRepo.findOne({ where: { id: meta.unitId } });
+      if (!unit?.stack?.trim()) {
+        throw new AppException(
+          AuthErrorCode.STUDY_TASK_NOT_AVAILABLE,
+          'Lesson unit has no stack',
+        );
+      }
+      return unit.stack.trim();
+    }
+
+    throw new AppException(
+      AuthErrorCode.VALIDATION_ERROR,
+      'stack required',
+    );
+  }
+
+  private async listReadingUnitsForStack(stack: string): Promise<Unit[]> {
+    const units = await this.unitsRepo.find({
+      where: {
+        stack,
+        lessonType: 'reading',
+        isActive: true,
+      },
+      order: { level: 'ASC', title: 'ASC' },
+    });
+    return units.filter(
+      (u) => isUnitPlayContent(u.content) && isReadingContent(u.content),
+    );
+  }
+
+  private async summarizeStack(
+    stack: string,
+    source: 'path' | 'pool',
+  ): Promise<{
+    stack: string;
+    unitId: string;
+    lessonId: string | null;
+    title: string;
+    estimatedMinutes: number;
+    readingCount: number;
+    status: LessonStatus;
+    source: 'path' | 'pool';
+    category: string;
+  } | null> {
+    const units = await this.listReadingUnitsForStack(stack);
+    if (units.length === 0) return null;
+    const estimatedMinutes = units.reduce(
+      (sum, u) => sum + (u.estimatedMinutes || 0),
+      0,
+    );
+    return {
+      stack,
+      unitId: stack,
+      lessonId: null,
+      title: domainTitle(stack),
+      estimatedMinutes,
+      readingCount: units.length,
+      status: LessonStatus.Available,
+      source,
+      category: units[0]?.domain || stack,
+    };
+  }
+
+  private async collectPathReadingStacks(userId: string) {
+    const lessons = await this.lessonsRepo
+      .createQueryBuilder('l')
+      .innerJoin('l.milestone', 'm')
+      .innerJoin('m.phase', 'p')
+      .innerJoin('p.roadmap', 'r')
+      .where('r.userId = :userId', { userId })
+      .andWhere('r.status = :status', { status: RoadmapStatus.Ready })
+      .andWhere('l.lessonType = :type', { type: 'reading' })
+      .andWhere('l.status IN (:...statuses)', {
+        statuses: [LessonStatus.Available, LessonStatus.Completed],
+      })
+      .andWhere('l.unitId IS NOT NULL')
+      .getMany();
+
+    const unitIds = [
+      ...new Set(
+        lessons
+          .map((l) => l.unitId?.trim())
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    if (unitIds.length === 0) return [];
+
+    const linked = await this.unitsRepo.find({ where: { id: In(unitIds) } });
+    const stacks = [
+      ...new Set(
+        linked
+          .map((u) => u.stack?.trim())
+          .filter((s): s is string => Boolean(s)),
+      ),
+    ];
+
+    const items: NonNullable<
+      Awaited<ReturnType<StudyTogetherService['summarizeStack']>>
+    >[] = [];
+    for (const stack of stacks.sort()) {
+      const summary = await this.summarizeStack(stack, 'path');
+      if (summary) items.push(summary);
+    }
+    return items;
+  }
+
+  private async collectPoolReadingStacks(userId: string) {
+    const roadmap = await this.roadmapsRepo.findOne({
+      where: { userId, status: RoadmapStatus.Ready },
+      relations: { phases: true },
+      order: { updatedAt: 'DESC' },
+    });
+    if (!roadmap) return [];
+
+    const domains = new Set<string>();
+    const stackHints = new Set<string>();
+    if (roadmap.primaryRoleSlug?.trim()) {
+      domains.add(roadmap.primaryRoleSlug.trim());
+      stackHints.add(roadmap.primaryRoleSlug.trim());
+    }
+    for (const phase of roadmap.phases ?? []) {
+      if (phase.techStackSlug?.trim()) {
+        stackHints.add(phase.techStackSlug.trim());
+      }
+    }
+
+    const linkedUnitIds = (
+      await this.lessonsRepo
+        .createQueryBuilder('l')
+        .innerJoin('l.milestone', 'm')
+        .innerJoin('m.phase', 'p')
+        .innerJoin('p.roadmap', 'r')
+        .where('r.userId = :userId', { userId })
+        .andWhere('r.id = :roadmapId', { roadmapId: roadmap.id })
+        .andWhere('l.unitId IS NOT NULL')
+        .select('DISTINCT l.unitId', 'unitId')
+        .getRawMany<{ unitId: string }>()
+    )
+      .map((r) => r.unitId?.trim())
+      .filter((id): id is string => Boolean(id));
+
+    if (linkedUnitIds.length > 0) {
+      const linked = await this.unitsRepo.find({
+        where: { id: In(linkedUnitIds) },
+      });
+      for (const u of linked) {
+        if (u.domain?.trim()) domains.add(u.domain.trim());
+        if (u.stack?.trim()) stackHints.add(u.stack.trim());
+      }
+    }
+
+    if (domains.size === 0 && stackHints.size === 0) {
+      return [];
+    }
+
+    const qb = this.unitsRepo
+      .createQueryBuilder('unit')
+      .select('DISTINCT unit.stack', 'stack')
+      .where('unit.lessonType = :type', { type: 'reading' })
+      .andWhere('unit.isActive = true');
+
+    if (domains.size > 0 && stackHints.size > 0) {
+      qb.andWhere(
+        '(unit.domain IN (:...domains) OR unit.stack IN (:...stacks))',
+        { domains: [...domains], stacks: [...stackHints] },
+      );
+    } else if (domains.size > 0) {
+      qb.andWhere('unit.domain IN (:...domains)', { domains: [...domains] });
+    } else {
+      qb.andWhere('unit.stack IN (:...stacks)', { stacks: [...stackHints] });
+    }
+
+    const rows = await qb.getRawMany<{ stack: string }>();
+    const items: NonNullable<
+      Awaited<ReturnType<StudyTogetherService['summarizeStack']>>
+    >[] = [];
+    for (const row of rows) {
+      const stack = row.stack?.trim();
+      if (!stack) continue;
+      const summary = await this.summarizeStack(stack, 'pool');
+      if (summary) items.push(summary);
+    }
+    return items.sort((a, b) => a.title.localeCompare(b.title));
+  }
+
+  /**
+   * Materialize an optional reading lesson for Study Together when the unit
+   * exists in the content pool but was never unlocked on the personal path.
+   */
+  private async ensureStudyReadingLesson(userId: string, unitId: string) {
+    const unit = await this.unitsRepo.findOne({ where: { id: unitId } });
+    if (!unit || unit.lessonType !== 'reading') {
+      throw new AppException(
+        AuthErrorCode.STUDY_TASK_NOT_AVAILABLE,
+        'Unit not available as reading',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    if (!isUnitPlayContent(unit.content) || !isReadingContent(unit.content)) {
+      throw new AppException(
+        AuthErrorCode.STUDY_TASK_NOT_AVAILABLE,
+        'Unit content is not reading',
+      );
+    }
+
+    const already = await this.lessonsRepo
+      .createQueryBuilder('l')
+      .innerJoin('l.milestone', 'm')
+      .innerJoin('m.phase', 'p')
+      .innerJoin('p.roadmap', 'r')
+      .where('r.userId = :userId', { userId })
+      .andWhere('r.status = :status', { status: RoadmapStatus.Ready })
+      .andWhere('l.unitId = :unitId', { unitId })
+      .andWhere('l.lessonType = :type', { type: 'reading' })
+      .getOne();
+    if (already) {
+      if (already.status === LessonStatus.Locked) {
+        already.status = LessonStatus.Available;
+        await this.lessonsRepo.save(already);
+        const ready = await this.roadmapsRepo.findOne({
+          where: { userId, status: RoadmapStatus.Ready },
+          order: { updatedAt: 'DESC' },
+        });
+        if (ready) {
+          await this.roadmapCache.invalidateRoadmap(ready.id, userId);
+        }
+      }
+      return already;
+    }
+
+    const anchor = await this.lessonsRepo
+      .createQueryBuilder('l')
+      .innerJoin('l.milestone', 'm')
+      .innerJoin('m.phase', 'p')
+      .innerJoin('p.roadmap', 'r')
+      .where('r.userId = :userId', { userId })
+      .andWhere('r.status = :status', { status: RoadmapStatus.Ready })
+      .orderBy('p.orderIndex', 'ASC')
+      .addOrderBy('m.orderIndex', 'ASC')
+      .addOrderBy('l.orderIndex', 'DESC')
+      .getOne();
+
+    if (!anchor) {
+      throw new AppException(
+        AuthErrorCode.STUDY_TASK_NOT_AVAILABLE,
+        'No active roadmap',
+      );
+    }
+
+    const playContent = normalizeUnitPlayContent(unit.content);
+    const lesson = await this.lessonsRepo.save(
+      this.lessonsRepo.create({
+        milestoneId: anchor.milestoneId,
+        unitId: unit.id,
+        title: unit.title,
+        description: '',
+        lessonType: 'reading',
+        estimatedMinutes: unit.estimatedMinutes,
+        xpReward: unit.xp,
+        orderIndex: anchor.orderIndex + 1,
+        required: false,
+        status: LessonStatus.Available,
+        playContent: playContent as unknown as Record<string, unknown>,
+        objective: playContent.objective ?? null,
+        provider: unit.provider,
+        url: unit.url,
+        level: unit.level,
+        skillsTaught: unit.skillsTaught ?? [],
+        unitRole: unit.unitRole,
+        servesStage: unit.servesStage ?? [],
+        entryAction: 'study_together',
+        materializedWindow: null,
+      }),
+    );
+
+    const ready = await this.roadmapsRepo.findOne({
+      where: { userId, status: RoadmapStatus.Ready },
+      order: { updatedAt: 'DESC' },
+    });
+    if (ready) {
+      await this.roadmapCache.invalidateRoadmap(ready.id, userId);
+    }
+
+    return lesson;
   }
 
   private async resolveCreatorLesson(userId: string, lessonId: string) {
