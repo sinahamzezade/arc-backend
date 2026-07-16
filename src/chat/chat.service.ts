@@ -98,6 +98,8 @@ export type ConversationListItemDto = {
   /** Peer's read watermark (DM) — for live seen updates. */
   peerLastReadMessageId: string | null;
   memberCount: number;
+  /** DM: viewer has blocked this peer (can unblock). */
+  peerBlockedByMe: boolean;
 };
 
 @Injectable()
@@ -1256,7 +1258,12 @@ export class ChatService {
     const peerMember = peers.find((p) => p.userId !== userId);
 
     let peerOnline: boolean | null = null;
+    let peerBlockedByMe = false;
     if (c.type === ConversationType.Direct && peerMember) {
+      peerBlockedByMe = await this.permissions.isBlockedBy(
+        userId,
+        peerMember.userId,
+      );
       const canSee = await this.permissions.canSeePresence(
         userId,
         peerMember.userId,
@@ -1281,6 +1288,7 @@ export class ChatService {
       updatedAt: c.updatedAt.toISOString(),
       peerLastReadMessageId: peerMember?.lastReadMessageId ?? null,
       memberCount: peers.length,
+      peerBlockedByMe,
     };
   }
 

@@ -43,6 +43,14 @@ export class SocialPermissionService {
     return count > 0;
   }
 
+  /** True when `blockerId` has blocked `blockedId` (one direction). */
+  async isBlockedBy(blockerId: string, blockedId: string): Promise<boolean> {
+    const count = await this.blocksRepo.count({
+      where: { blockerId, blockedId },
+    });
+    return count > 0;
+  }
+
   async areFriends(a: string, b: string): Promise<boolean> {
     const pair = friendshipPair(a, b);
     const row = await this.friendshipsRepo.findOne({
