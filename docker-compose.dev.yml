@@ -27,7 +27,7 @@ services:
       ROADMAP_SAFETY_FACTOR: '0.85'
       ROADMAP_WEEKLY_SLACK: '0.10'
       # LAN + localhost (phones / second device on Wi-Fi)
-      CORS_ORIGIN: http://localhost:3000,http://127.0.0.1:3000,http://192.168.254.23:3000
+      CORS_ORIGIN: http://localhost:3000,http://127.0.0.1:3000,http://172.20.10.5:3000,http://192.168.254.23:3000
       # Pass through from project .env (compose interpolation) — must match Nest JWT issuer
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}

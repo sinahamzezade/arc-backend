@@ -23,6 +23,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { SocialPermissionService } from '../social/social-permission.service';
 import { UsersService } from '../users/users.service';
 import {
+  CALL_CONNECTING_STALE_MS,
   CALL_IN_CALL_TTL_SEC,
   CALL_INVITE_RATE_LIMIT,
   CALL_INVITE_RATE_WINDOW_SEC,
@@ -213,14 +214,14 @@ export class CallService {
       );
     }
 
-    if (await this.isInCall(callerId)) {
+    if (await this.hasLiveCall(callerId)) {
       throw new AppException(
         AuthErrorCode.CALL_BUSY,
         'Already in a call',
         HttpStatus.CONFLICT,
       );
     }
-    if (await this.isInCall(peerId)) {
+    if (await this.hasLiveCall(peerId)) {
       const busy = await this.callsRepo.save(
         this.callsRepo.create({
           id: input.callId,
@@ -574,9 +575,70 @@ export class CallService {
     return `in_call:${userId}`;
   }
 
-  private async isInCall(userId: string): Promise<boolean> {
-    const v = await this.redis.get(this.inCallKey(userId));
-    return !!v;
+  /**
+   * True only if Redis presence points at a still-live call.
+   * Clears orphan Redis keys and ends stale ringing/connecting rows
+   * (common after deploys — invite timers are in-process only).
+   */
+  private async hasLiveCall(userId: string): Promise<boolean> {
+    const callId = await this.reconcileInCall(userId);
+    return !!callId;
+  }
+
+  private async reconcileInCall(userId: string): Promise<string | null> {
+    const callId = await this.redis.get(this.inCallKey(userId));
+    if (!callId) return null;
+
+    const call = await this.callsRepo.findOne({ where: { id: callId } });
+    if (!call || call.state === CallState.Ended) {
+      await this.redis.del(this.inCallKey(userId));
+      return null;
+    }
+
+    const ageMs = Date.now() - call.createdAt.getTime();
+
+    if (
+      call.state === CallState.Ringing &&
+      ageMs > CALL_INVITE_TIMEOUT_MS + 5_000
+    ) {
+      this.logger.warn(`Stale ringing call ${call.id} — ending as missed`);
+      await this.endCall(call, CallEndReason.Missed);
+      return null;
+    }
+
+    if (
+      call.state === CallState.Connecting &&
+      ageMs > CALL_CONNECTING_STALE_MS
+    ) {
+      this.logger.warn(`Stale connecting call ${call.id} — ending as failed`);
+      await this.endCall(call, CallEndReason.Failed);
+      return null;
+    }
+
+    return callId;
+  }
+
+  /**
+   * Last chat socket gone — end ringing/connecting only.
+   * Leave Active alone (tab refresh reconnects; hangup/ICE still owns that).
+   */
+  async releaseCallsOnDisconnect(userId: string): Promise<void> {
+    const callId = await this.reconcileInCall(userId);
+    if (!callId) return;
+    const call = await this.callsRepo.findOne({ where: { id: callId } });
+    if (!call || call.state === CallState.Ended) return;
+    if (call.state === CallState.Active) return;
+
+    const reason =
+      call.state === CallState.Ringing
+        ? userId === call.callerId
+          ? CallEndReason.Cancelled
+          : CallEndReason.Missed
+        : CallEndReason.Failed;
+    this.logger.warn(
+      `User ${userId} disconnected mid-call ${call.id} — ending as ${reason}`,
+    );
+    await this.endCall(call, reason);
   }
 
   private async setInCall(userId: string, callId: string) {

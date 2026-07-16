@@ -67,9 +67,7 @@ export class ChatGateway
     }
 
     this.chat.broadcastMessage = (conversationId, msg) => {
-      this.server
-        .to(this.roomName(conversationId))
-        .emit('message.new', msg);
+      this.server.to(this.roomName(conversationId)).emit('message.new', msg);
       // Delivered ack to sender when at least one other socket is in room
       const others = this.countOthersInRoom(conversationId, msg.senderId);
       if (others > 0) {
@@ -81,7 +79,9 @@ export class ChatGateway
       }
     };
     this.chat.broadcastRead = (conversationId, payload) => {
-      this.server.to(this.roomName(conversationId)).emit('message.read', payload);
+      this.server
+        .to(this.roomName(conversationId))
+        .emit('message.read', payload);
     };
     this.chat.broadcastTyping = (conversationId, payload) => {
       this.server.to(this.roomName(conversationId)).emit('typing', payload);
@@ -184,6 +184,14 @@ export class ChatGateway
       if (set.size === 0) {
         this.userSockets.delete(userId);
         await this.chat.setPresenceOffline(userId);
+        // Drop orphan in_call Redis locks (ICE fail / tab close / deploy).
+        await this.calls
+          .releaseCallsOnDisconnect(userId)
+          .catch((err) =>
+            this.logger.warn(
+              `Call release on disconnect failed: ${err instanceof Error ? err.message : err}`,
+            ),
+          );
       }
     }
   }
