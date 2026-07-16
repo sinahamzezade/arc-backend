@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS study_paths (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   creator_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   partner_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  unit_id varchar NOT NULL,
+  stack varchar NOT NULL,
   creator_lesson_id uuid NOT NULL,
   category varchar(64) NOT NULL DEFAULT 'general',
   title varchar(200) NOT NULL,
@@ -21,8 +21,8 @@ CREATE INDEX IF NOT EXISTS idx_study_paths_creator_status
   ON study_paths (creator_id, status);
 CREATE INDEX IF NOT EXISTS idx_study_paths_partner_status
   ON study_paths (partner_id, status);
-CREATE INDEX IF NOT EXISTS idx_study_paths_unit_status
-  ON study_paths (unit_id, status);
+CREATE INDEX IF NOT EXISTS idx_study_paths_stack_status
+  ON study_paths (stack, status);
 
 ALTER TABLE study_sessions
   ADD COLUMN IF NOT EXISTS path_id uuid NULL REFERENCES study_paths(id) ON DELETE SET NULL;

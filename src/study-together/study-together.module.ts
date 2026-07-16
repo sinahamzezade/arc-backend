@@ -20,6 +20,7 @@ import { StudySessionParticipant } from './entities/study-session-participant.en
 import { StudySession } from './entities/study-session.entity';
 import { StudyPath } from './entities/study-path.entity';
 import { StudyChatMediaSchemaService } from './study-chat-media-schema.service';
+import { StudyPathsSchemaService } from './study-paths-schema.service';
 import { StudyTogetherController } from './study-together.controller';
 import { StudyTogetherGateway } from './study-together.gateway';
 import { StudyTogetherService } from './study-together.service';
@@ -55,6 +56,7 @@ import { Unit } from '../content-pool/entities/unit.entity';
     StudyTogetherService,
     StudyTogetherGateway,
     StudyChatMediaSchemaService,
+    StudyPathsSchemaService,
   ],
   exports: [StudyTogetherService, StudyTogetherGateway],
 })

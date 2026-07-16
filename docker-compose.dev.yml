@@ -80,8 +80,8 @@ services:
         condition: service_healthy
       roadmap-engine:
         condition: service_started
-      coturn:
-        condition: service_started
+      # coturn optional — WebRTC only; VPN often steals UDP in 49160-49200
+      # Start separately: docker compose -f docker-compose.dev.yml up -d coturn
 
   roadmap-engine:
     build:
@@ -113,7 +113,8 @@ services:
       - '3478:3478/udp'
       - '5349:5349'
       - '5349:5349/udp'
-      - '49160-49200:49160-49200/udp'
+      # Avoid 49160-49200: macOS VPN/L2TP often binds ephemeral UDP there
+      - '49210-49250:49210-49250/udp'
     volumes:
       - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
     command: ['-c', '/etc/coturn/turnserver.conf']
