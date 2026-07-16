@@ -12,6 +12,7 @@ export enum ChatMessageType {
   Text = 'text',
   Image = 'image',
   File = 'file',
+  Audio = 'audio',
   System = 'system',
 }
 
@@ -38,6 +39,8 @@ export enum ChatReportStatus {
 
 export const CHAT_MAX_BODY_CHARS = 4000;
 export const CHAT_MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+export const CHAT_VOICE_MAX_DURATION_MS = 60_000;
+export const CHAT_VOICE_MIN_DURATION_MS = 400;
 export const CHAT_MSG_RATE_LIMIT = 30; // per minute
 export const CHAT_MSG_RATE_WINDOW_SEC = 60;
 export const CHAT_CREATE_RATE_LIMIT = 10; // per hour
@@ -52,8 +55,21 @@ export const CHAT_ALLOWED_MIME = new Set([
   'image/gif',
   'application/pdf',
   'text/plain',
+  'audio/webm',
+  'audio/mp4',
+  'audio/mpeg',
+  'audio/ogg',
+  'audio/wav',
 ]);
 
+/** Strip codec params — browsers often send `audio/webm;codecs=opus`. */
+export function normalizeMime(raw: string): string {
+  return (raw || 'application/octet-stream').split(';')[0].trim().toLowerCase();
+}
+
+export function isChatAudioMime(mime: string): boolean {
+  return normalizeMime(mime).startsWith('audio/');
+}
 export const ChatEventType = {
   MessageSent: 'chat.message_sent.v1',
   ConversationCreated: 'chat.conversation_created.v1',

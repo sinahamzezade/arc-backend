@@ -22,6 +22,8 @@ import {
 } from '../common/redis/redis.constants';
 import Redis from 'ioredis';
 import { UsersService } from '../users/users.service';
+import { CallMode } from '../calls/call.constants';
+import { CallService } from '../calls/call.service';
 import { ChatMessageType } from './chat.constants';
 import { ChatService } from './chat.service';
 
@@ -53,6 +55,7 @@ export class ChatGateway
     private readonly users: UsersService,
     private readonly authUserCache: AuthUserCacheService,
     private readonly chat: ChatService,
+    private readonly calls: CallService,
     @Inject(REDIS_PUB_CLIENT) private readonly redisPub: Redis | null,
     @Inject(REDIS_SUB_CLIENT) private readonly redisSub: Redis | null,
   ) {}
@@ -98,6 +101,10 @@ export class ChatGateway
         if (rooms?.has(room)) return true;
       }
       return false;
+    };
+
+    this.calls.emitToUser = (userId, event, payload) => {
+      this.emitToUser(userId, event, payload);
     };
 
     server.use(async (socket, next) => {
@@ -192,6 +199,7 @@ export class ChatGateway
       body?: string;
       attachmentId?: string;
       replyToId?: string;
+      durationMs?: number;
     },
   ) {
     const userId = client.data.userId as string | undefined;
@@ -205,6 +213,7 @@ export class ChatGateway
         body: body.body,
         attachmentId: body.attachmentId,
         replyToId: body.replyToId,
+        durationMs: body.durationMs,
       });
       return { ok: true, message: msg };
     } catch (err) {
@@ -270,6 +279,166 @@ export class ChatGateway
     if (!userId) return { error: 'unauthorized' };
     await this.chat.refreshPresence(userId);
     return { ok: true };
+  }
+
+  @SubscribeMessage('call.invite')
+  async onCallInvite(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    body: {
+      conversationId?: string;
+      mode?: CallMode;
+      callId?: string;
+    },
+  ) {
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !body?.conversationId || !body?.callId || !body?.mode) {
+      return { error: 'CALL_NOT_A_MEMBER' };
+    }
+    try {
+      const res = await this.calls.invite(userId, {
+        conversationId: body.conversationId,
+        mode: body.mode,
+        callId: body.callId,
+      });
+      return { ok: true, call: res.call };
+    } catch (err) {
+      return this.errPayload(err);
+    }
+  }
+
+  @SubscribeMessage('call.accept')
+  async onCallAccept(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { callId?: string },
+  ) {
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !body?.callId) return { error: 'CALL_NOT_FOUND' };
+    try {
+      const call = await this.calls.accept(userId, body.callId);
+      return { ok: true, call };
+    } catch (err) {
+      return this.errPayload(err);
+    }
+  }
+
+  @SubscribeMessage('call.decline')
+  async onCallDecline(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { callId?: string },
+  ) {
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !body?.callId) return { error: 'CALL_NOT_FOUND' };
+    try {
+      const call = await this.calls.decline(userId, body.callId);
+      return { ok: true, call };
+    } catch (err) {
+      return this.errPayload(err);
+    }
+  }
+
+  @SubscribeMessage('call.connected')
+  async onCallConnected(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { callId?: string },
+  ) {
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !body?.callId) return { error: 'CALL_NOT_FOUND' };
+    try {
+      const call = await this.calls.markConnected(userId, body.callId);
+      return { ok: true, call };
+    } catch (err) {
+      return this.errPayload(err);
+    }
+  }
+
+  @SubscribeMessage('call.hangup')
+  async onCallHangup(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    body: { callId?: string; usedTurn?: boolean; failed?: boolean },
+  ) {
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !body?.callId) return { error: 'CALL_NOT_FOUND' };
+    try {
+      const call = await this.calls.hangup(userId, body.callId, {
+        usedTurn: body.usedTurn,
+        failed: body.failed,
+      });
+      return { ok: true, call };
+    } catch (err) {
+      return this.errPayload(err);
+    }
+  }
+
+  @SubscribeMessage('call.sdp')
+  async onCallSdp(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    body: {
+      callId?: string;
+      sdp?: string;
+      type?: 'offer' | 'answer';
+    },
+  ) {
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !body?.callId || !body?.sdp || !body?.type) {
+      return { error: 'CALL_NOT_FOUND' };
+    }
+    try {
+      await this.calls.relayOpaque(userId, body.callId, 'call.sdp', {
+        sdp: body.sdp,
+        type: body.type,
+      });
+      return { ok: true };
+    } catch (err) {
+      return this.errPayload(err);
+    }
+  }
+
+  @SubscribeMessage('call.ice')
+  async onCallIce(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    body: { callId?: string; candidate?: unknown },
+  ) {
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !body?.callId || body.candidate == null) {
+      return { error: 'CALL_NOT_FOUND' };
+    }
+    try {
+      await this.calls.relayOpaque(userId, body.callId, 'call.ice', {
+        candidate: body.candidate,
+      });
+      return { ok: true };
+    } catch (err) {
+      return this.errPayload(err);
+    }
+  }
+
+  @SubscribeMessage('call.upgrade')
+  async onCallUpgrade(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { callId?: string; mode?: CallMode },
+  ) {
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !body?.callId || !body?.mode) {
+      return { error: 'CALL_NOT_FOUND' };
+    }
+    try {
+      const { call, peerId } = await this.calls.upgrade(
+        userId,
+        body.callId,
+        body.mode,
+      );
+      this.emitToUser(peerId, 'call.upgrade', {
+        callId: call.id,
+        mode: call.mode,
+      });
+      return { ok: true, call };
+    } catch (err) {
+      return this.errPayload(err);
+    }
   }
 
   private roomName(conversationId: string) {

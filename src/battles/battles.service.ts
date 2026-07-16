@@ -1933,7 +1933,7 @@ export class BattlesService {
         ? {
             displayName: opponentProfile.displayName,
             username: opponentProfile.username,
-            avatarUrl: rankIcon ?? opponentProfile.avatarUrl ?? null,
+            avatarUrl: opponentProfile.avatarUrl ?? rankIcon ?? null,
           }
         : {
             displayName: null,

@@ -1260,7 +1260,7 @@ export class SocialService {
         name,
         initial,
         color: AVATAR_COLORS[i % AVATAR_COLORS.length],
-        avatarUrl: rankIcons.get(id) ?? profile?.avatarUrl ?? null,
+        avatarUrl: profile?.avatarUrl ?? rankIcons.get(id) ?? null,
         level: league?.rankLevel ?? 1,
         league: league?.tier
           ? String(league.tier).charAt(0).toUpperCase() +

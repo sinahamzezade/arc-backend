@@ -69,6 +69,7 @@ export enum NotificationType {
   ProductUpdate = 'product_update',
   CoachMessage = 'coach_message',
   ChatMessage = 'chat_message',
+  IncomingCall = 'incoming_call',
   System = 'system',
   Security = 'security',
 }

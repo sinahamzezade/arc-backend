@@ -40,6 +40,7 @@ import { LuckyWheelModule } from './lucky-wheel/lucky-wheel.module';
 import { RanksModule } from './ranks/ranks.module';
 import { StudyTogetherModule } from './study-together/study-together.module';
 import { ChatModule } from './chat/chat.module';
+import { CallsModule } from './calls/calls.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { BadgesModule } from './badges/badges.module';
 import { QuestsModule } from './quests/quests.module';
@@ -116,6 +117,7 @@ const redisUrl = resolveRedisUrl();
     RanksModule,
     StudyTogetherModule,
     ChatModule,
+    CallsModule,
     UploadsModule,
     BadgesModule,
     QuestsModule,

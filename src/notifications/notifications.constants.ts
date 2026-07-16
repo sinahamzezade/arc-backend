@@ -89,6 +89,7 @@ export const TYPE_CATEGORY: Record<NotificationType, NotificationCategory> = {
   [NotificationType.ProductUpdate]: NotificationCategory.System,
   [NotificationType.CoachMessage]: NotificationCategory.Coach,
   [NotificationType.ChatMessage]: NotificationCategory.Social,
+  [NotificationType.IncomingCall]: NotificationCategory.Social,
   [NotificationType.System]: NotificationCategory.System,
   [NotificationType.Security]: NotificationCategory.System,
 };
@@ -122,6 +123,7 @@ export const TYPE_PREFERENCE_GATE: Partial<
   [NotificationType.FriendRequestAccepted]: 'social',
   [NotificationType.NewFollower]: 'social',
   [NotificationType.ChatMessage]: 'social',
+  [NotificationType.IncomingCall]: 'social',
   [NotificationType.StudyInvite]: 'studyTogetherInvites',
   [NotificationType.StudyInviteAccepted]: 'studyTogetherInvites',
   [NotificationType.StudySessionStarting]: 'studyTogetherInvites',

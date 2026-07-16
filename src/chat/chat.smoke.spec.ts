@@ -4,6 +4,7 @@ import {
   ConversationType,
   ChatMessageType,
   directPairKey,
+  normalizeMime,
 } from './chat.constants';
 
 /**
@@ -22,12 +23,20 @@ describe('chat MVP smoke invariants', () => {
     expect(ConversationType.Group).toBe('group');
     expect(ChatMessageType.Text).toBe('text');
     expect(ChatMessageType.Image).toBe('image');
+    expect(ChatMessageType.Audio).toBe('audio');
   });
 
   it('allows study-upload style image MIME types', () => {
     expect(CHAT_ALLOWED_MIME.has('image/jpeg')).toBe(true);
     expect(CHAT_ALLOWED_MIME.has('image/png')).toBe(true);
     expect(CHAT_ALLOWED_MIME.has('application/x-msdownload')).toBe(false);
+  });
+
+  it('allows voice MIME types after normalize', () => {
+    expect(CHAT_ALLOWED_MIME.has('audio/webm')).toBe(true);
+    expect(CHAT_ALLOWED_MIME.has(normalizeMime('audio/webm;codecs=opus'))).toBe(
+      true,
+    );
   });
 
   it('caps body length', () => {

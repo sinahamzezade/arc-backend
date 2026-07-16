@@ -498,7 +498,7 @@ export class LeaguesService {
             displayName: profile?.displayName ?? 'You',
             username: profile?.username ?? null,
             avatarUrl:
-              rankIcons.get(p.userId) ?? profile?.avatarUrl ?? null,
+              profile?.avatarUrl ?? rankIcons.get(p.userId) ?? null,
             anonymized: false,
           };
         }
@@ -530,7 +530,7 @@ export class LeaguesService {
           displayName: profile?.displayName ?? profile?.username ?? 'Learner',
           username: profile?.username ?? null,
           avatarUrl:
-            rankIcons.get(p.userId) ?? profile?.avatarUrl ?? null,
+            profile?.avatarUrl ?? rankIcons.get(p.userId) ?? null,
           anonymized: false,
         };
       }),

@@ -2,7 +2,7 @@ import { Controller, Get, NotFoundException, Param, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { UploadsService } from './uploads.service';
 
-const SCOPES = new Set(['ranks', 'badges']);
+const SCOPES = new Set(['ranks', 'badges', 'avatars']);
 
 /**
  * Serves DB-stored uploads at /uploads/:scope/:name.

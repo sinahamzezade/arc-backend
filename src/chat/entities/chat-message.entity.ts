@@ -62,6 +62,9 @@ export class ChatMessage {
   @Column({ name: 'deleted_at', type: 'timestamptz', nullable: true })
   deletedAt: Date | null;
 
+  @Column({ name: 'duration_ms', type: 'int', nullable: true })
+  durationMs: number | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }

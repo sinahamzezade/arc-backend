@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
+import { CallsModule } from '../calls/calls.module';
 import { GamificationModule } from '../gamification/gamification.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { Profile } from '../profiles/entities/profile.entity';
@@ -33,6 +34,7 @@ import { Conversation } from './entities/conversation.entity';
     UsersModule,
     UploadsModule,
     forwardRef(() => GamificationModule),
+    forwardRef(() => CallsModule),
   ],
   controllers: [ChatController],
   providers: [ChatService, ChatGateway, ChatSchemaService],

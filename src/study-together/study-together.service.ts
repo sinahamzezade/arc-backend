@@ -1966,6 +1966,7 @@ export class StudyTogetherService {
       role: p.role,
       name,
       initial,
+      avatarUrl: profile?.avatarUrl ?? null,
       invitationStatus: p.invitationStatus,
       taskId: p.taskId,
       taskLabel: p.taskLabel,

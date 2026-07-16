@@ -31,12 +31,16 @@ import {
   CHAT_MSG_RATE_WINDOW_SEC,
   CHAT_PRESENCE_TTL_SEC,
   CHAT_TYPING_TTL_SEC,
+  CHAT_VOICE_MAX_DURATION_MS,
+  CHAT_VOICE_MIN_DURATION_MS,
   ChatAttachmentScanStatus,
   ChatEventType,
   ChatMessageType,
   ConversationMemberRole,
   ConversationType,
   directPairKey,
+  isChatAudioMime,
+  normalizeMime,
 } from './chat.constants';
 import { ChatAttachment } from './entities/chat-attachment.entity';
 import { ChatMessage } from './entities/chat-message.entity';
@@ -62,6 +66,7 @@ export type ChatMessageDto = {
   attachmentUrl: string | null;
   attachmentMime: string | null;
   replyToId: string | null;
+  durationMs: number | null;
   editedAt: string | null;
   deletedAt: string | null;
   createdAt: string;
@@ -182,10 +187,9 @@ export class ChatService {
 
     const rows = await qb.getMany();
     const page = rows.slice(0, take);
-    const items: ConversationListItemDto[] = [];
-    for (const m of page) {
-      items.push(await this.toConversationListItem(userId, m));
-    }
+    const items: ConversationListItemDto[] = await Promise.all(
+      page.map((m) => this.toConversationListItem(userId, m)),
+    );
     const last = page[page.length - 1];
     const nextCursor =
       rows.length > take && last
@@ -468,6 +472,39 @@ export class ChatService {
       await this.attachmentsRepo.save(attachment);
     }
 
+    if (type === ChatMessageType.Audio) {
+      if (!attachment) {
+        throw new AppException(
+          AuthErrorCode.VALIDATION_ERROR,
+          'Audio attachment required',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      if (!isChatAudioMime(attachment.mimeType)) {
+        throw new AppException(
+          AuthErrorCode.CHAT_ATTACHMENT_REJECTED,
+          'Attachment is not audio',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+    }
+
+    let durationMs: number | null = null;
+    if (dto.durationMs != null) {
+      const d = Math.round(dto.durationMs);
+      if (
+        d < CHAT_VOICE_MIN_DURATION_MS ||
+        d > CHAT_VOICE_MAX_DURATION_MS
+      ) {
+        throw new AppException(
+          AuthErrorCode.VALIDATION_ERROR,
+          'Invalid voice duration',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      durationMs = d;
+    }
+
     if (dto.replyToId) {
       const reply = await this.messagesRepo.findOne({
         where: { id: dto.replyToId, conversationId },
@@ -507,6 +544,7 @@ export class ChatService {
           body,
           attachmentId: attachment?.id ?? null,
           replyToId: dto.replyToId ?? null,
+          durationMs,
         }),
       );
       await manager.getRepository(Conversation).update(conversationId, {
@@ -792,7 +830,7 @@ export class ChatService {
         'Attachment too large',
       );
     }
-    const mime = file.mimetype || 'application/octet-stream';
+    const mime = normalizeMime(file.mimetype || 'application/octet-stream');
     if (!CHAT_ALLOWED_MIME.has(mime)) {
       throw new AppException(
         AuthErrorCode.CHAT_ATTACHMENT_REJECTED,
@@ -995,6 +1033,60 @@ export class ChatService {
     return member;
   }
 
+  /** Peer user id for a direct conversation, or null. */
+  async getDirectPeerId(
+    conversationId: string,
+    userId: string,
+  ): Promise<string | null> {
+    const members = await this.membersRepo.find({
+      where: { conversationId, leftAt: IsNull() },
+    });
+    const peer = members.find((m) => m.userId !== userId);
+    return peer?.userId ?? null;
+  }
+
+  /** System call/event line in the thread (broadcasts message.new). */
+  async insertSystemMessage(
+    conversationId: string,
+    body: string,
+    actorUserId?: string,
+  ): Promise<ChatMessageDto> {
+    const members = await this.membersRepo.find({
+      where: { conversationId, leftAt: IsNull() },
+    });
+    if (!members.length) {
+      throw new AppException(
+        AuthErrorCode.CHAT_CONVERSATION_NOT_FOUND,
+        'Conversation not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    const senderId = actorUserId ?? members[0].userId;
+    const clientMsgId = randomUUID();
+
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const msg = await manager.getRepository(ChatMessage).save(
+        manager.getRepository(ChatMessage).create({
+          conversationId,
+          senderId,
+          clientMsgId,
+          type: ChatMessageType.System,
+          body,
+          attachmentId: null,
+          replyToId: null,
+        }),
+      );
+      await manager.getRepository(Conversation).update(conversationId, {
+        lastMessageAt: msg.createdAt,
+      });
+      return msg;
+    });
+
+    const dto = await this.toMessageDto(saved);
+    this.broadcastMessage?.(conversationId, dto);
+    return dto;
+  }
+
   private async ensureMember(
     conversationId: string,
     userId: string,
@@ -1061,7 +1153,11 @@ export class ChatService {
             body:
               msg.type === ChatMessageType.Text
                 ? (msg.body ?? 'New message').slice(0, 120)
-                : 'Sent an attachment',
+                : msg.type === ChatMessageType.Audio
+                  ? 'Sent a voice message'
+                  : msg.type === ChatMessageType.Image
+                    ? 'Sent a photo'
+                    : 'Sent an attachment',
             actionUrl: `/chat/${conversationId}`,
             payload: {
               conversationId,
@@ -1234,7 +1330,11 @@ export class ChatService {
           body: parent.deletedAt
             ? 'Message deleted'
             : (parent.body?.slice(0, 160) ??
-              (parent.type === ChatMessageType.Image ? 'Photo' : null)),
+              (parent.type === ChatMessageType.Image
+                ? 'Photo'
+                : parent.type === ChatMessageType.Audio
+                  ? 'Voice message'
+                  : null)),
         };
       }
     }
@@ -1253,6 +1353,7 @@ export class ChatService {
       attachmentMime: msg.deletedAt ? null : attachmentMime,
       replyToId: msg.replyToId,
       replyTo,
+      durationMs: msg.deletedAt ? null : (msg.durationMs ?? null),
       editedAt: msg.editedAt?.toISOString() ?? null,
       deletedAt: msg.deletedAt?.toISOString() ?? null,
       createdAt: msg.createdAt.toISOString(),

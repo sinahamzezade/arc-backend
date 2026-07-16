@@ -103,6 +103,10 @@ export class ChatSchemaService implements OnModuleInit {
         CREATE INDEX IF NOT EXISTS idx_chat_messages_conv_created
           ON chat_messages (conversation_id, created_at, id);
       `);
+      await this.dataSource.query(`
+        ALTER TABLE chat_messages
+          ADD COLUMN IF NOT EXISTS duration_ms int NULL;
+      `);
 
       await this.dataSource.query(`
         CREATE TABLE IF NOT EXISTS conversation_members (

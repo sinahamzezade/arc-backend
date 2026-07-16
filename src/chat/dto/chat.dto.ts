@@ -5,10 +5,13 @@ import {
   IsArray,
   IsBoolean,
   IsEnum,
+  IsInt,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
+  Min,
   MinLength,
   ValidateIf,
 } from 'class-validator';
@@ -80,6 +83,13 @@ export class SendMessageDto {
   @IsOptional()
   @IsUUID()
   attachmentId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(60_000)
+  durationMs?: number;
 
   @IsOptional()
   @IsUUID()

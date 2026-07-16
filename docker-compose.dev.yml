@@ -65,6 +65,11 @@ services:
       INTAKE_DEFAULT_MODE: "${INTAKE_DEFAULT_MODE:-form}"
       INTAKE_CHAT_ENABLED: "${INTAKE_CHAT_ENABLED:-true}"
       ROADMAP_GENERATION_TIMEOUT_MS: "${ROADMAP_GENERATION_TIMEOUT_MS:-45000}"
+      # WebRTC STUN/TURN (browser hits host-mapped coturn ports)
+      TURN_SHARED_SECRET: "${TURN_SHARED_SECRET:-dev-turn-shared-secret-change-me}"
+      TURN_REALM: "${TURN_REALM:-arc.local}"
+      STUN_URLS: "${STUN_URLS:-stun:localhost:3478}"
+      TURN_URLS: "${TURN_URLS:-turn:localhost:3478?transport=udp,turn:localhost:3478?transport=tcp}"
     volumes:
       - .:/app # mount your source code
       - /app/node_modules # keep container's node_modules
@@ -74,6 +79,8 @@ services:
       redis:
         condition: service_healthy
       roadmap-engine:
+        condition: service_started
+      coturn:
         condition: service_started
 
   roadmap-engine:
@@ -97,6 +104,19 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+  coturn:
+    image: coturn/coturn:4.6.2
+    restart: unless-stopped
+    ports:
+      - '3478:3478'
+      - '3478:3478/udp'
+      - '5349:5349'
+      - '5349:5349/udp'
+      - '49160-49200:49160-49200/udp'
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ['-c', '/etc/coturn/turnserver.conf']
 
   db:
     image: postgres:16
