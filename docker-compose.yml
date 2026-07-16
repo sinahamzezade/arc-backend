@@ -29,6 +29,7 @@ services:
       ROADMAP_ENGINE_MODE: ${ROADMAP_ENGINE_MODE:-llm}
       ROADMAP_GENERATION_TIMEOUT_MS: ${ROADMAP_GENERATION_TIMEOUT_MS:-45000}
       ROADMAP_GENERATION_MAX_RETRIES: ${ROADMAP_GENERATION_MAX_RETRIES:-3}
+      S3_ENABLED: 'false'
     depends_on:
       db:
         condition: service_healthy

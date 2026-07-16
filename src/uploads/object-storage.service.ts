@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   DeleteObjectCommand,
@@ -17,11 +17,15 @@ export type StoredAsset = {
 
 @Injectable()
 export class ObjectStorageService {
+  private readonly logger = new Logger(ObjectStorageService.name);
   private readonly client: S3Client | null;
   private readonly bucket: string | null;
   private readonly publicBaseUrl: string | null;
+  private readonly explicitlyEnabled: boolean;
 
   constructor(private readonly config: ConfigService) {
+    const flag = config.get<string>('S3_ENABLED')?.trim().toLowerCase();
+    this.explicitlyEnabled = flag === 'true' || flag === '1';
     const endpoint = config.get<string>('S3_ENDPOINT')?.trim();
     const region = config.get<string>('S3_REGION')?.trim() || 'auto';
     const accessKeyId = config.get<string>('S3_ACCESS_KEY_ID')?.trim();
@@ -39,9 +43,16 @@ export class ObjectStorageService {
     } else {
       this.client = null;
     }
+
+    if (this.enabled) {
+      this.logger.log('Object storage: S3/R2');
+    } else {
+      this.logger.log('Object storage: Postgres (local)');
+    }
   }
 
   get enabled(): boolean {
+    if (!this.explicitlyEnabled) return false;
     return this.client != null && this.bucket != null;
   }
 
