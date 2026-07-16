@@ -1,9 +1,10 @@
 import { BullModule, getQueueToken } from '@nestjs/bullmq';
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { ContentPoolModule } from '../content-pool/content-pool.module';
 import { CourseTimingModule } from '../course-timing/course-timing.module';
+import { GamificationModule } from '../gamification/gamification.module';
 import { Goal } from '../goals/entities/goal.entity';
 import { LearnerProfileSnapshot } from '../questionnaire/entities/learner-profile-snapshot.entity';
 import { QuestionnaireResponse } from '../questionnaire/entities/questionnaire-response.entity';
@@ -15,7 +16,9 @@ import { Lesson } from './entities/lesson.entity';
 import { LessonProgress } from './entities/lesson-progress.entity';
 import { Milestone } from './entities/milestone.entity';
 import { Roadmap } from './entities/roadmap.entity';
+import { RoadmapCompletionEvent } from './entities/roadmap-completion-event.entity';
 import { RoadmapGenerationJob } from './entities/roadmap-generation-job.entity';
+import { ReEnrollmentJob } from './entities/re-enrollment-job.entity';
 import { RoadmapPhase } from './entities/roadmap-phase.entity';
 import { RoadmapCacheService } from './roadmap-cache.service';
 import { RoadmapAnalyticsService } from './roadmap-analytics.service';
@@ -27,6 +30,17 @@ import {
   RoadmapGenerationBullProcessor,
   RoadmapJobsProcessor,
 } from './roadmap-generation.processor';
+import {
+  ROADMAP_COMPLETION_COACH_QUEUE,
+  RoadmapCompletionCoachBullProcessor,
+  RoadmapCompletionCoachProcessor,
+} from './roadmap-completion-coach.processor';
+import { RoadmapCompletionService } from './roadmap-completion.service';
+import {
+  RE_ENROLLMENT_QUEUE,
+  ReEnrollmentBullProcessor,
+  ReEnrollmentService,
+} from './re-enrollment.service';
 import { RoadmapGeneratorService } from './roadmap-generator.service';
 import { RoadmapLegacyAssembler } from './roadmap-legacy.assembler';
 import { RoadmapLlmPlannerService } from './roadmap-llm-planner.service';
@@ -47,6 +61,8 @@ const bullImports = redisUrl
       BullModule.registerQueue(
         { name: ROADMAP_GENERATION_QUEUE },
         { name: ROADMAP_REPLAN_QUEUE },
+        { name: ROADMAP_COMPLETION_COACH_QUEUE },
+        { name: RE_ENROLLMENT_QUEUE },
       ),
     ]
   : [];
@@ -57,10 +73,20 @@ const nullQueueProviders = redisUrl
   : [
       { provide: getQueueToken(ROADMAP_GENERATION_QUEUE), useValue: null },
       { provide: getQueueToken(ROADMAP_REPLAN_QUEUE), useValue: null },
+      {
+        provide: getQueueToken(ROADMAP_COMPLETION_COACH_QUEUE),
+        useValue: null,
+      },
+      { provide: getQueueToken(RE_ENROLLMENT_QUEUE), useValue: null },
     ];
 
 const bullProviders = redisUrl
-  ? [RoadmapGenerationBullProcessor, RoadmapReplanBullProcessor]
+  ? [
+      RoadmapGenerationBullProcessor,
+      RoadmapReplanBullProcessor,
+      RoadmapCompletionCoachBullProcessor,
+      ReEnrollmentBullProcessor,
+    ]
   : [];
 
 @Module({
@@ -72,6 +98,8 @@ const bullProviders = redisUrl
       Lesson,
       LessonProgress,
       RoadmapGenerationJob,
+      RoadmapCompletionEvent,
+      ReEnrollmentJob,
       Goal,
       LearnerProfileSnapshot,
       QuestionnaireResponse,
@@ -83,6 +111,7 @@ const bullProviders = redisUrl
     ContentPoolModule,
     CourseTimingModule,
     SystemFlagsModule,
+    forwardRef(() => GamificationModule),
     ...bullImports,
   ],
   controllers: [RoadmapsController],
@@ -101,6 +130,9 @@ const bullProviders = redisUrl
     RoadmapPersistenceService,
     RoadmapAnalyticsService,
     RoadmapAiService,
+    RoadmapCompletionService,
+    RoadmapCompletionCoachProcessor,
+    ReEnrollmentService,
     ...nullQueueProviders,
     ...bullProviders,
   ],
@@ -111,6 +143,7 @@ const bullProviders = redisUrl
     RoadmapSnapshotService,
     RoadmapCacheService,
     RoadmapTreeLoader,
+    RoadmapCompletionService,
   ],
 })
 export class RoadmapsModule {}

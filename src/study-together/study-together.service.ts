@@ -42,13 +42,23 @@ import {
   StudyHeartbeatDto,
   StudyTaskDto,
 } from './dto/study-together.dto';
+import { randomUUID } from 'crypto';
+import { UploadsService } from '../uploads/uploads.service';
 import { StudySessionEvent } from './entities/study-session-event.entity';
-import { StudySessionMessage } from './entities/study-session-message.entity';
+import {
+  StudySessionMessage,
+  type StudyMessageKind,
+} from './entities/study-session-message.entity';
 import { StudySessionParticipant } from './entities/study-session-participant.entity';
 import { StudySession } from './entities/study-session.entity';
 import {
   STUDY_ALLOWED_DURATIONS_MIN,
+  STUDY_CHAT_AUDIO_MAX_BYTES,
+  STUDY_CHAT_AUDIO_MIMES,
+  STUDY_CHAT_IMAGE_MAX_BYTES,
+  STUDY_CHAT_IMAGE_MIMES,
   STUDY_CHAT_MESSAGE_MAX_LEN,
+  STUDY_CHAT_VOICE_MAX_MS,
   STUDY_DISCONNECT_GRACE_SEC,
   STUDY_HEARTBEAT_INTERVAL_SEC,
   STUDY_INVITE_EXPIRY_NOW_MS,
@@ -104,6 +114,7 @@ export class StudyTogetherService {
     private readonly notifications: NotificationsService,
     private readonly ledger: RewardLedgerService,
     private readonly lessonContent: LessonContentService,
+    private readonly uploads: UploadsService,
     @Optional()
     @Inject(forwardRef(() => BadgesService))
     private readonly badges: BadgesService | undefined,
@@ -397,6 +408,7 @@ export class StudyTogetherService {
       });
     });
 
+    await this.wipeSessionChat(sessionId);
     return this.getState(userId, sessionId);
   }
 
@@ -440,6 +452,7 @@ export class StudyTogetherService {
       });
     });
 
+    await this.wipeSessionChat(sessionId);
     return this.getState(userId, sessionId);
   }
 
@@ -673,6 +686,10 @@ export class StudyTogetherService {
         await manager.save(session);
       }
     });
+
+    if (session.status === StudySessionStatus.Abandoned) {
+      await this.wipeSessionChat(sessionId);
+    }
 
     if (session.status === StudySessionStatus.Active) {
       return this.tryComplete(userId, sessionId, {
@@ -910,14 +927,7 @@ export class StudyTogetherService {
       const profile = profileMap.get(m.senderId);
       const name =
         profile?.displayName || profile?.username || 'Learner';
-      return {
-        id: m.id,
-        sessionId: m.sessionId,
-        senderId: m.senderId,
-        senderName: name,
-        body: m.body,
-        createdAt: m.createdAt.toISOString(),
-      };
+      return this.toMessageDto(m, name);
     });
 
     return {
@@ -943,32 +953,24 @@ export class StudyTogetherService {
       );
     }
 
-    const recent = await this.messagesRepo.count({
-      where: {
-        sessionId,
-        senderId: userId,
-        createdAt: MoreThan(new Date(Date.now() - 10_000)),
-      },
-    });
-    if (recent >= 8) {
-      throw new AppException(
-        AuthErrorCode.VALIDATION_ERROR,
-        'Chat rate limit exceeded',
-      );
-    }
+    await this.assertChatRateLimit(sessionId, userId);
 
     const saved = await this.dataSource.transaction(async (manager) => {
       const row = manager.create(StudySessionMessage, {
         sessionId,
         senderId: userId,
+        kind: 'text',
         body,
+        mediaKey: null,
+        mediaMime: null,
+        durationMs: null,
       });
       const msg = await manager.save(row);
       await this.appendEvent(manager, {
         sessionId,
         userId,
         type: StudyEventType.ChatMessage,
-        payload: { messageId: msg.id },
+        payload: { messageId: msg.id, kind: 'text' },
       });
       session.roomVersion += 1;
       await manager.save(session);
@@ -979,14 +981,138 @@ export class StudyTogetherService {
     const senderName =
       profile?.displayName || profile?.username || 'Learner';
 
-    return {
-      id: saved.id,
-      sessionId: saved.sessionId,
-      senderId: saved.senderId,
-      senderName,
-      body: saved.body,
-      createdAt: saved.createdAt.toISOString(),
-    };
+    return this.toMessageDto(saved, senderName);
+  }
+
+  async sendChatMedia(
+    userId: string,
+    sessionId: string,
+    file: Express.Multer.File,
+    opts: {
+      kind: 'voice' | 'image';
+      durationMs?: number;
+      caption?: string;
+    },
+  ) {
+    const session = await this.requireParticipantSession(userId, sessionId);
+    if (TERMINAL_STATUSES.includes(session.status)) {
+      throw new AppException(
+        AuthErrorCode.STUDY_INVALID_STATE,
+        'Session already ended',
+      );
+    }
+
+    const kind = opts.kind;
+    const mime = (file.mimetype || '').toLowerCase();
+    if (kind === 'image') {
+      if (!STUDY_CHAT_IMAGE_MIMES.has(mime)) {
+        throw new AppException(
+          AuthErrorCode.VALIDATION_ERROR,
+          'Image must be jpeg, png, or webp',
+        );
+      }
+      if (file.size > STUDY_CHAT_IMAGE_MAX_BYTES) {
+        throw new AppException(
+          AuthErrorCode.VALIDATION_ERROR,
+          'Image too large (max 2MB)',
+        );
+      }
+    } else {
+      if (!STUDY_CHAT_AUDIO_MIMES.has(mime)) {
+        throw new AppException(
+          AuthErrorCode.VALIDATION_ERROR,
+          'Unsupported audio format',
+        );
+      }
+      if (file.size > STUDY_CHAT_AUDIO_MAX_BYTES) {
+        throw new AppException(
+          AuthErrorCode.VALIDATION_ERROR,
+          'Voice message too large (max 2MB)',
+        );
+      }
+      const durationMs = opts.durationMs ?? 0;
+      if (durationMs <= 0 || durationMs > STUDY_CHAT_VOICE_MAX_MS) {
+        throw new AppException(
+          AuthErrorCode.VALIDATION_ERROR,
+          'Voice must be 1–60 seconds',
+        );
+      }
+    }
+
+    const caption = (opts.caption ?? '').trim();
+    if (caption.length > STUDY_CHAT_MESSAGE_MAX_LEN) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'Caption too long',
+      );
+    }
+
+    await this.assertChatRateLimit(sessionId, userId);
+
+    const ext = this.extForMime(mime);
+    const mediaKey = `/uploads/study-chat/${sessionId}/${randomUUID()}.${ext}`;
+    await this.uploads.put(mediaKey, mime, file.buffer);
+
+    let saved: StudySessionMessage;
+    try {
+      saved = await this.dataSource.transaction(async (manager) => {
+        const row = manager.create(StudySessionMessage, {
+          sessionId,
+          senderId: userId,
+          kind,
+          body: caption,
+          mediaKey,
+          mediaMime: mime,
+          durationMs: kind === 'voice' ? (opts.durationMs ?? null) : null,
+        });
+        const msg = await manager.save(row);
+        await this.appendEvent(manager, {
+          sessionId,
+          userId,
+          type: StudyEventType.ChatMessage,
+          payload: { messageId: msg.id, kind },
+        });
+        session.roomVersion += 1;
+        await manager.save(session);
+        return msg;
+      });
+    } catch (err) {
+      await this.uploads.remove(mediaKey).catch(() => undefined);
+      throw err;
+    }
+
+    const profile = await this.profilesRepo.findOne({ where: { userId } });
+    const senderName =
+      profile?.displayName || profile?.username || 'Learner';
+
+    return this.toMessageDto(saved, senderName);
+  }
+
+  async getChatMedia(
+    userId: string,
+    sessionId: string,
+    messageId: string,
+  ): Promise<{ mime: string; data: Buffer }> {
+    await this.requireParticipantSession(userId, sessionId);
+    const msg = await this.messagesRepo.findOne({
+      where: { id: messageId, sessionId },
+    });
+    if (!msg?.mediaKey) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'Media not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    const asset = await this.uploads.get(msg.mediaKey);
+    if (!asset?.data) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'Media not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    return { mime: asset.mime || msg.mediaMime || 'application/octet-stream', data: asset.data };
   }
 
   async setTyping(userId: string, sessionId: string) {
@@ -1266,6 +1392,7 @@ export class StudyTogetherService {
       session.actualEndAt = now;
       session.completionOutcome = StudyCompletionOutcome.Abandoned;
       await this.sessionsRepo.save(session);
+      await this.wipeSessionChat(sessionId);
       return this.getState(userId, sessionId);
     }
 
@@ -1315,6 +1442,7 @@ export class StudyTogetherService {
           : StudySessionStatus.Abandoned;
     session.roomVersion += 1;
     await this.sessionsRepo.save(session);
+    await this.wipeSessionChat(sessionId);
 
     let sharedGranted = false;
     if (outcome === StudyCompletionOutcome.CompletedByBoth) {
@@ -1380,6 +1508,93 @@ export class StudyTogetherService {
   ): boolean {
     if (!p.leftAt) return false;
     return p.verifiedActiveSeconds < plannedSec * STUDY_QUALIFY_ACTIVE_RATIO;
+  }
+
+  private toMessageDto(m: StudySessionMessage, senderName: string) {
+    const kind: StudyMessageKind = m.kind || 'text';
+    return {
+      id: m.id,
+      sessionId: m.sessionId,
+      senderId: m.senderId,
+      senderName,
+      kind,
+      body: m.body ?? '',
+      mediaUrl:
+        kind !== 'text' && m.mediaKey
+          ? `/study-together/${m.sessionId}/media/${m.id}`
+          : null,
+      mediaMime: m.mediaMime,
+      durationMs: m.durationMs,
+      createdAt: m.createdAt.toISOString(),
+    };
+  }
+
+  private async assertChatRateLimit(sessionId: string, userId: string) {
+    const recent = await this.messagesRepo.count({
+      where: {
+        sessionId,
+        senderId: userId,
+        createdAt: MoreThan(new Date(Date.now() - 10_000)),
+      },
+    });
+    if (recent >= 8) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'Chat rate limit exceeded',
+      );
+    }
+  }
+
+  private extForMime(mime: string): string {
+    switch (mime) {
+      case 'image/jpeg':
+        return 'jpg';
+      case 'image/png':
+        return 'png';
+      case 'image/webp':
+        return 'webp';
+      case 'audio/webm':
+        return 'webm';
+      case 'audio/mp4':
+        return 'm4a';
+      case 'audio/mpeg':
+        return 'mp3';
+      case 'audio/ogg':
+        return 'ogg';
+      case 'audio/wav':
+        return 'wav';
+      default:
+        return 'bin';
+    }
+  }
+
+  /** Delete all chat messages + media blobs for a session (ephemeral room chat). */
+  private async wipeSessionChat(sessionId: string) {
+    try {
+      const rows = await this.messagesRepo.find({
+        where: { sessionId },
+        select: { id: true, mediaKey: true },
+      });
+      for (const row of rows) {
+        if (!row.mediaKey) continue;
+        try {
+          await this.uploads.remove(row.mediaKey);
+        } catch (err) {
+          this.logger.warn(
+            `Failed to remove study chat media ${row.mediaKey}: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+      }
+      await this.messagesRepo.delete({ sessionId });
+    } catch (err) {
+      this.logger.warn(
+        `wipeSessionChat failed for ${sessionId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   private async tryGrantSharedBonus(
@@ -1697,6 +1912,7 @@ export class StudyTogetherService {
       s.actualEndAt = now;
       s.completionOutcome = StudyCompletionOutcome.Voided;
       await this.sessionsRepo.save(s);
+      await this.wipeSessionChat(s.id);
       await this.eventsRepo.save(
         this.eventsRepo.create({
           sessionId: s.id,

@@ -40,6 +40,7 @@ import { LessonCompletionResult } from './entities/lesson-completion-result.enti
 import { RemediationEvent } from './entities/remediation-event.entity';
 import { LessonRewardsService } from './lesson-rewards.service';
 import { LessonUnlockService } from './lesson-unlock.service';
+import { RoadmapCompletionService } from '../roadmaps/roadmap-completion.service';
 
 export type CompleteLessonResponse = {
   lessonId: string;
@@ -70,6 +71,9 @@ export type CompleteLessonResponse = {
   attemptId: string | null;
   contentVersionId: string;
   rewardRuleVersion: string;
+  /** Present when this completion finished the active roadmap. */
+  roadmapCompleted?: boolean;
+  roadmapId?: string | null;
 };
 
 @Injectable()
@@ -86,6 +90,8 @@ export class LessonCompletionOrchestrator {
     private readonly weeks: WeeksService,
     private readonly quality: ContentQualityService,
     private readonly timing: TimingService,
+    @Inject(forwardRef(() => RoadmapCompletionService))
+    private readonly roadmapCompletion: RoadmapCompletionService,
   ) {}
 
   resolveContentVersionId(lesson: Lesson): string {
@@ -161,6 +167,7 @@ export class LessonCompletionOrchestrator {
           hintUsed: false,
           attemptId: null as string | null,
           lessonId: lesson.id,
+          roadmapId: lesson.milestone?.phase?.roadmap?.id ?? null,
         };
       }
 
@@ -176,6 +183,7 @@ export class LessonCompletionOrchestrator {
           hintUsed: false,
           attemptId: null as string | null,
           lessonId: lesson.id,
+          roadmapId: lesson.milestone?.phase?.roadmap?.id ?? null,
         };
       }
 
@@ -450,6 +458,7 @@ export class LessonCompletionOrchestrator {
         hintUsed: Number(attempt?.assistanceUsed?.hintCount ?? 0) > 0,
         attemptId: attempt.id,
         lessonId: lesson.id,
+        roadmapId: lesson.milestone?.phase?.roadmap?.id ?? null,
       };
     });
 
@@ -485,6 +494,24 @@ export class LessonCompletionOrchestrator {
       void this.timing
         .onLessonCompleted(userId, lesson.id, txResult.minutes)
         .catch(() => undefined);
+
+      // Doc 07 — roadmap graduation check after lesson TX commits.
+      // Await finalize so the client can deep-link to graduation; side effects
+      // inside finalize (rewards/coach/outbox) stay fire-and-forget.
+      if (txResult.roadmapId) {
+        try {
+          const completed = await this.roadmapCompletion.checkRoadmapCompletion(
+            userId,
+            txResult.roadmapId,
+          );
+          if (completed) {
+            txResult.response.roadmapCompleted = true;
+            txResult.response.roadmapId = txResult.roadmapId;
+          }
+        } catch {
+          /* graduation optional — never fail lesson complete */
+        }
+      }
     }
 
     if (lesson.lessonTemplateId) {

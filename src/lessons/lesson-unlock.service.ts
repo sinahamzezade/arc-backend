@@ -88,6 +88,24 @@ export class LessonUnlockService {
       }
     }
 
+    // Mark assessment/project milestones complete when all their lessons done.
+    const milestone = current.milestone;
+    if (
+      milestone &&
+      (milestone.type === 'assessment' || milestone.type === 'project') &&
+      !milestone.completedAt
+    ) {
+      const msLessons = [...(milestone.lessons ?? [])];
+      const allDone = msLessons.every(
+        (l) =>
+          l.id === completedLesson.id || l.status === LessonStatus.Completed,
+      );
+      if (allDone) {
+        milestone.completedAt = new Date();
+        await manager.getRepository(Milestone).save(milestone);
+      }
+    }
+
     const progressRepo = manager.getRepository(LessonProgress);
     const completedCount = await progressRepo.count({
       where: { userId, status: LessonProgressStatus.Completed },

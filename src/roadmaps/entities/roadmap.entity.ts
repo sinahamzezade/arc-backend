@@ -17,7 +17,36 @@ export enum RoadmapStatus {
   Ready = 'ready',
   Failed = 'failed',
   Archived = 'archived',
+  Completed = 'completed',
 }
+
+export enum PostCompletionStatus {
+  AwaitingChoice = 'awaiting_choice',
+  Reenrolled = 'reenrolled',
+  TopUp = 'top_up',
+  Advanced = 'advanced',
+}
+
+export type RoadmapCompletionSummary = {
+  skillsMastered: number;
+  skillsPartial: number;
+  skillsShaky: number;
+  totalLessons: number;
+  totalXpEarned: number;
+  completionTimeWeeks: number;
+  skillSummary: Array<{
+    skillSlug: string;
+    stage: number;
+    target: number;
+    status: 'mastered' | 'partial' | 'shaky';
+  }>;
+  coachAssessment?: {
+    ready: boolean;
+    recommendation: 'new_goal' | 'same_goal_advanced' | 'top_up' | null;
+    rationale: string | null;
+    options: Array<{ key: string; label: string }>;
+  };
+};
 
 @Entity('roadmaps')
 export class Roadmap {
@@ -87,6 +116,20 @@ export class Roadmap {
 
   @Column({ name: 'generation_meta', type: 'jsonb', default: () => "'{}'" })
   generationMeta: Record<string, unknown>;
+
+  /** Set once by completion transaction; null = not finished. */
+  @Column({ name: 'finished_at', type: 'timestamptz', nullable: true })
+  finishedAt: Date | null;
+
+  @Column({ name: 'completion_summary', type: 'jsonb', nullable: true })
+  completionSummary: RoadmapCompletionSummary | null;
+
+  @Column({
+    name: 'post_completion_status',
+    type: 'varchar',
+    nullable: true,
+  })
+  postCompletionStatus: PostCompletionStatus | null;
 
   @OneToMany(() => RoadmapPhase, (phase) => phase.roadmap)
   phases: RoadmapPhase[];

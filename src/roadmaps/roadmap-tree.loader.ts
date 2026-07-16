@@ -35,10 +35,27 @@ export class RoadmapTreeLoader {
     const roadmap = await this.roadmapsRepo.findOne({
       where: {
         userId,
-        status: In([RoadmapStatus.Ready, RoadmapStatus.Generating]),
+        status: In([
+          RoadmapStatus.Ready,
+          RoadmapStatus.Generating,
+          RoadmapStatus.Completed,
+        ]),
       },
       order: { updatedAt: 'DESC' },
     });
+    // Prefer an active (ready/generating) roadmap over a finished one.
+    if (roadmap?.status === RoadmapStatus.Completed) {
+      const active = await this.roadmapsRepo.findOne({
+        where: {
+          userId,
+          status: In([RoadmapStatus.Ready, RoadmapStatus.Generating]),
+        },
+        order: { updatedAt: 'DESC' },
+      });
+      if (active) {
+        return this.hydrateAndCache(active, userId);
+      }
+    }
     if (!roadmap) return null;
     return this.hydrateAndCache(roadmap, userId);
   }
@@ -127,6 +144,8 @@ export class RoadmapTreeLoader {
             'lesson.xpReward',
             'lesson.orderIndex',
             'lesson.status',
+            'lesson.required',
+            'lesson.skillsTaught',
             'lesson.resourceId',
             'resource.id',
             'resource.title',

@@ -12,5 +12,9 @@ export const OUTBOX_GAMIFICATION_REWARD =
 export const OUTBOX_WEEK_SEALED = 'week.sealed.v1';
 export const OUTBOX_SCHEDULE_REPLANNED = 'schedule.replanned.v1';
 export const OUTBOX_SCHEDULE_GENERATED = 'schedule.generated.v1';
+export const OUTBOX_ROADMAP_COMPLETED = 'roadmap.completed.v1';
+export const OUTBOX_ROADMAP_REENROLLMENT_STARTED =
+  'roadmap.reenrollment_started.v1';
 
 export const SEAL_REWARD_RULE_KEY = 'week-seal-v1';
+export const ROADMAP_COMPLETE_REWARD_RULE_KEY = 'roadmap-complete-v1';

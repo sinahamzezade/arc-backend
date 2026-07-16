@@ -6,14 +6,22 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
+import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
   CurrentUser,
   type AuthUserPayload,
 } from '../common/decorators/current-user.decorator';
+import { AppException } from '../common/errors/app.exception';
+import { AuthErrorCode } from '../common/errors/auth-error.codes';
 import {
   CreateStudySessionDto,
   StudyChatSendDto,
@@ -24,8 +32,17 @@ import {
   StudyMessagesQueryDto,
   StudyTaskDto,
 } from './dto/study-together.dto';
+import {
+  STUDY_CHAT_AUDIO_MAX_BYTES,
+  STUDY_CHAT_IMAGE_MAX_BYTES,
+} from './study.constants';
 import { StudyTogetherGateway } from './study-together.gateway';
 import { StudyTogetherService } from './study-together.service';
+
+const MEDIA_MAX_BYTES = Math.max(
+  STUDY_CHAT_IMAGE_MAX_BYTES,
+  STUDY_CHAT_AUDIO_MAX_BYTES,
+);
 
 @ApiTags('study-together')
 @ApiBearerAuth()
@@ -163,6 +180,70 @@ export class StudyTogetherController {
     const msg = await this.study.sendChatMessage(user.userId, id, dto.body);
     this.gateway.broadcastChat(id, msg);
     return msg;
+  }
+
+  @Post(':id/messages/media')
+  @ApiOperation({ summary: 'Send voice or image chat message' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: MEDIA_MAX_BYTES },
+    }),
+  )
+  async sendMedia(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body()
+    body: {
+      kind?: string;
+      durationMs?: string;
+      caption?: string;
+    },
+  ) {
+    if (!file) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'Choose a file',
+      );
+    }
+    const kind = body.kind === 'voice' ? 'voice' : body.kind === 'image' ? 'image' : null;
+    if (!kind) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'kind must be voice or image',
+      );
+    }
+    const durationMs =
+      body.durationMs != null && body.durationMs !== ''
+        ? Number(body.durationMs)
+        : undefined;
+    const msg = await this.study.sendChatMedia(user.userId, id, file, {
+      kind,
+      durationMs: Number.isFinite(durationMs) ? durationMs : undefined,
+      caption: body.caption,
+    });
+    this.gateway.broadcastChat(id, msg);
+    return msg;
+  }
+
+  @Get(':id/media/:messageId')
+  @ApiOperation({ summary: 'Fetch study chat media (participant-only)' })
+  async getMedia(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
+    @Res() res: Response,
+  ) {
+    const { mime, data } = await this.study.getChatMedia(
+      user.userId,
+      id,
+      messageId,
+    );
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(data);
   }
 
   @Get(':id/state')

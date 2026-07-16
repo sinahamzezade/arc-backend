@@ -62,6 +62,10 @@ export class Lesson {
   @Column({ name: 'order_index', type: 'int' })
   orderIndex: number;
 
+  /** Required lessons block roadmap graduation; optional enrichment does not. */
+  @Column({ type: 'boolean', default: true })
+  required: boolean;
+
   @Column({ name: 'resource_id', type: 'uuid', nullable: true })
   resourceId: string | null;
 

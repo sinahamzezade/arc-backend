@@ -4,7 +4,8 @@ export type LlmPurpose =
   | 'questionnaire_copy'
   | 'arlo'
   | 'battle'
-  | 'lesson_body';
+  | 'lesson_body'
+  | 'roadmap_completion_coach';
 
 export const LLM_PURPOSE_LABELS: Record<LlmPurpose, string> = {
   intake: 'Intake chat',
@@ -13,4 +14,5 @@ export const LLM_PURPOSE_LABELS: Record<LlmPurpose, string> = {
   arlo: 'Arlo coach',
   battle: 'Battle questions',
   lesson_body: 'Lesson personalization',
+  roadmap_completion_coach: 'Roadmap completion coach',
 };

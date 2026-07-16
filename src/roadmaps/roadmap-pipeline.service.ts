@@ -102,8 +102,16 @@ export class RoadmapPipelineService {
     goal: Goal;
     profile: LearnerProfileDto;
     seed: number;
+    /** Bypass recipe phase selection — gap = these skill ids only (top-up). */
+    explicitRequiredSkillIds?: string[];
+    /** Override recipe lookup (advanced path). */
+    recipeRoleSlug?: string;
+    /** Override narration title (e.g. Skills Top-Up). */
+    narrationTitleOverride?: string;
   }): Promise<PipelinePlanResult> {
-    const recipe = await this.loadRecipe(input.profile);
+    const recipe = input.recipeRoleSlug
+      ? await this.loadRecipeBySlug(input.recipeRoleSlug)
+      : await this.loadRecipe(input.profile);
     const skills = await this.unitsCatalog.listActiveSkills();
     const units = await this.unitsCatalog.listActiveUnits(undefined, {
       includeContent: false,
@@ -124,10 +132,12 @@ export class RoadmapPipelineService {
       effectiveMinutes != null && effectiveMinutes > 0
         ? effectiveMinutes / 60
         : decodeWeeklyHours(input.goal.weeklyHours);
-    const weeks = decodeTimelineWeeks(
-      input.goal.targetDeadline,
-      recipe.defaultTimelineWeeks,
-    );
+    const weeks = input.explicitRequiredSkillIds?.length
+      ? Math.min(4, decodeTimelineWeeks(input.goal.targetDeadline, 4))
+      : decodeTimelineWeeks(
+          input.goal.targetDeadline,
+          recipe.defaultTimelineWeeks,
+        );
     const budget = Math.round(hours * weeks * 60 * CONTENT_SAFETY_FACTOR);
 
     // Stage 1: per-skill stage-aware plan (foundation|refresher|checkpoint|omit)
@@ -137,11 +147,27 @@ export class RoadmapPipelineService {
         .filter(([, p]) => p.action === 'omit')
         .map(([id]) => id),
     );
-    const { requiredGap, optionalGap } = this.computeGap(
-      recipe,
-      skills,
-      knownSkillIds,
-    );
+
+    let requiredGap: Set<string>;
+    let optionalGap: Set<string>;
+    if (input.explicitRequiredSkillIds?.length) {
+      const skillsById = new Map(skills.map((s) => [s.id, s]));
+      const seedIds = input.explicitRequiredSkillIds.filter((id) =>
+        skillsById.has(id),
+      );
+      requiredGap = new Set(
+        [...prerequisiteClosure(seedIds, skillsById)].filter(
+          (id) => skillsById.has(id),
+        ),
+      );
+      optionalGap = new Set();
+    } else {
+      ({ requiredGap, optionalGap } = this.computeGap(
+        recipe,
+        skills,
+        knownSkillIds,
+      ));
+    }
 
     // Stage 2: topo order
     const orderedGapSkills = this.topoOrderGap(
@@ -183,7 +209,7 @@ export class RoadmapPipelineService {
       type: row.unit.lessonType,
     }));
     const learner: NarratorLearner = {
-      goal: recipe.title,
+      goal: input.narrationTitleOverride ?? recipe.title,
       weeks,
       hoursPerWeek: hours,
       styles: input.profile.learning_styles ?? [],
@@ -208,12 +234,31 @@ export class RoadmapPipelineService {
       repaired: narration.repaired,
     });
 
+    if (input.narrationTitleOverride) {
+      plan.title = input.narrationTitleOverride;
+      plan.description =
+        plan.description ||
+        'A focused path to close remaining skill gaps before your next goal.';
+    }
+
     return {
       plan,
       model: narration.model,
       promptVersion: narration.promptVersion,
       usedFallback: narration.repaired,
     };
+  }
+
+  private async loadRecipeBySlug(roleSlug: string): Promise<RoleRecipe> {
+    const recipe = await this.skillGraph.findRecipeByRole(roleSlug);
+    if (!recipe) {
+      throw new AppException(
+        AuthErrorCode.ADVANCED_RECIPE_NOT_FOUND,
+        `No recipe for role ${roleSlug}`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    return recipe;
   }
 
   private async loadRecipe(profile: LearnerProfileDto): Promise<RoleRecipe> {
@@ -740,6 +785,7 @@ export class RoadmapPipelineService {
             score_breakdown: { ...row.breakdown, total: row.score },
             alternatives_considered: 0,
           },
+          required: row.required,
         };
         if (lesson.explanation) explanations.push(lesson.explanation);
 

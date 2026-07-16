@@ -26,6 +26,9 @@ export function toRoadmapTreeDto(roadmap: Roadmap) {
     progressPercent: Number(roadmap.progressPercent),
     currentPhaseId: roadmap.currentPhaseId,
     status: roadmap.status,
+    finishedAt: roadmap.finishedAt
+      ? new Date(roadmap.finishedAt).toISOString()
+      : null,
     phases: phases.map((phase) => {
       const milestones = [...(phase.milestones ?? [])].sort(
         (a, b) => a.orderIndex - b.orderIndex,
@@ -54,6 +57,7 @@ export function toRoadmapTreeDto(roadmap: Roadmap) {
               xpReward: lesson.xpReward,
               orderIndex: lesson.orderIndex,
               status: lesson.status,
+              required: lesson.required !== false,
               resource: lesson.resource
                 ? {
                     id: lesson.resource.id,

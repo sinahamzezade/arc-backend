@@ -107,11 +107,17 @@ export class RoadmapPersistenceService {
       }
       userId = neu.userId;
       if (oldId) {
-        await manager.update(
-          Roadmap,
-          { id: oldId },
-          { status: RoadmapStatus.Archived },
-        );
+        // Preserve historical completed roadmaps (doc 07) — never mutate finished rows.
+        await manager
+          .createQueryBuilder()
+          .update(Roadmap)
+          .set({ status: RoadmapStatus.Archived })
+          .where('id = :oldId', { oldId })
+          .andWhere('finished_at IS NULL')
+          .andWhere('status != :completed', {
+            completed: RoadmapStatus.Completed,
+          })
+          .execute();
       }
       // Ensure no other ready roadmaps for same user/goal
       await manager
@@ -252,6 +258,7 @@ export class RoadmapPersistenceService {
             difficulty: pl.difficulty,
             xpReward: pl.xp_reward,
             orderIndex: li,
+            required: pl.required !== false,
             resourceId: pl.resource_id,
             status:
               pl.status === 'available'

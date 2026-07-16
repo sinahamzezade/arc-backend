@@ -30,6 +30,7 @@ export enum RewardReasonType {
   Referral = 'referral',
   StudyTogether = 'study_together',
   Badge = 'badge',
+  Roadmap = 'roadmap',
   Admin = 'admin',
 }
 

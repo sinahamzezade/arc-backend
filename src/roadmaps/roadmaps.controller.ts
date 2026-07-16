@@ -1,6 +1,8 @@
 import {
+  Body,
   Controller,
   Get,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
@@ -12,6 +14,11 @@ import {
   CurrentUser,
   type AuthUserPayload,
 } from '../common/decorators/current-user.decorator';
+import { AppException } from '../common/errors/app.exception';
+import { AuthErrorCode } from '../common/errors/auth-error.codes';
+import { ChooseNextDto } from './dto/choose-next.dto';
+import { ReEnrollmentService } from './re-enrollment.service';
+import { RoadmapCompletionService } from './roadmap-completion.service';
 import { RoadmapsService } from './roadmaps.service';
 
 @ApiTags('roadmaps')
@@ -19,7 +26,11 @@ import { RoadmapsService } from './roadmaps.service';
 @UseGuards(JwtAuthGuard)
 @Controller('roadmaps')
 export class RoadmapsController {
-  constructor(private readonly roadmapsService: RoadmapsService) {}
+  constructor(
+    private readonly roadmapsService: RoadmapsService,
+    private readonly completion: RoadmapCompletionService,
+    private readonly reenrollment: ReEnrollmentService,
+  ) {}
 
   @Get('current')
   @ApiOperation({ summary: 'Current user roadmap tree or generation status' })
@@ -40,5 +51,44 @@ export class RoadmapsController {
     @Param('jobId', ParseUUIDPipe) jobId: string,
   ) {
     return this.roadmapsService.getJob(user.userId, jobId);
+  }
+
+  @Get('re-enrollment-jobs/:jobId')
+  @ApiOperation({ summary: 'Poll a re-enrollment job' })
+  getReEnrollmentJob(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('jobId', ParseUUIDPipe) jobId: string,
+  ) {
+    return this.reenrollment.getJob(user.userId, jobId);
+  }
+
+  @Get(':id/completion-summary')
+  @ApiOperation({ summary: 'Graduation screen payload for a finished roadmap' })
+  async getCompletionSummary(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const summary = await this.completion.getCompletionSummary(
+      user.userId,
+      id,
+    );
+    if (!summary) {
+      throw new AppException(
+        AuthErrorCode.ROADMAP_NOT_COMPLETE,
+        'Roadmap is not complete',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    return summary;
+  }
+
+  @Post(':id/choose-next')
+  @ApiOperation({ summary: 'Choose post-graduation path' })
+  chooseNext(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ChooseNextDto,
+  ) {
+    return this.reenrollment.chooseNext(user.userId, id, dto.choice);
   }
 }

@@ -97,3 +97,20 @@ export const STUDY_INVITE_EXPIRY_SCHEDULED_AFTER_START_MS = 30 * 60 * 1000;
 export const STUDY_MESSAGE_MAX_LEN = 160;
 export const STUDY_CHAT_MESSAGE_MAX_LEN = 500;
 export const STUDY_MAX_CONCURRENT_ROOMS = 10;
+
+/** Study chat media limits */
+export const STUDY_CHAT_VOICE_MAX_MS = 60_000;
+export const STUDY_CHAT_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+export const STUDY_CHAT_AUDIO_MAX_BYTES = 2 * 1024 * 1024;
+export const STUDY_CHAT_IMAGE_MIMES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+]);
+export const STUDY_CHAT_AUDIO_MIMES = new Set([
+  'audio/webm',
+  'audio/mp4',
+  'audio/mpeg',
+  'audio/ogg',
+  'audio/wav',
+]);

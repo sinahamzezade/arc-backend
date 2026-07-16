@@ -115,6 +115,11 @@ export class LlmService {
           SystemFlagKey.LLM_LESSON_BODY_MODEL,
           DEFAULT_LLM_MODEL,
         );
+      case 'roadmap_completion_coach':
+        return this.systemFlags.getString(
+          SystemFlagKey.LLM_ARLO_MODEL,
+          DEFAULT_LLM_MODEL,
+        );
       default:
         return DEFAULT_LLM_MODEL;
     }

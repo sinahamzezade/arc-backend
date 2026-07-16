@@ -140,6 +140,8 @@ export type SelectedLessonDto = {
   content_outline: Record<string, unknown>;
   week_index: number | null;
   explanation: ExplanationTraceDto | null;
+  /** Required lessons block roadmap graduation; defaults true when omitted. */
+  required?: boolean;
 };
 
 export type SelectedMilestoneDto = {

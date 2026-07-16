@@ -10,6 +10,7 @@ import { Profile } from '../profiles/entities/profile.entity';
 import { Lesson } from '../roadmaps/entities/lesson.entity';
 import { Roadmap } from '../roadmaps/entities/roadmap.entity';
 import { SocialModule } from '../social/social.module';
+import { UploadsModule } from '../uploads/uploads.module';
 import { User } from '../users/entities/user.entity';
 import { UsersModule } from '../users/users.module';
 import { StudySessionEvent } from './entities/study-session-event.entity';
@@ -38,6 +39,7 @@ import { StudyTogetherService } from './study-together.service';
     AuthModule,
     UsersModule,
     LessonsModule,
+    UploadsModule,
     forwardRef(() => GamificationModule),
     forwardRef(() => BadgesModule),
   ],
