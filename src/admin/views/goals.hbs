@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · Arc Admin</title>
+    {{> layout}}
+  </head>
+  <body class="bg-mist text-moss font-sans antialiased">
+    <div class="shell min-h-screen">
+      {{> shell-sidebar}}
+      <main class="relative flex-1 min-w-0 overflow-x-hidden">
+        <div
+          class="pointer-events-none absolute -right-20 top-8 h-64 w-64 rounded-full bg-leaf/70 blur-3xl"
+          aria-hidden="true"
+        ></div>
+
+        <div class="relative px-5 pb-20 pt-6 md:px-10 lg:px-12">
+          {{#if flashOk}}
+            <p class="mb-5 rounded-2xl bg-leaf px-4 py-3 text-sm font-medium text-moss" role="status">{{flashOk}}</p>
+          {{/if}}
+          {{#if flashErr}}
+            <p class="mb-5 rounded-2xl bg-[#fde8e6] px-4 py-3 text-sm font-medium text-coral" role="alert">{{flashErr}}</p>
+          {{/if}}
+
+          <section class="relative mb-10 md:mb-12">
+            <div
+              class="relative overflow-hidden rounded-blob bg-gradient-to-br from-moss via-[#243f36] to-[#314f44] px-7 py-9 text-mist shadow-soft md:w-[90%] md:px-10 md:py-11"
+            >
+              <p class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-leaf/80">Learning</p>
+              <h1 class="font-display max-w-[12ch] text-4xl font-semibold leading-[1.05] tracking-tight md:text-5xl">
+                Goals
+              </h1>
+              <p class="mt-4 max-w-lg text-sm text-mist/60">
+                Learner goals drive roadmap recipes via <code class="text-leaf/90">target_roles</code>.
+                Slug must match a units domain (e.g. <code class="text-leaf/90">crypto-trading</code>).
+              </p>
+              <div class="mt-6 flex flex-wrap items-center gap-2">
+                <span class="inline-flex items-center gap-2 rounded-full bg-leaf/90 px-3 py-1 text-xs font-semibold tabular-nums text-moss">
+                  <i class="fa-solid fa-bullseye" aria-hidden="true"></i>
+                  {{count}} goal{{#unless countSingular}}s{{/unless}}
+                </span>
+              </div>
+            </div>
+          </section>
+
+          <form method="get" action="/admin/goals" class="mb-6 flex flex-wrap items-end gap-3 md:w-[94%] md:max-w-5xl">
+            <div class="admin-field min-w-[180px] flex-1">
+              <label for="q">Search</label>
+              <input id="q" name="q" type="search" value="{{q}}" placeholder="email fragment, role, uuid…" />
+            </div>
+            <div class="admin-field w-40">
+              <label for="status">Status</label>
+              <select id="status" name="status">
+                {{#each statusOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </div>
+            <button
+              type="submit"
+              class="rounded-full bg-moss px-5 py-2.5 text-sm font-semibold text-mist transition hover:brightness-110"
+            >
+              Filter
+            </button>
+          </form>
+
+          {{#if hasRows}}
+            <div class="overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7] md:w-[94%] md:max-w-5xl">
+              <div class="overflow-x-auto">
+                <table class="w-full min-w-[720px] text-left text-sm">
+                  <thead class="border-b border-[#d5ddd7] bg-[#eef3ef] text-xs font-semibold uppercase tracking-[0.12em] text-sage">
+                    <tr>
+                      <th class="px-4 py-3">User</th>
+                      <th class="px-4 py-3">Target roles</th>
+                      <th class="px-4 py-3">Status</th>
+                      <th class="px-4 py-3">Updated</th>
+                      <th class="px-4 py-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {{#each rows}}
+                      <tr class="border-b border-[#e4ebe6] last:border-0">
+                        <td class="px-4 py-3">
+                          <p class="font-semibold text-moss">{{userEmail}}</p>
+                          <p class="font-mono text-[11px] text-sage">{{userId}}</p>
+                        </td>
+                        <td class="px-4 py-3">
+                          <code class="rounded bg-leaf/50 px-1.5 py-0.5 text-xs text-moss">{{rolesLabel}}</code>
+                        </td>
+                        <td class="px-4 py-3">
+                          <span class="rounded-full bg-[#eef3ef] px-2.5 py-1 text-xs font-semibold capitalize text-moss">{{status}}</span>
+                        </td>
+                        <td class="px-4 py-3 text-xs tabular-nums text-sage">{{updatedAt}}</td>
+                        <td class="px-4 py-3 text-right">
+                          <a
+                            href="/admin/goals/{{id}}"
+                            class="inline-flex items-center gap-1.5 rounded-full border border-leaf bg-leaf/40 px-3 py-1.5 text-xs font-semibold text-moss transition hover:bg-leaf"
+                          >
+                            Edit
+                            <i class="fa-solid fa-arrow-right text-[10px]" aria-hidden="true"></i>
+                          </a>
+                        </td>
+                      </tr>
+                    {{/each}}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          {{else}}
+            <div class="rounded-blob bg-foam px-6 py-14 text-center shadow-lift ring-1 ring-[#d5ddd7] md:w-[94%] md:max-w-5xl">
+              <p class="font-display text-xl font-semibold">No goals found</p>
+              <p class="mt-2 text-sm text-sage">Try clearing filters or check another status.</p>
+            </div>
+          {{/if}}
+
+          {{#if hasDomains}}
+            <p class="mt-6 max-w-5xl text-xs text-sage md:w-[94%]">
+              Domains with units:
+              {{#each domains}}
+                <code class="mx-0.5 rounded bg-leaf/40 px-1 text-moss">{{value}}</code>
+              {{/each}}
+            </p>
+          {{/if}}
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

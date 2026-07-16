@@ -45,6 +45,7 @@ import { AdminRankIconService } from './admin-rank-icon.service';
 import { AdminCatalogService } from './admin-catalog.service';
 import { AdminQuestionnaireService } from './admin-questionnaire.service';
 import { AdminRolesService } from './admin-roles.service';
+import { AdminGoalsService } from './admin-goals.service';
 import { AdminRoadmapEngineService } from './admin-roadmap-engine.service';
 import { AdminUserResetService } from './admin-user-reset.service';
 import { AdminLoginDto } from './dto/admin-login.dto';
@@ -61,6 +62,7 @@ import { UnitsCatalogService } from '../content-pool/units-catalog.service';
 import { isUnitsJsonDocument } from '../content-pool/units-json.types';
 import { UnitsGraphError } from '../content-pool/units-graph.util';
 import { EXAMPLE_UNITS_DOCUMENT } from '../content-pool/units-example';
+import { GoalStatus } from '../goals/entities/goal.entity';
 
 function checked(v: unknown): boolean {
   return v === '1' || v === 'on' || v === true || v === 'true';
@@ -284,6 +286,7 @@ export class AdminController {
     private readonly analytics: AdminAnalyticsService,
     private readonly catalog: AdminCatalogService,
     private readonly roadmapEngineAdmin: AdminRoadmapEngineService,
+    private readonly goalsAdmin: AdminGoalsService,
     private readonly badgeIcons: AdminBadgeIconService,
     private readonly rankIcons: AdminRankIconService,
     private readonly rolesAdmin: AdminRolesService,
@@ -2494,6 +2497,135 @@ export class AdminController {
       const msg = e instanceof Error ? e.message : 'Save failed';
       return res.redirect(
         `/admin/feature-flags?err=${encodeURIComponent(msg)}`,
+      );
+    }
+  }
+
+  @Get('goals')
+  @UseGuards(AdminSessionGuard)
+  @Render('goals')
+  async goals(
+    @Req() req: AdminRequest,
+    @Query('ok') ok?: string,
+    @Query('err') err?: string,
+    @Query('q') q?: string,
+    @Query('status') status?: string,
+  ) {
+    const statusFilter =
+      status === 'all' ||
+      status === GoalStatus.Active ||
+      status === GoalStatus.Archived ||
+      status === GoalStatus.Completed
+        ? status
+        : GoalStatus.Active;
+    const [rows, domains] = await Promise.all([
+      this.goalsAdmin.list({ status: statusFilter, q }),
+      this.goalsAdmin.listDomains(),
+    ]);
+    return {
+      title: 'Goals',
+      email: req.session.adminEmail ?? '',
+      navGoals: true,
+      rows,
+      hasRows: rows.length > 0,
+      count: rows.length,
+      countSingular: rows.length === 1,
+      q: q ?? '',
+      statusOptions: [
+        { value: 'active', label: 'Active', selected: statusFilter === 'active' },
+        {
+          value: 'archived',
+          label: 'Archived',
+          selected: statusFilter === 'archived',
+        },
+        {
+          value: 'completed',
+          label: 'Completed',
+          selected: statusFilter === 'completed',
+        },
+        { value: 'all', label: 'All', selected: statusFilter === 'all' },
+      ],
+      domains,
+      hasDomains: domains.length > 0,
+      flashOk: ok === '1' ? 'Goal saved.' : null,
+      flashErr: flashQuery(err),
+    };
+  }
+
+  @Get('goals/:id')
+  @UseGuards(AdminSessionGuard)
+  async goalDetail(
+    @Param('id') id: string,
+    @Req() req: AdminRequest,
+    @Res() res: Response,
+    @Query('ok') ok?: string,
+    @Query('err') err?: string,
+  ) {
+    const row = await this.goalsAdmin.get(id);
+    if (!row) return res.redirect('/admin/goals');
+    const domains = await this.goalsAdmin.listDomains();
+    return res.render('goal-detail', {
+      title: 'Goal',
+      email: req.session.adminEmail ?? '',
+      navGoals: true,
+      row,
+      rolesCsv: row.targetRoles.join(', '),
+      statusOptions: [
+        {
+          value: GoalStatus.Active,
+          label: 'Active',
+          selected: row.status === GoalStatus.Active,
+        },
+        {
+          value: GoalStatus.Archived,
+          label: 'Archived',
+          selected: row.status === GoalStatus.Archived,
+        },
+        {
+          value: GoalStatus.Completed,
+          label: 'Completed',
+          selected: row.status === GoalStatus.Completed,
+        },
+      ],
+      domains,
+      hasDomains: domains.length > 0,
+      flashOk: ok === '1' ? 'Goal saved.' : null,
+      flashErr: flashQuery(err),
+    });
+  }
+
+  @Post('goals/:id')
+  @UseGuards(AdminSessionGuard)
+  async goalSave(
+    @Param('id') id: string,
+    @Body() body: Record<string, string>,
+    @Res() res: Response,
+  ) {
+    try {
+      const statusRaw = String(body.status ?? GoalStatus.Active).trim();
+      const status = Object.values(GoalStatus).includes(statusRaw as GoalStatus)
+        ? (statusRaw as GoalStatus)
+        : GoalStatus.Active;
+      await this.goalsAdmin.update(id, {
+        targetRoles: csvList(body.targetRoles),
+        status,
+        weeklyHours: String(body.weeklyHours ?? '').trim() || null,
+        targetDeadline: String(body.targetDeadline ?? '').trim() || null,
+        confidence: String(body.confidence ?? '').trim() || null,
+      });
+      return res.redirect(`/admin/goals/${id}?ok=1`);
+    } catch (e) {
+      const msg =
+        e instanceof BadRequestException
+          ? String(
+              (e.getResponse() as { message?: string | string[] }).message ??
+                e.message,
+            )
+          : e instanceof Error
+            ? e.message
+            : 'Save failed';
+      return res.redirect(
+        `/admin/goals/${id}?err=${encodeURIComponent(msg)}`,
       );
     }
   }

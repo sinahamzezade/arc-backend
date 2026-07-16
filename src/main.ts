@@ -90,6 +90,8 @@ async function bootstrap() {
       { path: 'admin/skill-graph/(.*)', method: RequestMethod.ALL },
       { path: 'admin/questionnaire', method: RequestMethod.ALL },
       { path: 'admin/questionnaire/(.*)', method: RequestMethod.ALL },
+      { path: 'admin/goals', method: RequestMethod.ALL },
+      { path: 'admin/goals/(.*)', method: RequestMethod.ALL },
       { path: 'admin/roadmap-engine', method: RequestMethod.ALL },
       { path: 'admin/roadmap-engine/(.*)', method: RequestMethod.ALL },
       { path: 'admin/feature-flags', method: RequestMethod.ALL },

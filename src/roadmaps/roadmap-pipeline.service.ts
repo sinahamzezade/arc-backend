@@ -189,15 +189,26 @@ export class RoadmapPipelineService {
     // Stage 5: budget packing (required floor guaranteed)
     const packed = this.packBudget(ordered, requiredGap, budget);
     if (!packed.length) {
+      const recipeSkillsInCatalog = (recipe.requiredSkillIds ?? []).filter(
+        (id) => skills.some((s) => s.id === id),
+      ).length;
+      const detail =
+        `No units matched the learner skill gap ` +
+        `(recipe=${recipe.targetRoleSlug} recipeRequired=${recipe.requiredSkillIds?.length ?? 0} ` +
+        `inCatalog=${recipeSkillsInCatalog} gapRequired=${requiredGap.size} ` +
+        `gapOptional=${optionalGap.size} unitCandidates=${ordered.length} ` +
+        `activeUnits=${units.length}). ` +
+        `Import a units package for this role domain, or set the goal target role to a domain that has units (e.g. crypto-trading).`;
+      this.logger.error(`[roadmap-pipeline] ${detail}`);
       throw new AppException(
         AuthErrorCode.CONTENT_NOT_FOUND,
-        'No units matched the learner skill gap',
+        detail,
         HttpStatus.CONFLICT,
       );
     }
 
     this.logger.log(
-      `[roadmap-pipeline] goal=${input.goal.id} known=${knownSkillIds.size} gapRequired=${requiredGap.size} gapOptional=${optionalGap.size} candidates=${ordered.length} packed=${packed.length} budget=${budget}m`,
+      `[roadmap-pipeline] goal=${input.goal.id} recipe=${recipe.targetRoleSlug} known=${knownSkillIds.size} gapRequired=${requiredGap.size} gapOptional=${optionalGap.size} candidates=${ordered.length} packed=${packed.length} budget=${budget}m`,
     );
 
     // Stage 6: narration

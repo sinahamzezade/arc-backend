@@ -33,6 +33,7 @@ import { AdminRankIconService } from './admin-rank-icon.service';
 import { AdminCatalogService } from './admin-catalog.service';
 import { AdminQuestionnaireService } from './admin-questionnaire.service';
 import { AdminRolesService } from './admin-roles.service';
+import { AdminGoalsService } from './admin-goals.service';
 import { AdminRoadmapEngineService } from './admin-roadmap-engine.service';
 import { AdminSkillGraphService } from './admin-skill-graph.service';
 import { AdminUserResetService } from './admin-user-reset.service';
@@ -86,6 +87,7 @@ import { UploadsModule } from '../uploads/uploads.module';
     AdminSeedService,
     AdminAnalyticsService,
     AdminCatalogService,
+    AdminGoalsService,
     AdminRoadmapEngineService,
     AdminBadgeIconService,
     AdminRankIconService,
