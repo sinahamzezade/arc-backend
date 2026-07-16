@@ -30,7 +30,7 @@ import { RankDefinition } from './entities/rank-definition.entity';
 import { RankProgressRequirement } from './entities/rank-progress-requirement.entity';
 import { RankUnlockHistory } from './entities/rank-unlock-history.entity';
 import { UserRankState } from './entities/user-rank-state.entity';
-import { OUTBOX_RANK_UNLOCKED, RANK_SEEDS } from './ranks.constants';
+import { RANK_SEEDS } from './ranks.constants';
 import {
   ensureBaseGates,
   evaluateGates,
@@ -436,20 +436,28 @@ export class RanksService implements OnModuleInit {
 
       if (shouldCelebrate) {
         celebrated += 1;
-        await this.notifications.create({
-          userId,
-          type: NotificationType.RankUnlocked,
-          title: 'Rank unlocked',
-          body: `Rank unlocked: ${next.title}.`,
-          actionUrl: '/rank',
-          dedupeKey: `rank-unlocked:${userId}:${next.level}`,
-          payload: {
-            level: next.level,
-            slug: next.slug,
-            title: next.title,
-          },
-          sourceEventId: OUTBOX_RANK_UNLOCKED,
-        });
+        // source_event_id is uuid — do not pass event-type strings.
+        // Dedupe via dedupeKey; never block unlock if notif write fails.
+        try {
+          await this.notifications.create({
+            userId,
+            type: NotificationType.RankUnlocked,
+            title: 'Rank unlocked',
+            body: `Rank unlocked: ${next.title}.`,
+            actionUrl: '/rank',
+            dedupeKey: `rank-unlocked:${userId}:${next.level}`,
+            payload: {
+              level: next.level,
+              slug: next.slug,
+              title: next.title,
+            },
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          this.logger.warn(
+            `Rank unlock notif failed level=${next.level}: ${message}`,
+          );
+        }
       }
 
       cursor = next.level;
@@ -575,9 +583,13 @@ export class RanksService implements OnModuleInit {
       const grant = await this.gamification.grantInTx(manager, {
         userId,
         reasonType: RewardReasonType.Rank,
-        reasonId: `rank:${def.level}`,
+        reasonId: def.id,
         idempotencyKey: `rank-unlock:${userId}:${def.level}`,
-        metadata: { countsForLeague: false, rankLevel: def.level },
+        metadata: {
+          countsForLeague: false,
+          rankLevel: def.level,
+          rankSlug: def.slug,
+        },
         lines,
       });
       txId = grant.transactionGroupId;
