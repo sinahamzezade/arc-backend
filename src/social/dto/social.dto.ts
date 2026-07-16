@@ -11,6 +11,8 @@ import {
 } from 'class-validator';
 import {
   InviteFromPolicy,
+  MessagesFromPolicy,
+  PresenceVisibility,
   ProfileVisibility,
 } from '../entities/social-privacy-settings.entity';
 import {
@@ -140,6 +142,14 @@ export class UpdatePrivacyDto {
   @IsOptional()
   @IsEnum(InviteFromPolicy)
   allowStudyInvitesFrom?: InviteFromPolicy;
+
+  @IsOptional()
+  @IsEnum(MessagesFromPolicy)
+  allowMessagesFrom?: MessagesFromPolicy;
+
+  @IsOptional()
+  @IsEnum(PresenceVisibility)
+  presenceVisibility?: PresenceVisibility;
 
   @IsOptional()
   @IsBoolean()

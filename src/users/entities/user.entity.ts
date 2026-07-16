@@ -58,6 +58,10 @@ export class User {
   @Column({ name: 'is_admin', type: 'boolean', default: false })
   isAdmin: boolean;
 
+  /** Strictest messaging/presence policy when true (no stranger DMs). */
+  @Column({ name: 'is_minor', type: 'boolean', default: false })
+  isMinor: boolean;
+
   @Column({ name: 'last_login_at', type: 'timestamptz', nullable: true })
   lastLoginAt: Date | null;
 

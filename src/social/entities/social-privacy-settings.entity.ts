@@ -23,6 +23,17 @@ export enum InviteFromPolicy {
   Nobody = 'nobody',
 }
 
+export enum MessagesFromPolicy {
+  Friends = 'friends',
+  Nobody = 'nobody',
+}
+
+export enum PresenceVisibility {
+  Everyone = 'everyone',
+  Contacts = 'contacts',
+  Nobody = 'nobody',
+}
+
 @Entity('social_privacy_settings')
 export class SocialPrivacySettings {
   @PrimaryGeneratedColumn('uuid')
@@ -80,6 +91,22 @@ export class SocialPrivacySettings {
     default: InviteFromPolicy.Friends,
   })
   allowStudyInvitesFrom: InviteFromPolicy;
+
+  @Column({
+    name: 'allow_messages_from',
+    type: 'varchar',
+    length: 16,
+    default: MessagesFromPolicy.Friends,
+  })
+  allowMessagesFrom: MessagesFromPolicy;
+
+  @Column({
+    name: 'presence_visibility',
+    type: 'varchar',
+    length: 16,
+    default: PresenceVisibility.Contacts,
+  })
+  presenceVisibility: PresenceVisibility;
 
   @Column({ name: 'leaderboard_visible', type: 'boolean', default: true })
   leaderboardVisible: boolean;

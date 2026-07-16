@@ -8,3 +8,7 @@ ALTER TABLE study_session_messages
 -- Allow empty body for pure media messages (caption optional)
 ALTER TABLE study_session_messages
   ALTER COLUMN body SET DEFAULT '';
+
+-- Chat read receipts (watermark per participant)
+ALTER TABLE study_session_participants
+  ADD COLUMN IF NOT EXISTS chat_last_read_at timestamptz NULL;

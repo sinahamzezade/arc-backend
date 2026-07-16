@@ -33,6 +33,8 @@ import {
 import { SocialCounter } from './entities/social-counter.entity';
 import {
   InviteFromPolicy,
+  MessagesFromPolicy,
+  PresenceVisibility,
   ProfileVisibility,
   SocialPrivacySettings,
 } from './entities/social-privacy-settings.entity';
@@ -778,6 +780,8 @@ export class SocialService {
       allowFollows: boolean;
       allowBattleInvitesFrom: InviteFromPolicy;
       allowStudyInvitesFrom: InviteFromPolicy;
+      allowMessagesFrom: MessagesFromPolicy;
+      presenceVisibility: PresenceVisibility;
       leaderboardVisible: boolean;
       hideFromSuggestions: boolean;
     }>,
@@ -1389,6 +1393,8 @@ export class SocialService {
       allowFollows: row.allowFollows,
       allowBattleInvitesFrom: row.allowBattleInvitesFrom,
       allowStudyInvitesFrom: row.allowStudyInvitesFrom,
+      allowMessagesFrom: row.allowMessagesFrom,
+      presenceVisibility: row.presenceVisibility,
       leaderboardVisible: row.leaderboardVisible,
       hideFromSuggestions: row.hideFromSuggestions,
     };

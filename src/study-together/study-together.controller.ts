@@ -182,6 +182,22 @@ export class StudyTogetherController {
     return msg;
   }
 
+  @Post(':id/messages/read')
+  @ApiOperation({ summary: 'Mark study chat as read through latest / messageId' })
+  async markMessagesRead(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { messageId?: string },
+  ) {
+    const receipt = await this.study.markChatRead(
+      user.userId,
+      id,
+      body?.messageId,
+    );
+    this.gateway.broadcastChatRead(id, receipt);
+    return receipt;
+  }
+
   @Post(':id/messages/media')
   @ApiOperation({ summary: 'Send voice or image chat message' })
   @ApiConsumes('multipart/form-data')

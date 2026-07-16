@@ -62,6 +62,10 @@ export class StudySessionParticipant {
   @Column({ name: 'typing_at', type: 'timestamptz', nullable: true })
   typingAt: Date | null;
 
+  /** Watermark: partner has read chat through this timestamp. */
+  @Column({ name: 'chat_last_read_at', type: 'timestamptz', nullable: true })
+  chatLastReadAt: Date | null;
+
   @Column({ name: 'joined_at', type: 'timestamptz', nullable: true })
   joinedAt: Date | null;
 

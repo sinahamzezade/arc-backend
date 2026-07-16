@@ -923,11 +923,16 @@ export class StudyTogetherService {
       : [];
     const profileMap = new Map(profiles.map((p) => [p.userId, p]));
 
+    const partnerReadAt = await this.getPartnerChatReadAt(sessionId, userId);
+
     const items = page.reverse().map((m) => {
       const profile = profileMap.get(m.senderId);
       const name =
         profile?.displayName || profile?.username || 'Learner';
-      return this.toMessageDto(m, name);
+      return this.toMessageDto(m, name, {
+        viewerId: userId,
+        partnerReadAt,
+      });
     });
 
     return {
@@ -981,7 +986,10 @@ export class StudyTogetherService {
     const senderName =
       profile?.displayName || profile?.username || 'Learner';
 
-    return this.toMessageDto(saved, senderName);
+    return this.toMessageDto(saved, senderName, {
+      viewerId: userId,
+      partnerReadAt: null,
+    });
   }
 
   async sendChatMedia(
@@ -1085,7 +1093,10 @@ export class StudyTogetherService {
     const senderName =
       profile?.displayName || profile?.username || 'Learner';
 
-    return this.toMessageDto(saved, senderName);
+    return this.toMessageDto(saved, senderName, {
+      viewerId: userId,
+      partnerReadAt: null,
+    });
   }
 
   async getChatMedia(
@@ -1510,8 +1521,20 @@ export class StudyTogetherService {
     return p.verifiedActiveSeconds < plannedSec * STUDY_QUALIFY_ACTIVE_RATIO;
   }
 
-  private toMessageDto(m: StudySessionMessage, senderName: string) {
+  private toMessageDto(
+    m: StudySessionMessage,
+    senderName: string,
+    opts?: { viewerId?: string; partnerReadAt?: Date | null },
+  ) {
     const kind: StudyMessageKind = m.kind || 'text';
+    const createdAt = m.createdAt.toISOString();
+    const viewerId = opts?.viewerId;
+    const partnerReadAt = opts?.partnerReadAt ?? null;
+    const seen =
+      !!viewerId &&
+      m.senderId === viewerId &&
+      !!partnerReadAt &&
+      m.createdAt.getTime() <= partnerReadAt.getTime();
     return {
       id: m.id,
       sessionId: m.sessionId,
@@ -1525,7 +1548,79 @@ export class StudyTogetherService {
           : null,
       mediaMime: m.mediaMime,
       durationMs: m.durationMs,
-      createdAt: m.createdAt.toISOString(),
+      seen,
+      createdAt,
+    };
+  }
+
+  private async getPartnerChatReadAt(
+    sessionId: string,
+    userId: string,
+  ): Promise<Date | null> {
+    const all = await this.participantsRepo.find({ where: { sessionId } });
+    const other = all.find((p) => p.userId !== userId);
+    return other?.chatLastReadAt ?? null;
+  }
+
+  /**
+   * Advance chat read watermark for viewer; broadcast to partner for receipts.
+   */
+  async markChatRead(
+    userId: string,
+    sessionId: string,
+    messageId?: string,
+  ): Promise<{ userId: string; readAt: string; messageId: string | null }> {
+    await this.requireParticipantSession(userId, sessionId);
+
+    let readAt = new Date();
+    let resolvedMessageId: string | null = messageId ?? null;
+
+    if (messageId) {
+      const msg = await this.messagesRepo.findOne({
+        where: { id: messageId, sessionId },
+      });
+      if (!msg) {
+        throw new AppException(
+          AuthErrorCode.VALIDATION_ERROR,
+          'Message not found',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      readAt = msg.createdAt;
+      resolvedMessageId = msg.id;
+    } else {
+      const latest = await this.messagesRepo.find({
+        where: { sessionId },
+        order: { createdAt: 'DESC' },
+        take: 1,
+      });
+      if (latest[0]) {
+        readAt = latest[0].createdAt;
+        resolvedMessageId = latest[0].id;
+      }
+    }
+
+    const me = await this.participantsRepo.findOneOrFail({
+      where: { sessionId, userId },
+    });
+    if (
+      me.chatLastReadAt &&
+      me.chatLastReadAt.getTime() >= readAt.getTime()
+    ) {
+      return {
+        userId,
+        readAt: me.chatLastReadAt.toISOString(),
+        messageId: resolvedMessageId,
+      };
+    }
+
+    me.chatLastReadAt = readAt;
+    await this.participantsRepo.save(me);
+
+    return {
+      userId,
+      readAt: readAt.toISOString(),
+      messageId: resolvedMessageId,
     };
   }
 

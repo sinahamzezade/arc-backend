@@ -68,6 +68,7 @@ export enum NotificationType {
   Referral = 'referral',
   ProductUpdate = 'product_update',
   CoachMessage = 'coach_message',
+  ChatMessage = 'chat_message',
   System = 'system',
   Security = 'security',
 }

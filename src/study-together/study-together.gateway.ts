@@ -220,6 +220,23 @@ export class StudyTogetherGateway
     return msg;
   }
 
+  @SubscribeMessage('chat:read')
+  async onChatRead(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { sessionId?: string; messageId?: string },
+  ) {
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !body?.sessionId) return { error: 'unauthorized' };
+
+    const receipt = await this.study.markChatRead(
+      userId,
+      body.sessionId,
+      body.messageId,
+    );
+    this.broadcastChatRead(body.sessionId, receipt);
+    return receipt;
+  }
+
   @SubscribeMessage('typing')
   async onTyping(
     @ConnectedSocket() client: Socket,
@@ -239,6 +256,13 @@ export class StudyTogetherGateway
   /** Push chat to everyone in the room (WS send + REST fallback). */
   broadcastChat(sessionId: string, msg: unknown) {
     this.server.to(this.roomName(sessionId)).emit('chat:message', msg);
+  }
+
+  broadcastChatRead(
+    sessionId: string,
+    receipt: { userId: string; readAt: string; messageId: string | null },
+  ) {
+    this.server.to(this.roomName(sessionId)).emit('chat:read', receipt);
   }
 
   private roomName(sessionId: string) {

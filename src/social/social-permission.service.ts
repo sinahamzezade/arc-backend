@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { DataSource, IsNull, Repository } from 'typeorm';
+import { BattleStatus } from '../battles/battle.constants';
+import { StudySessionStatus } from '../study-together/study.constants';
+import { User } from '../users/entities/user.entity';
 import { Follow } from './entities/follow.entity';
 import {
   Friendship,
@@ -8,6 +11,8 @@ import {
 } from './entities/friendship.entity';
 import {
   InviteFromPolicy,
+  MessagesFromPolicy,
+  PresenceVisibility,
   SocialPrivacySettings,
 } from './entities/social-privacy-settings.entity';
 import { UserBlock } from './entities/user-block.entity';
@@ -23,6 +28,9 @@ export class SocialPermissionService {
     private readonly followsRepo: Repository<Follow>,
     @InjectRepository(SocialPrivacySettings)
     private readonly privacyRepo: Repository<SocialPrivacySettings>,
+    @InjectRepository(User)
+    private readonly usersRepo: Repository<User>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async isBlockedEither(a: string, b: string): Promise<boolean> {
@@ -110,5 +118,121 @@ export class SocialPermissionService {
       return { allowed: false, reason: 'not_allowed' };
     }
     return { allowed: true };
+  }
+
+  /**
+   * Direct-message gate: not blocked, respect allow_messages_from / minor,
+   * friends OR shared active study/battle context.
+   */
+  async canMessage(
+    senderId: string,
+    recipientId: string,
+  ): Promise<{ allowed: boolean; reason?: 'self' | 'blocked' | 'not_allowed' }> {
+    if (senderId === recipientId) {
+      return { allowed: false, reason: 'self' };
+    }
+    if (await this.isBlockedEither(senderId, recipientId)) {
+      return { allowed: false, reason: 'blocked' };
+    }
+
+    const [sender, recipient] = await Promise.all([
+      this.usersRepo.findOne({ where: { id: senderId } }),
+      this.usersRepo.findOne({ where: { id: recipientId } }),
+    ]);
+    if (!sender || !recipient) {
+      return { allowed: false, reason: 'not_allowed' };
+    }
+
+    const privacy = await this.privacyRepo.findOne({
+      where: { userId: recipientId },
+    });
+    const policy =
+      privacy?.allowMessagesFrom ?? MessagesFromPolicy.Friends;
+
+    if (
+      recipient.isMinor ||
+      sender.isMinor ||
+      policy === MessagesFromPolicy.Nobody
+    ) {
+      if (!(await this.areFriends(senderId, recipientId))) {
+        return { allowed: false, reason: 'not_allowed' };
+      }
+      return { allowed: true };
+    }
+
+    if (await this.areFriends(senderId, recipientId)) {
+      return { allowed: true };
+    }
+
+    if (await this.shareActiveContext(senderId, recipientId)) {
+      return { allowed: true };
+    }
+
+    return { allowed: false, reason: 'not_allowed' };
+  }
+
+  /** Whether viewer may see target's presence/lastSeen. */
+  async canSeePresence(
+    viewerId: string,
+    targetId: string,
+  ): Promise<boolean> {
+    if (viewerId === targetId) return true;
+    if (await this.isBlockedEither(viewerId, targetId)) return false;
+
+    const target = await this.usersRepo.findOne({ where: { id: targetId } });
+    const privacy = await this.privacyRepo.findOne({
+      where: { userId: targetId },
+    });
+    const visibility =
+      target?.isMinor
+        ? PresenceVisibility.Nobody
+        : (privacy?.presenceVisibility ?? PresenceVisibility.Contacts);
+
+    if (visibility === PresenceVisibility.Nobody) return false;
+    if (visibility === PresenceVisibility.Everyone) return true;
+    return this.areFriends(viewerId, targetId);
+  }
+
+  private async shareActiveContext(a: string, b: string): Promise<boolean> {
+    const studyStatuses = [
+      StudySessionStatus.Accepted,
+      StudySessionStatus.Waiting,
+      StudySessionStatus.Active,
+    ];
+    const battleStatuses = [
+      BattleStatus.Accepted,
+      BattleStatus.Funding,
+      BattleStatus.Ready,
+      BattleStatus.InProgress,
+      BattleStatus.SuddenDeath,
+    ];
+
+    const studyRows = await this.dataSource.query(
+      `
+      SELECT 1 FROM study_sessions
+      WHERE status = ANY($1)
+        AND (
+          (creator_id = $2 AND invitee_id = $3)
+          OR (creator_id = $3 AND invitee_id = $2)
+        )
+      LIMIT 1
+      `,
+      [studyStatuses, a, b],
+    );
+    if (Array.isArray(studyRows) && studyRows.length > 0) return true;
+
+    const battleRows = await this.dataSource.query(
+      `
+      SELECT 1 FROM battles
+      WHERE status = ANY($1)
+        AND (
+          (challenger_id = $2 AND opponent_id = $3)
+          OR (challenger_id = $3 AND opponent_id = $2)
+        )
+      LIMIT 1
+      `,
+      [battleStatuses, a, b],
+    );
+    return Array.isArray(battleRows) && battleRows.length > 0;
   }
 }

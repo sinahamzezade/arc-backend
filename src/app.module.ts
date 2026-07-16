@@ -39,6 +39,7 @@ import { CourseTimingModule } from './course-timing/course-timing.module';
 import { LuckyWheelModule } from './lucky-wheel/lucky-wheel.module';
 import { RanksModule } from './ranks/ranks.module';
 import { StudyTogetherModule } from './study-together/study-together.module';
+import { ChatModule } from './chat/chat.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { BadgesModule } from './badges/badges.module';
 import { QuestsModule } from './quests/quests.module';
@@ -114,6 +115,7 @@ const redisUrl = resolveRedisUrl();
     LuckyWheelModule,
     RanksModule,
     StudyTogetherModule,
+    ChatModule,
     UploadsModule,
     BadgesModule,
     QuestsModule,

@@ -88,6 +88,7 @@ export const TYPE_CATEGORY: Record<NotificationType, NotificationCategory> = {
   [NotificationType.Referral]: NotificationCategory.Social,
   [NotificationType.ProductUpdate]: NotificationCategory.System,
   [NotificationType.CoachMessage]: NotificationCategory.Coach,
+  [NotificationType.ChatMessage]: NotificationCategory.Social,
   [NotificationType.System]: NotificationCategory.System,
   [NotificationType.Security]: NotificationCategory.System,
 };
@@ -120,6 +121,7 @@ export const TYPE_PREFERENCE_GATE: Partial<
   [NotificationType.FriendRequest]: 'social',
   [NotificationType.FriendRequestAccepted]: 'social',
   [NotificationType.NewFollower]: 'social',
+  [NotificationType.ChatMessage]: 'social',
   [NotificationType.StudyInvite]: 'studyTogetherInvites',
   [NotificationType.StudyInviteAccepted]: 'studyTogetherInvites',
   [NotificationType.StudySessionStarting]: 'studyTogetherInvites',
@@ -157,6 +159,7 @@ export const ACTION_URL_ALLOWLIST = [
   '/friends',
   '/social',
   '/study',
+  '/chat',
   '/profile',
   '/rewards',
   '/rank',

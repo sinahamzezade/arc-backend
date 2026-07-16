@@ -50,6 +50,10 @@ export class StudyChatMediaSchemaService implements OnModuleInit {
         ALTER TABLE study_session_messages
           ALTER COLUMN body SET DEFAULT '';
       `);
+      await this.dataSource.query(`
+        ALTER TABLE study_session_participants
+          ADD COLUMN IF NOT EXISTS chat_last_read_at timestamptz NULL;
+      `);
       this.logger.log('study_session_messages media schema ready');
     } catch (err) {
       this.logger.warn(
