@@ -81,28 +81,63 @@ export class CallService {
   ) {}
 
   async getIceServers(userId: string): Promise<IceServersResponse> {
+    const isProd = this.config.get<string>('NODE_ENV') === 'production';
+
+    // Preferred for managed TURN (Metered / Open Relay dashboard API key).
+    const metered = await this.fetchMeteredIceServers();
+    if (metered) {
+      return { iceServers: metered, ttlSec: CALL_TURN_TTL_SEC };
+    }
+
     const stunRaw =
       this.config.get<string>('STUN_URLS') ||
       this.config.get<string>('TURN_STUN_URLS') ||
       'stun:stun.l.google.com:19302';
-    const stunUrls = stunRaw
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const stunUrls = new Set(
+      stunRaw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
+    // Always keep a public STUN fallback (dev coturn may be unreachable from WAN).
+    stunUrls.add('stun:stun.l.google.com:19302');
 
-    const iceServers: IceServersResponse['iceServers'] = stunUrls.map(
+    const iceServers: IceServersResponse['iceServers'] = [...stunUrls].map(
       (urls) => ({ urls }),
     );
 
-    const secret = this.config.get<string>('TURN_SHARED_SECRET');
     const turnRaw =
       this.config.get<string>('TURN_URLS') ||
       this.config.get<string>('TURN_URIS');
-    if (secret && turnRaw) {
-      const turnUrls = turnRaw
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
+    const turnUrls = (turnRaw || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .filter((url) => {
+        const isLoopback = /localhost|127\.0\.0\.1/.test(url);
+        if (isProd && isLoopback) {
+          this.logger.warn(`Skipping loopback TURN URL in production: ${url}`);
+          return false;
+        }
+        return true;
+      });
+
+    // Static username/password (some managed TURN dashboards).
+    const staticUser = this.config.get<string>('TURN_USERNAME')?.trim();
+    const staticPass = this.config.get<string>('TURN_CREDENTIAL')?.trim();
+    if (staticUser && staticPass && turnUrls.length > 0) {
+      iceServers.push({
+        urls: turnUrls.length === 1 ? turnUrls[0] : turnUrls,
+        username: staticUser,
+        credential: staticPass,
+        credentialType: 'password',
+      });
+      return { iceServers, ttlSec: CALL_TURN_TTL_SEC };
+    }
+
+    // Coturn / Open Relay staticauth — time-limited HMAC (use-auth-secret).
+    const secret = this.config.get<string>('TURN_SHARED_SECRET');
+    if (secret && turnUrls.length > 0) {
       const ttl = CALL_TURN_TTL_SEC;
       const expiry = Math.floor(Date.now() / 1000) + ttl;
       const username = `${expiry}:${userId}`;
@@ -115,9 +150,57 @@ export class CallService {
         credential,
         credentialType: 'password',
       });
+    } else if (isProd) {
+      this.logger.warn(
+        'No TURN configured — set TURN_METERED_API_URL+KEY, or TURN_SHARED_SECRET+TURN_URLS (Open Relay staticauth / coturn)',
+      );
     }
 
     return { iceServers, ttlSec: CALL_TURN_TTL_SEC };
+  }
+
+  /**
+   * Metered / Open Relay REST → iceServers array.
+   * TURN_METERED_API_URL e.g. https://<app>.metered.live/api/v1/turn/credentials
+   */
+  private async fetchMeteredIceServers(): Promise<
+    IceServersResponse['iceServers'] | null
+  > {
+    const base = this.config.get<string>('TURN_METERED_API_URL')?.trim();
+    const apiKey = this.config.get<string>('TURN_METERED_API_KEY')?.trim();
+    if (!base || !apiKey) return null;
+
+    const url = new URL(base);
+    if (!url.searchParams.has('apiKey')) {
+      url.searchParams.set('apiKey', apiKey);
+    }
+
+    try {
+      const res = await fetch(url.toString(), {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(4_000),
+      });
+      if (!res.ok) {
+        this.logger.warn(`Metered TURN API HTTP ${res.status}`);
+        return null;
+      }
+      const data = (await res.json()) as unknown;
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray((data as { iceServers?: unknown }).iceServers)
+          ? (data as { iceServers: unknown[] }).iceServers
+          : null;
+      if (!list || list.length === 0) {
+        this.logger.warn('Metered TURN API returned empty iceServers');
+        return null;
+      }
+      return list as IceServersResponse['iceServers'];
+    } catch (err) {
+      this.logger.warn(
+        `Metered TURN API failed: ${err instanceof Error ? err.message : err}`,
+      );
+      return null;
+    }
   }
 
   async listHistory(userId: string, limit = 30): Promise<CallDto[]> {
