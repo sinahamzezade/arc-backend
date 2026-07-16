@@ -160,6 +160,8 @@ export class ChatGateway
     }
     set.add(client.id);
     this.socketRooms.set(client.id, new Set());
+    // Cross-instance delivery (Railway + Redis adapter): room > local Map.
+    await client.join(this.userRoom(userId));
 
     await this.chat.setPresenceOnline(userId);
     const conversationIds = await this.chat.listActiveConversationIds(userId);
@@ -453,12 +455,13 @@ export class ChatGateway
     return `chat:${conversationId}`;
   }
 
+  private userRoom(userId: string) {
+    return `user:${userId}`;
+  }
+
+  /** Fan-out to all sockets for user — works across Railway replicas via Redis adapter. */
   private emitToUser(userId: string, event: string, payload: unknown) {
-    const sockets = this.userSockets.get(userId);
-    if (!sockets) return;
-    for (const sid of sockets) {
-      this.server.to(sid).emit(event, payload);
-    }
+    this.server.to(this.userRoom(userId)).emit(event, payload);
   }
 
   private countOthersInRoom(conversationId: string, excludeUserId: string) {
