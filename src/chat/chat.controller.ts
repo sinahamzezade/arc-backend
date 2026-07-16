@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   Res,
   UploadedFile,
@@ -34,6 +35,7 @@ import { ChatService } from './chat.service';
 import {
   AddMembersDto,
   BlockUserDto,
+  ChatKeysQueryDto,
   ConversationsQueryDto,
   CreateChatReportDto,
   CreateConversationDto,
@@ -41,7 +43,9 @@ import {
   MarkReadDto,
   MessagesQueryDto,
   MuteConversationDto,
+  PutConversationKeyWrapsDto,
   SendMessageDto,
+  UpsertChatUserKeyDto,
 } from './dto/chat.dto';
 
 @ApiTags('chat')
@@ -55,6 +59,52 @@ export class ChatController {
   @ApiOperation({ summary: 'Unread totals for header badge' })
   summary(@CurrentUser() user: AuthUserPayload) {
     return this.chat.getSummary(user.userId);
+  }
+
+  @Put('keys/me')
+  @ApiOperation({ summary: 'Publish E2E identity public key' })
+  upsertMyKey(
+    @CurrentUser() user: AuthUserPayload,
+    @Body() dto: UpsertChatUserKeyDto,
+  ) {
+    return this.chat.upsertUserPublicKey(user.userId, dto.publicKey);
+  }
+
+  @Get('keys')
+  @ApiOperation({ summary: 'Fetch E2E public keys for user ids' })
+  getKeys(
+    @CurrentUser() user: AuthUserPayload,
+    @Query() query: ChatKeysQueryDto,
+  ) {
+    return this.chat.getUserPublicKeys(user.userId, query.userIds);
+  }
+
+  @Get('conversations/:id/key-wraps')
+  @ApiOperation({ summary: 'Own conversation key wrap + member ids' })
+  getKeyWraps(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.chat.getConversationKeyWrap(user.userId, id);
+  }
+
+  @Put('conversations/:id/key-wraps')
+  @ApiOperation({ summary: 'Upload sealed conversation keys for members' })
+  putKeyWraps(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: PutConversationKeyWrapsDto,
+  ) {
+    return this.chat.putConversationKeyWraps(user.userId, id, dto);
+  }
+
+  @Delete('conversations/:id/key-wraps')
+  @ApiOperation({ summary: 'Reset E2E wraps for conversation (rekey)' })
+  resetKeyWraps(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.chat.resetConversationKeyWraps(user.userId, id);
   }
 
   @Get('conversations')

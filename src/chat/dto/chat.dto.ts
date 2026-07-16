@@ -14,6 +14,7 @@ import {
   Min,
   MinLength,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import {
   ChatMessageType,
@@ -77,7 +78,7 @@ export class SendMessageDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(4000)
+  @MaxLength(12_000)
   body?: string;
 
   @IsOptional()
@@ -99,7 +100,7 @@ export class SendMessageDto {
 export class EditMessageDto {
   @IsString()
   @MinLength(1)
-  @MaxLength(4000)
+  @MaxLength(12_000)
   body!: string;
 }
 
@@ -146,4 +147,42 @@ export class CreateChatReportDto {
 export class MuteConversationDto {
   @IsBoolean()
   muted!: boolean;
+}
+
+export class UpsertChatUserKeyDto {
+  @IsString()
+  @MinLength(32)
+  @MaxLength(128)
+  publicKey!: string;
+}
+
+export class ChatKeysQueryDto {
+  /** Comma-separated user UUIDs. */
+  @IsString()
+  @MinLength(36)
+  userIds!: string;
+}
+
+export class KeyWrapItemDto {
+  @IsUUID()
+  userId!: string;
+
+  @IsString()
+  @MinLength(32)
+  @MaxLength(4096)
+  wrappedKey!: string;
+}
+
+export class PutConversationKeyWrapsDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  epoch!: number;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => KeyWrapItemDto)
+  wraps!: KeyWrapItemDto[];
 }

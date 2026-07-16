@@ -20,10 +20,12 @@ import {
   NotificationType,
 } from '../notifications/entities/notification.entity';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ProfilesService } from '../profiles/profiles.service';
 import { SocialPermissionService } from '../social/social-permission.service';
 import { UsersService } from '../users/users.service';
 import {
   CALL_CONNECTING_STALE_MS,
+  CALL_DISCONNECT_GRACE_MS,
   CALL_IN_CALL_TTL_SEC,
   CALL_INVITE_RATE_LIMIT,
   CALL_INVITE_RATE_WINDOW_SEC,
@@ -64,6 +66,8 @@ export type IceServersResponse = {
 export class CallService {
   private readonly logger = new Logger(CallService.name);
   private readonly inviteTimers = new Map<string, NodeJS.Timeout>();
+  /** userId → pending end after last socket disconnect */
+  private readonly disconnectGraceTimers = new Map<string, NodeJS.Timeout>();
 
   /** Wired by ChatGateway afterInit */
   emitToUser?: (userId: string, event: string, payload: unknown) => void;
@@ -75,6 +79,7 @@ export class CallService {
     private readonly chat: ChatService,
     private readonly permissions: SocialPermissionService,
     private readonly users: UsersService,
+    private readonly profiles: ProfilesService,
     private readonly redis: RedisService,
     private readonly config: ConfigService,
     private readonly notifications: NotificationsService,
@@ -348,10 +353,17 @@ export class CallService {
     await this.setInCall(peerId, call.id);
     this.armInviteTimeout(call.id);
 
+    const callerProfile = await this.profiles.findByUserId(callerId);
+    const fromName =
+      callerProfile?.displayName?.trim() ||
+      callerProfile?.username?.trim() ||
+      'Someone';
+
     const incoming = {
       callId: call.id,
       conversationId: call.conversationId,
       fromUserId: callerId,
+      fromName,
       mode: call.mode,
     };
 
@@ -361,13 +373,17 @@ export class CallService {
       .create({
         userId: peerId,
         type: NotificationType.IncomingCall,
-        title: 'Incoming call',
-        body: call.mode === CallMode.Video ? 'Video call' : 'Voice call',
-        actionUrl: `/chat/${call.conversationId}`,
+        title: fromName,
+        body:
+          call.mode === CallMode.Video
+            ? 'Incoming video call'
+            : 'Incoming voice call',
+        actionUrl: `/chat/${call.conversationId}?call=${call.id}`,
         payload: {
           callId: call.id,
           conversationId: call.conversationId,
           fromUserId: callerId,
+          fromName,
           mode: call.mode,
         },
         dedupeKey: `call_invite:${call.id}`,
@@ -702,10 +718,33 @@ export class CallService {
   }
 
   /**
-   * Last chat socket gone — end ringing/connecting only.
+   * Last chat socket gone — arm grace, then end ringing/connecting only.
    * Leave Active alone (tab refresh reconnects; hangup/ICE still owns that).
+   * Grace cancels on reconnect (see cancelDisconnectRelease).
    */
-  async releaseCallsOnDisconnect(userId: string): Promise<void> {
+  releaseCallsOnDisconnect(userId: string): void {
+    this.clearDisconnectGrace(userId);
+    const t = setTimeout(() => {
+      this.disconnectGraceTimers.delete(userId);
+      void this.releaseCallsAfterGrace(userId);
+    }, CALL_DISCONNECT_GRACE_MS);
+    this.disconnectGraceTimers.set(userId, t);
+  }
+
+  /** New socket for user — keep ringing/connecting alive. */
+  cancelDisconnectRelease(userId: string): void {
+    this.clearDisconnectGrace(userId);
+  }
+
+  private clearDisconnectGrace(userId: string) {
+    const t = this.disconnectGraceTimers.get(userId);
+    if (t) {
+      clearTimeout(t);
+      this.disconnectGraceTimers.delete(userId);
+    }
+  }
+
+  private async releaseCallsAfterGrace(userId: string): Promise<void> {
     const callId = await this.reconcileInCall(userId);
     if (!callId) return;
     const call = await this.callsRepo.findOne({ where: { id: callId } });
@@ -719,7 +758,7 @@ export class CallService {
           : CallEndReason.Missed
         : CallEndReason.Failed;
     this.logger.warn(
-      `User ${userId} disconnected mid-call ${call.id} — ending as ${reason}`,
+      `User ${userId} still offline after grace — ending call ${call.id} as ${reason}`,
     );
     await this.endCall(call, reason);
   }

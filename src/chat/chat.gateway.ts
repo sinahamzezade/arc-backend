@@ -24,6 +24,7 @@ import Redis from 'ioredis';
 import { UsersService } from '../users/users.service';
 import { CallMode } from '../calls/call.constants';
 import { CallService } from '../calls/call.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { ChatMessageType } from './chat.constants';
 import { ChatService } from './chat.service';
 
@@ -56,6 +57,7 @@ export class ChatGateway
     private readonly authUserCache: AuthUserCacheService,
     private readonly chat: ChatService,
     private readonly calls: CallService,
+    private readonly notifications: NotificationsService,
     @Inject(REDIS_PUB_CLIENT) private readonly redisPub: Redis | null,
     @Inject(REDIS_SUB_CLIENT) private readonly redisSub: Redis | null,
   ) {}
@@ -104,6 +106,10 @@ export class ChatGateway
     };
 
     this.calls.emitToUser = (userId, event, payload) => {
+      this.emitToUser(userId, event, payload);
+    };
+
+    this.notifications.emitToUser = (userId, event, payload) => {
       this.emitToUser(userId, event, payload);
     };
 
@@ -162,14 +168,13 @@ export class ChatGateway
     this.socketRooms.set(client.id, new Set());
     // Cross-instance delivery (Railway + Redis adapter): room > local Map.
     await client.join(this.userRoom(userId));
+    // Cancel pending "last socket gone → end call" (upgrade / remount).
+    this.calls.cancelDisconnectRelease(userId);
 
     await this.chat.setPresenceOnline(userId);
-    const conversationIds = await this.chat.listActiveConversationIds(userId);
-    for (const id of conversationIds) {
-      const room = this.roomName(id);
-      await client.join(room);
-      this.socketRooms.get(client.id)?.add(room);
-    }
+    // Do NOT auto-join every conversation room — that made `inRoom` always
+    // true and suppressed chat in-app notifications while the app was open.
+    // Clients emit `conversation.join` only when viewing a thread.
 
     const summary = await this.chat.getSummary(userId);
     client.emit('unread.changed', { unreadTotal: summary.unreadTotal });
@@ -186,16 +191,46 @@ export class ChatGateway
       if (set.size === 0) {
         this.userSockets.delete(userId);
         await this.chat.setPresenceOffline(userId);
-        // Drop orphan in_call Redis locks (ICE fail / tab close / deploy).
-        await this.calls
-          .releaseCallsOnDisconnect(userId)
-          .catch((err) =>
-            this.logger.warn(
-              `Call release on disconnect failed: ${err instanceof Error ? err.message : err}`,
-            ),
-          );
+        // Grace period — Socket.IO upgrade / brief remount must not kill ringing.
+        this.calls.releaseCallsOnDisconnect(userId);
       }
     }
+  }
+
+  @SubscribeMessage('conversation.join')
+  async onConversationJoin(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { conversationId?: string },
+  ) {
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !body?.conversationId) return { error: 'CHAT_NOT_A_MEMBER' };
+    try {
+      await this.chat.requireActiveMember(userId, body.conversationId);
+      const room = this.roomName(body.conversationId);
+      await client.join(room);
+      let rooms = this.socketRooms.get(client.id);
+      if (!rooms) {
+        rooms = new Set();
+        this.socketRooms.set(client.id, rooms);
+      }
+      rooms.add(room);
+      return { ok: true };
+    } catch (err) {
+      return this.errPayload(err);
+    }
+  }
+
+  @SubscribeMessage('conversation.leave')
+  async onConversationLeave(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { conversationId?: string },
+  ) {
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !body?.conversationId) return { error: 'CHAT_NOT_A_MEMBER' };
+    const room = this.roomName(body.conversationId);
+    await client.leave(room);
+    this.socketRooms.get(client.id)?.delete(room);
+    return { ok: true };
   }
 
   @SubscribeMessage('message.send')

@@ -38,7 +38,14 @@ export enum ChatReportStatus {
 }
 
 export const CHAT_MAX_BODY_CHARS = 4000;
+/** Ciphertext envelopes are larger than plaintext (base64url + nonce/tag). */
+export const CHAT_MAX_E2E_BODY_CHARS = 12_000;
+export const CHAT_E2E_BODY_PREFIX = 'e2e:v1:';
 export const CHAT_MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+
+export function isE2eBody(body: string | null | undefined): boolean {
+  return typeof body === 'string' && body.startsWith(CHAT_E2E_BODY_PREFIX);
+}
 export const CHAT_VOICE_MAX_DURATION_MS = 60_000;
 export const CHAT_VOICE_MIN_DURATION_MS = 400;
 export const CHAT_MSG_RATE_LIMIT = 30; // per minute

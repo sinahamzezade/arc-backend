@@ -182,14 +182,14 @@ export const QUESTIONNAIRE_SEED: QuestionnaireSchemaDto = {
     {
       id: 'schedule',
       stepNumber: 7,
-      title: 'Which days and times normally work best?',
+      title: 'Which times of day normally work best?',
       subtitle: 'Used for reminders and weekly pacing — not calendar invites.',
       selection: 'multi',
       uiKind: 'schedule',
       reviewLabel: 'Best Time',
       reviewIcon: 'calendar',
       options: [],
-      scheduleDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+      scheduleDays: [],
       scheduleTimes: [
         { value: 'morning', label: 'Morning (6 AM – 12 PM)' },
         { value: 'afternoon', label: 'Afternoon (12 PM – 5 PM)' },

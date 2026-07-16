@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import {
   DataSource,
+  In,
   IsNull,
   Repository,
 } from 'typeorm';
@@ -27,6 +28,7 @@ import {
   CHAT_CREATE_RATE_WINDOW_SEC,
   CHAT_MAX_ATTACHMENT_BYTES,
   CHAT_MAX_BODY_CHARS,
+  CHAT_MAX_E2E_BODY_CHARS,
   CHAT_MSG_RATE_LIMIT,
   CHAT_MSG_RATE_WINDOW_SEC,
   CHAT_PRESENCE_TTL_SEC,
@@ -40,16 +42,20 @@ import {
   ConversationType,
   directPairKey,
   isChatAudioMime,
+  isE2eBody,
   normalizeMime,
 } from './chat.constants';
 import { ChatAttachment } from './entities/chat-attachment.entity';
+import { ChatConversationKeyWrap } from './entities/chat-conversation-key-wrap.entity';
 import { ChatMessage } from './entities/chat-message.entity';
 import { ChatReport } from './entities/chat-report.entity';
+import { ChatUserKey } from './entities/chat-user-key.entity';
 import { ConversationMember } from './entities/conversation-member.entity';
 import { Conversation } from './entities/conversation.entity';
 import type {
   CreateChatReportDto,
   CreateConversationDto,
+  PutConversationKeyWrapsDto,
   SendMessageDto,
 } from './dto/chat.dto';
 
@@ -62,6 +68,8 @@ export type ChatMessageDto = {
   clientMsgId: string;
   type: ChatMessageType;
   body: string | null;
+  /** True when body is an e2e:v1: ciphertext envelope. */
+  e2e: boolean;
   attachmentId: string | null;
   attachmentUrl: string | null;
   attachmentMime: string | null;
@@ -77,6 +85,7 @@ export type ChatMessageDto = {
     senderId: string;
     senderName: string;
     body: string | null;
+    e2e: boolean;
   } | null;
 };
 
@@ -136,6 +145,10 @@ export class ChatService {
     private readonly attachmentsRepo: Repository<ChatAttachment>,
     @InjectRepository(ChatReport)
     private readonly reportsRepo: Repository<ChatReport>,
+    @InjectRepository(ChatUserKey)
+    private readonly userKeysRepo: Repository<ChatUserKey>,
+    @InjectRepository(ChatConversationKeyWrap)
+    private readonly keyWrapsRepo: Repository<ChatConversationKeyWrap>,
     @InjectRepository(Profile)
     private readonly profilesRepo: Repository<Profile>,
     private readonly dataSource: DataSource,
@@ -427,22 +440,41 @@ export class ChatService {
     await this.assertMsgRateLimit(userId);
 
     const type = dto.type ?? ChatMessageType.Text;
-    let body = this.sanitizeBody(dto.body ?? null);
-    if (type === ChatMessageType.Text) {
-      if (!body || !body.trim()) {
-        throw new AppException(
-          AuthErrorCode.VALIDATION_ERROR,
-          'Message body required',
-        );
-      }
-      if (body.length > CHAT_MAX_BODY_CHARS) {
+    const rawBody = dto.body ?? null;
+    const e2e = isE2eBody(rawBody);
+    let body: string | null;
+    if (e2e) {
+      body = rawBody!.trim();
+      if (body.length > CHAT_MAX_E2E_BODY_CHARS) {
         throw new AppException(
           AuthErrorCode.CHAT_MESSAGE_TOO_LARGE,
           'Message too large',
         );
       }
+    } else {
+      body = this.sanitizeBody(rawBody);
+      if (type === ChatMessageType.Text) {
+        if (!body || !body.trim()) {
+          throw new AppException(
+            AuthErrorCode.VALIDATION_ERROR,
+            'Message body required',
+          );
+        }
+        if (body.length > CHAT_MAX_BODY_CHARS) {
+          throw new AppException(
+            AuthErrorCode.CHAT_MESSAGE_TOO_LARGE,
+            'Message too large',
+          );
+        }
+      }
+      this.moderateOrThrow(body);
     }
-    this.moderateOrThrow(body);
+    if (type === ChatMessageType.Text && e2e && (!body || body.length < 16)) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'Message body required',
+      );
+    }
 
     let attachment: ChatAttachment | null = null;
     if (dto.attachmentId) {
@@ -591,12 +623,25 @@ export class ChatService {
       );
     }
     await this.requireActiveMember(userId, msg.conversationId);
-    const sanitized = this.sanitizeBody(body);
-    if (!sanitized?.trim()) {
-      throw new AppException(AuthErrorCode.VALIDATION_ERROR, 'Body required');
+    const e2e = isE2eBody(body);
+    let nextBody: string;
+    if (e2e) {
+      nextBody = body.trim();
+      if (nextBody.length > CHAT_MAX_E2E_BODY_CHARS) {
+        throw new AppException(
+          AuthErrorCode.CHAT_MESSAGE_TOO_LARGE,
+          'Message too large',
+        );
+      }
+    } else {
+      const sanitized = this.sanitizeBody(body);
+      if (!sanitized?.trim()) {
+        throw new AppException(AuthErrorCode.VALIDATION_ERROR, 'Body required');
+      }
+      this.moderateOrThrow(sanitized);
+      nextBody = sanitized;
     }
-    this.moderateOrThrow(sanitized);
-    msg.body = sanitized;
+    msg.body = nextBody;
     msg.editedAt = new Date();
     await this.messagesRepo.save(msg);
     const peerReadAt = await this.getPeerReadWatermark(
@@ -813,6 +858,164 @@ export class ChatService {
       status: report.status,
       reason: report.reason,
       createdAt: report.createdAt.toISOString(),
+    };
+  }
+
+  // ── E2E keys ───────────────────────────────────────────────────
+
+  async upsertUserPublicKey(userId: string, publicKey: string) {
+    const key = publicKey.trim();
+    if (!/^[A-Za-z0-9_-]{32,128}$/.test(key)) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'Invalid public key',
+      );
+    }
+    const existing = await this.userKeysRepo.findOne({ where: { userId } });
+    if (existing) {
+      if (existing.publicKey !== key) {
+        // Identity rotated on this account — force conversation re-key.
+        await this.wipeKeyWrapsForUserConversations(userId);
+      }
+      existing.publicKey = key;
+      await this.userKeysRepo.save(existing);
+      return {
+        userId,
+        publicKey: existing.publicKey,
+        updatedAt: existing.updatedAt.toISOString(),
+      };
+    }
+    const saved = await this.userKeysRepo.save(
+      this.userKeysRepo.create({ userId, publicKey: key }),
+    );
+    return {
+      userId,
+      publicKey: saved.publicKey,
+      updatedAt: saved.updatedAt.toISOString(),
+    };
+  }
+
+  /** Drop all wraps in conversations this user belongs to (full rekey). */
+  private async wipeKeyWrapsForUserConversations(userId: string) {
+    const memberships = await this.membersRepo.find({ where: { userId } });
+    const convIds = [...new Set(memberships.map((m) => m.conversationId))];
+    if (!convIds.length) return;
+    await this.keyWrapsRepo.delete({ conversationId: In(convIds) });
+  }
+
+  async resetConversationKeyWraps(userId: string, conversationId: string) {
+    await this.requireActiveMember(userId, conversationId);
+    await this.keyWrapsRepo.delete({ conversationId });
+    return { conversationId, reset: true };
+  }
+
+  async getUserPublicKeys(callerId: string, userIdsRaw: string) {
+    void callerId;
+    const ids = [
+      ...new Set(
+        userIdsRaw
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+      ),
+    ].slice(0, 50);
+    if (!ids.length) {
+      return { keys: [] as Array<{ userId: string; publicKey: string }> };
+    }
+    const rows = await this.userKeysRepo.find({
+      where: { userId: In(ids) },
+    });
+    return {
+      keys: rows.map((r) => ({ userId: r.userId, publicKey: r.publicKey })),
+    };
+  }
+
+  async getConversationKeyWrap(userId: string, conversationId: string) {
+    await this.requireActiveMember(userId, conversationId);
+    const members = await this.membersRepo.find({
+      where: { conversationId, leftAt: IsNull() },
+    });
+    const memberIds = members.map((m) => m.userId);
+    const anyWraps = await this.keyWrapsRepo.count({
+      where: { conversationId },
+    });
+    const wraps = await this.keyWrapsRepo.find({
+      where: { conversationId, userId },
+      order: { keyEpoch: 'DESC' },
+      take: 1,
+    });
+    const wrap = wraps[0] ?? null;
+    return {
+      conversationId,
+      memberIds,
+      epoch: wrap?.keyEpoch ?? null,
+      wrappedKey: wrap?.wrappedKey ?? null,
+      hasWraps: anyWraps > 0,
+    };
+  }
+
+  async putConversationKeyWraps(
+    userId: string,
+    conversationId: string,
+    dto: PutConversationKeyWrapsDto,
+  ) {
+    await this.requireActiveMember(userId, conversationId);
+    const members = await this.membersRepo.find({
+      where: { conversationId, leftAt: IsNull() },
+    });
+    const memberSet = new Set(members.map((m) => m.userId));
+    for (const w of dto.wraps) {
+      if (!memberSet.has(w.userId)) {
+        throw new AppException(
+          AuthErrorCode.VALIDATION_ERROR,
+          'Wrap target is not a member',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      if (!/^[A-Za-z0-9_-]{32,4096}$/.test(w.wrappedKey.trim())) {
+        throw new AppException(
+          AuthErrorCode.VALIDATION_ERROR,
+          'Invalid wrapped key',
+        );
+      }
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.query(
+        `SELECT id FROM conversations WHERE id = $1 FOR UPDATE`,
+        [conversationId],
+      );
+      const repo = manager.getRepository(ChatConversationKeyWrap);
+      let inserted = 0;
+      for (const w of dto.wraps) {
+        const row = await repo.findOne({
+          where: {
+            conversationId,
+            userId: w.userId,
+            keyEpoch: dto.epoch,
+          },
+        });
+        if (row) {
+          // Never overwrite — prevents dual-bootstrap key clash.
+          continue;
+        }
+        await repo.save(
+          repo.create({
+            conversationId,
+            userId: w.userId,
+            wrappedKey: w.wrappedKey.trim(),
+            keyEpoch: dto.epoch,
+          }),
+        );
+        inserted += 1;
+      }
+      return inserted;
+    });
+
+    return {
+      conversationId,
+      epoch: dto.epoch,
+      count: dto.wraps.length,
     };
   }
 
@@ -1155,7 +1358,7 @@ export class ChatService {
             title: name,
             body:
               msg.type === ChatMessageType.Text
-                ? (msg.body ?? 'New message').slice(0, 120)
+                ? 'New message'
                 : msg.type === ChatMessageType.Audio
                   ? 'Sent a voice message'
                   : msg.type === ChatMessageType.Image
@@ -1338,12 +1541,16 @@ export class ChatService {
             'Learner',
           body: parent.deletedAt
             ? 'Message deleted'
-            : (parent.body?.slice(0, 160) ??
-              (parent.type === ChatMessageType.Image
+            : parent.body == null
+              ? parent.type === ChatMessageType.Image
                 ? 'Photo'
                 : parent.type === ChatMessageType.Audio
                   ? 'Voice message'
-                  : null)),
+                  : null
+              : isE2eBody(parent.body)
+                ? parent.body
+                : parent.body.slice(0, 160),
+          e2e: !parent.deletedAt && isE2eBody(parent.body),
         };
       }
     }
@@ -1357,6 +1564,7 @@ export class ChatService {
       clientMsgId: msg.clientMsgId,
       type: msg.type,
       body: msg.deletedAt ? null : msg.body,
+      e2e: !msg.deletedAt && isE2eBody(msg.body),
       attachmentId: msg.deletedAt ? null : msg.attachmentId,
       attachmentUrl: msg.deletedAt ? null : attachmentUrl,
       attachmentMime: msg.deletedAt ? null : attachmentMime,

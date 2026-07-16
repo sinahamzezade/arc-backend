@@ -313,6 +313,14 @@ export class SocialService {
     return { items: await this.enrichRequests(rows, 'from') };
   }
 
+  /** Lightweight badge count — no enrich / profile joins. */
+  async countIncomingRequests(userId: string): Promise<number> {
+    await this.expireStaleForUser(userId);
+    return this.requestsRepo.count({
+      where: { receiverId: userId, status: FriendRequestStatus.Pending },
+    });
+  }
+
   async listOutgoingRequests(userId: string) {
     await this.expireStaleForUser(userId);
     const rows = await this.requestsRepo.find({

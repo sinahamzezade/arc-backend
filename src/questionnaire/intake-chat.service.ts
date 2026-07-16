@@ -418,21 +418,20 @@ export class IntakeChatService {
     selection: IntakeChatSelectionDto,
     patch: QuestionnaireAnswers,
   ): string {
-    const daysAllowed = new Set(step.scheduleDays ?? []);
     const timesAllowed = new Set((step.scheduleTimes ?? []).map((t) => t.value));
-    const days = (selection.days ?? []).filter((d) => daysAllowed.has(d));
     const times = (selection.times ?? selection.values ?? []).filter((t) =>
       timesAllowed.has(t),
     );
-    if (!days.length || !times.length) {
+    if (!times.length) {
       throw new AppException(
         AuthErrorCode.VALIDATION_ERROR,
-        'Schedule requires at least one valid day and time',
+        'Schedule requires at least one valid time of day',
         HttpStatus.BAD_REQUEST,
       );
     }
-    patch[step.id] = { days, times };
-    return `Schedule: ${days.join(', ')} · ${times.join(', ')}`;
+    // Days retired from intake — empty array keeps answer shape stable.
+    patch[step.id] = { days: [], times };
+    return `Schedule: ${times.join(', ')}`;
   }
 
   /** Multi pick — first value is the primary track, rest are secondary. */

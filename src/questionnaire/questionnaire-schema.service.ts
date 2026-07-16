@@ -77,10 +77,7 @@ export class QuestionnaireSchemaService implements OnModuleInit {
     const step = this.getStepById(fieldKey);
     if (!step) return [];
     if (step.uiKind === 'schedule') {
-      return [
-        ...(step.scheduleDays ?? []),
-        ...(step.scheduleTimes ?? []).map((t) => t.value),
-      ];
+      return (step.scheduleTimes ?? []).map((t) => t.value);
     }
     const values = step.options.map((o) => o.value);
     if (step.allowOther && step.selection === 'single') {

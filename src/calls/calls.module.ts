@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { ChatModule } from '../chat/chat.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { ProfilesModule } from '../profiles/profiles.module';
 import { SocialModule } from '../social/social.module';
 import { UsersModule } from '../users/users.module';
 import { CallSchemaService } from './call-schema.service';
@@ -13,8 +14,9 @@ import { Call } from './entities/call.entity';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Call]),
-    AuthModule,
+    forwardRef(() => AuthModule),
     UsersModule,
+    ProfilesModule,
     SocialModule,
     NotificationsModule,
     forwardRef(() => ChatModule),

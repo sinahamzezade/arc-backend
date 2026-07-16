@@ -6,6 +6,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './auth/auth.module';
+import { MePulseModule } from './auth/me-pulse.module';
 import { AdminModule } from './admin/admin.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { typeOrmPostgresConfig } from './common/database/typeorm-postgres.config';
@@ -97,6 +98,7 @@ const redisUrl = resolveRedisUrl();
     UsersModule,
     ProfilesModule,
     AuthModule,
+    MePulseModule,
     AdminModule,
     GoalsModule,
     SkillGraphModule,

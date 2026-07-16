@@ -62,6 +62,9 @@ export type CreateNotificationInput = {
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
+  /** Wired by ChatGateway afterInit — realtime in-app delivery. */
+  emitToUser?: (userId: string, event: string, payload: unknown) => void;
+
   constructor(
     @InjectRepository(Notification)
     private readonly notificationsRepo: Repository<Notification>,
@@ -261,6 +264,12 @@ export class NotificationsService {
       .getCount();
   }
 
+  private async emitUnread(userId: string) {
+    if (!this.emitToUser) return;
+    const unreadCount = await this.countUnread(userId);
+    this.emitToUser(userId, 'notification.unread', { unreadCount });
+  }
+
   /**
    * Cancel pending notification_schedules whose dedupe_key starts with prefix.
    * Used by Course Timing replan to drop stale slot reminders.
@@ -299,6 +308,7 @@ export class NotificationsService {
       notification.readAt = new Date();
     }
     await this.notificationsRepo.save(notification);
+    void this.emitUnread(userId);
     return toNotificationDto(notification);
   }
 
@@ -316,6 +326,7 @@ export class NotificationsService {
     }
 
     const result = await qb.execute();
+    void this.emitUnread(userId);
     return { updated: result.affected ?? 0 };
   }
 
@@ -324,6 +335,7 @@ export class NotificationsService {
     notification.hiddenAt = new Date();
     if (!notification.readAt) notification.readAt = new Date();
     await this.notificationsRepo.save(notification);
+    void this.emitUnread(userId);
     return { ok: true };
   }
 
@@ -551,6 +563,14 @@ export class NotificationsService {
             : 'SCHEDULED',
         }),
       );
+    }
+
+    if (deliveredChannels.includes(NotificationChannel.InApp) && this.emitToUser) {
+      const unreadCount = await this.countUnread(input.userId);
+      this.emitToUser(input.userId, 'notification.new', {
+        notification: toNotificationDto(notification),
+        unreadCount,
+      });
     }
 
     return notification;

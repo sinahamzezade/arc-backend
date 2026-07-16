@@ -60,6 +60,8 @@ function shapeHintForFocus(focus: IntakeSuggestions | null): string | null {
       return 'currentContext=token; useFrequency=token (both flat keys)';
     case 'barriers':
       return 'confidence=token (flat); barriers=[tokens]';
+    case 'schedule':
+      return 'schedule={days:[],times:[tokens]} (times required; days unused)';
     default:
       return null;
   }
@@ -74,7 +76,6 @@ export function buildIntakeChatSystemPrompt(
       ? {
           id: focus.fieldId,
           kind: 'schedule',
-          days: focus.days ?? [],
           times: (focus.times ?? []).map((t) => t.value),
         }
       : {
@@ -90,7 +91,7 @@ export function buildIntakeChatSystemPrompt(
 
   return [
     'Arc intake. One short question. Map text→option VALUE tokens only.',
-    'Schedule→{days,times}. allowOther→"other"+`${id}Other`.',
+    'Schedule→{days:[],times:[tokens]} (times required). allowOther→"other"+`${id}Other`.',
     ...(shape ? [`Shape: ${shape}`] : []),
     'JSON: {"assistantMessage":string,"partialAnswers":object,"done":boolean}',
     'partialAnswers=NEW tokens only this turn. assistantMessage≤120 chars.',

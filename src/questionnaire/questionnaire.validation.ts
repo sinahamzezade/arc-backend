@@ -83,10 +83,7 @@ function sanitizeFreeSkillValues(values: string[]): string[] {
 
 function optionValuesForStep(step: QuestionnaireStepDto): string[] {
   if (step.uiKind === 'schedule') {
-    return [
-      ...(step.scheduleDays ?? []),
-      ...(step.scheduleTimes ?? []).map((t) => t.value),
-    ];
+    return (step.scheduleTimes ?? []).map((t) => t.value);
   }
   const values = step.options.map((o) => o.value);
   if (step.allowOther && step.selection === 'single') {
@@ -99,7 +96,6 @@ function normalizeSchedule(
   raw: unknown,
   step: QuestionnaireStepDto,
 ): ScheduleAnswer {
-  const daysAllowed = step.scheduleDays ?? [];
   const timesAllowed = (step.scheduleTimes ?? []).map((t) => t.value);
   if (!raw || typeof raw !== 'object') {
     return { days: [], times: [] };
@@ -110,12 +106,8 @@ function normalizeSchedule(
       ? schedule.timezone.trim()
       : undefined;
   return {
-    days: isStringArray(schedule.days)
-      ? filterKnown(
-          schedule.days.map((d) => d.toLowerCase()),
-          daysAllowed.map((d) => d.toLowerCase()),
-        )
-      : [],
+    // Days retired from intake — drop any legacy/LLM day picks.
+    days: [],
     times: isStringArray(schedule.times)
       ? filterKnown(schedule.times, timesAllowed)
       : [],
@@ -347,9 +339,7 @@ export function assertCompleteAnswers(
 
     if (step.uiKind === 'schedule') {
       const schedule = asSchedule(answers, key);
-      const daysAllowed = (step.scheduleDays ?? []).map((d) => d.toLowerCase());
       const timesAllowed = (step.scheduleTimes ?? []).map((t) => t.value);
-      assertAllowed(`${key}.days`, schedule.days, daysAllowed);
       assertAllowed(`${key}.times`, schedule.times, timesAllowed);
       continue;
     }
@@ -447,7 +437,6 @@ export function listMissingFields(
 
     if (step.uiKind === 'schedule') {
       const schedule = asSchedule(answers, key);
-      if (!schedule.days.length) missing.push(`${key}.days`);
       if (!schedule.times.length) missing.push(`${key}.times`);
       continue;
     }

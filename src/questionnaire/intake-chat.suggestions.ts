@@ -89,14 +89,13 @@ function suggestionForStep(
   switch (step.uiKind) {
     case 'schedule': {
       const schedule = asSchedule(answers, key);
-      if (schedule.days.length && schedule.times.length) return null;
+      if (schedule.times.length) return null;
       return {
         fieldId: key,
         title: step.title,
         selection: 'schedule',
         allowOther: false,
         options: [],
-        days: step.scheduleDays ?? [],
         times: toOptions(step.scheduleTimes),
       };
     }
@@ -319,10 +318,7 @@ export function listChatPendingFields(
 
 export function allowedValuesForStep(step: QuestionnaireStepDto): string[] {
   if (step.uiKind === 'schedule') {
-    return [
-      ...(step.scheduleDays ?? []),
-      ...(step.scheduleTimes ?? []).map((t) => t.value),
-    ];
+    return (step.scheduleTimes ?? []).map((t) => t.value);
   }
   const values = step.options.map((o) => o.value);
   if (step.allowOther) return [...values, 'other'];

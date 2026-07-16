@@ -13,8 +13,10 @@ import { ChatGateway } from './chat.gateway';
 import { ChatSchemaService } from './chat-schema.service';
 import { ChatService } from './chat.service';
 import { ChatAttachment } from './entities/chat-attachment.entity';
+import { ChatConversationKeyWrap } from './entities/chat-conversation-key-wrap.entity';
 import { ChatMessage } from './entities/chat-message.entity';
 import { ChatReport } from './entities/chat-report.entity';
+import { ChatUserKey } from './entities/chat-user-key.entity';
 import { ConversationMember } from './entities/conversation-member.entity';
 import { Conversation } from './entities/conversation.entity';
 
@@ -26,6 +28,8 @@ import { Conversation } from './entities/conversation.entity';
       ChatMessage,
       ChatAttachment,
       ChatReport,
+      ChatUserKey,
+      ChatConversationKeyWrap,
       Profile,
     ]),
     SocialModule,
