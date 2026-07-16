@@ -19,6 +19,7 @@ import { StudySessionParticipant } from './entities/study-session-participant.en
 import { StudySession } from './entities/study-session.entity';
 import { StudyTogetherController } from './study-together.controller';
 import { StudyTogetherGateway } from './study-together.gateway';
+import { StudyTogetherSchemaService } from './study-together-schema.service';
 import { StudyTogetherService } from './study-together.service';
 
 @Module({
@@ -44,7 +45,11 @@ import { StudyTogetherService } from './study-together.service';
     forwardRef(() => BadgesModule),
   ],
   controllers: [StudyTogetherController],
-  providers: [StudyTogetherService, StudyTogetherGateway],
+  providers: [
+    StudyTogetherService,
+    StudyTogetherGateway,
+    StudyTogetherSchemaService,
+  ],
   exports: [StudyTogetherService, StudyTogetherGateway],
 })
 export class StudyTogetherModule {}
