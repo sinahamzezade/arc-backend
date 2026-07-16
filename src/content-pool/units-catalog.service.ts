@@ -266,7 +266,6 @@ export class UnitsCatalogService implements OnModuleInit {
         'unit.title',
         'unit.lessonType',
         'unit.estimatedMinutes',
-        'unit.difficulty',
         'unit.xp',
         'unit.url',
         'unit.servesStage',
