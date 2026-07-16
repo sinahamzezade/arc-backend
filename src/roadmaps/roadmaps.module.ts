@@ -36,6 +36,7 @@ import {
   RoadmapCompletionCoachProcessor,
 } from './roadmap-completion-coach.processor';
 import { RoadmapCompletionService } from './roadmap-completion.service';
+import { RoadmapCompletionSchemaService } from './roadmap-completion-schema.service';
 import {
   RE_ENROLLMENT_QUEUE,
   ReEnrollmentBullProcessor,
@@ -131,6 +132,7 @@ const bullProviders = redisUrl
     RoadmapAnalyticsService,
     RoadmapAiService,
     RoadmapCompletionService,
+    RoadmapCompletionSchemaService,
     RoadmapCompletionCoachProcessor,
     ReEnrollmentService,
     ...nullQueueProviders,
