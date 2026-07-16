@@ -17,9 +17,9 @@ import { StudySessionEvent } from './entities/study-session-event.entity';
 import { StudySessionMessage } from './entities/study-session-message.entity';
 import { StudySessionParticipant } from './entities/study-session-participant.entity';
 import { StudySession } from './entities/study-session.entity';
+import { StudyChatMediaSchemaService } from './study-chat-media-schema.service';
 import { StudyTogetherController } from './study-together.controller';
 import { StudyTogetherGateway } from './study-together.gateway';
-import { StudyTogetherSchemaService } from './study-together-schema.service';
 import { StudyTogetherService } from './study-together.service';
 
 @Module({
@@ -48,7 +48,7 @@ import { StudyTogetherService } from './study-together.service';
   providers: [
     StudyTogetherService,
     StudyTogetherGateway,
-    StudyTogetherSchemaService,
+    StudyChatMediaSchemaService,
   ],
   exports: [StudyTogetherService, StudyTogetherGateway],
 })

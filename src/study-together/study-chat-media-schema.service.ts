@@ -3,11 +3,11 @@ import { DataSource } from 'typeorm';
 
 /**
  * Idempotent schema patches for study chat media (voice/image).
- * Covers prod (DB_SYNC=false) and docker when synchronize skips existing tables.
+ * Covers prod (DB_SYNC=false) and dev when synchronize skips existing tables.
  */
 @Injectable()
-export class StudyTogetherSchemaService implements OnModuleInit {
-  private readonly logger = new Logger(StudyTogetherSchemaService.name);
+export class StudyChatMediaSchemaService implements OnModuleInit {
+  private readonly logger = new Logger(StudyChatMediaSchemaService.name);
 
   constructor(private readonly dataSource: DataSource) {}
 
@@ -19,6 +19,10 @@ export class StudyTogetherSchemaService implements OnModuleInit {
           session_id uuid NOT NULL REFERENCES study_sessions(id) ON DELETE CASCADE,
           sender_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
           body varchar(500) NOT NULL DEFAULT '',
+          kind varchar(16) NOT NULL DEFAULT 'text',
+          media_key varchar(191) NULL,
+          media_mime varchar(64) NULL,
+          duration_ms int NULL,
           created_at timestamptz NOT NULL DEFAULT now()
         );
       `);
