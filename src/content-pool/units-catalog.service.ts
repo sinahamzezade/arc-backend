@@ -245,7 +245,8 @@ export class UnitsCatalogService implements OnModuleInit {
       });
     }
 
-    const key = `catalog:units:active:${filter?.stack ?? '*'}:${filter?.domain ?? '*'}`;
+    // v2: includes skillsTaught/prerequisites/formats (v1 omitted them → empty roadmaps).
+    const key = `catalog:units:active:v2:${filter?.stack ?? '*'}:${filter?.domain ?? '*'}`;
     const cached = await this.jsonCache.getJson<Unit[]>(key);
     if (cached) return cached;
 
@@ -268,6 +269,10 @@ export class UnitsCatalogService implements OnModuleInit {
         'unit.estimatedMinutes',
         'unit.xp',
         'unit.url',
+        // Required for roadmap matching (omit → unitCandidates=0).
+        'unit.skillsTaught',
+        'unit.prerequisites',
+        'unit.formats',
         'unit.servesStage',
         'unit.unitRole',
         'unit.profileSkillSlug',
