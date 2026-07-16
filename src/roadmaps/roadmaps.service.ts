@@ -30,6 +30,7 @@ import {
   RoadmapJobsProcessor,
   type RoadmapReplanJobData,
 } from './roadmap-generation.processor';
+import { RoadmapCacheService } from './roadmap-cache.service';
 import { RoadmapPersistenceService } from './roadmap-persistence.service';
 import { RoadmapSnapshotService } from './roadmap-snapshot.service';
 import { RoadmapTreeLoader } from './roadmap-tree.loader';
@@ -65,6 +66,7 @@ export class RoadmapsService {
     private readonly analytics: RoadmapAnalyticsService,
     private readonly contentQuery: ContentQueryService,
     private readonly timing: TimingService,
+    private readonly roadmapCache: RoadmapCacheService,
     @Optional()
     @InjectQueue(ROADMAP_REPLAN_QUEUE)
     private readonly replanQueue: Queue<RoadmapReplanJobData> | null,
@@ -482,8 +484,10 @@ export class RoadmapsService {
     let roadmap = await this.getActiveRoadmap(userId);
 
     if (roadmap?.status === RoadmapStatus.Ready) {
-      const healed = await this.healStuckPath(roadmap);
-      if (healed) {
+      const healedStuck = await this.healStuckPath(roadmap);
+      const healedExtra = await this.healExtraAvailable(roadmap);
+      if (healedStuck || healedExtra) {
+        await this.roadmapCache.invalidateRoadmap(roadmap.id, userId);
         roadmap = await this.getActiveRoadmap(userId);
       }
     }
@@ -524,7 +528,7 @@ export class RoadmapsService {
   }
 
   private async healStuckPath(roadmap: Roadmap): Promise<boolean> {
-    const ordered = this.flattenLessons(roadmap);
+    const ordered = this.flattenCareerLessons(roadmap);
     if (!ordered.length) return false;
     if (ordered.some((l) => l.status === LessonStatus.Available)) return false;
 
@@ -551,6 +555,45 @@ export class RoadmapsService {
       await this.phasesRepo.save(next.milestone.phase);
     }
     return true;
+  }
+
+  /**
+   * Career path should have at most one Available lesson. Study Together used
+   * to force-unlock locked readings, leaving multiple YOU ARE HERE pins.
+   */
+  private async healExtraAvailable(roadmap: Roadmap): Promise<boolean> {
+    const ordered = this.flattenCareerLessons(roadmap);
+    const available = ordered.filter(
+      (l) => l.status === LessonStatus.Available,
+    );
+    if (available.length <= 1) return false;
+
+    const lastCompletedIdx = ordered.reduce(
+      (acc, l, i) => (l.status === LessonStatus.Completed ? i : acc),
+      -1,
+    );
+    let keep =
+      lastCompletedIdx >= 0
+        ? ordered.find(
+            (l, i) =>
+              i > lastCompletedIdx && l.status === LessonStatus.Available,
+          )
+        : ordered.find((l) => l.status === LessonStatus.Available);
+    keep ??= available[0]!;
+
+    const toRelock = available.filter((l) => l.id !== keep!.id);
+    for (const lesson of toRelock) {
+      lesson.status = LessonStatus.Locked;
+    }
+    await this.lessonsRepo.save(toRelock);
+    return true;
+  }
+
+  /** Career-path lessons only — skip Study Together satellites. */
+  private flattenCareerLessons(roadmap: Roadmap): Lesson[] {
+    return this.flattenLessons(roadmap).filter(
+      (l) => l.entryAction !== 'study_together',
+    );
   }
 
   private flattenLessons(roadmap: Roadmap): Lesson[] {

@@ -651,11 +651,12 @@ export class ChatService {
       where: { id: lastReadMessageId, conversationId },
     });
     if (!msg) {
-      throw new AppException(
-        AuthErrorCode.CHAT_MESSAGE_NOT_FOUND,
-        'Message not found',
-        HttpStatus.NOT_FOUND,
-      );
+      // Idempotent: stale/optimistic client ids must not 404 the watermark call.
+      return {
+        conversationId,
+        userId,
+        lastReadMessageId: member.lastReadMessageId ?? lastReadMessageId,
+      };
     }
     // Only advance watermark
     if (member.lastReadMessageId) {

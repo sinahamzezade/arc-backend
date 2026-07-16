@@ -145,6 +145,7 @@ export class RoadmapTreeLoader {
             'lesson.orderIndex',
             'lesson.status',
             'lesson.required',
+            'lesson.entryAction',
             'lesson.skillsTaught',
             'lesson.resourceId',
             'resource.id',

@@ -2651,7 +2651,9 @@ export class StudyTogetherService {
       );
     }
 
-    const already = await this.lessonsRepo
+    // Prefer a personal lesson already unlocked/completed — never force-unlock
+    // locked career-path lessons for Study Together (that bleeds into /path).
+    const personal = await this.lessonsRepo
       .createQueryBuilder('l')
       .innerJoin('l.milestone', 'm')
       .innerJoin('m.phase', 'p')
@@ -2660,20 +2662,32 @@ export class StudyTogetherService {
       .andWhere('r.status = :status', { status: RoadmapStatus.Ready })
       .andWhere('l.unitId = :unitId', { unitId })
       .andWhere('l.lessonType = :type', { type: 'reading' })
+      .andWhere('(l.entryAction IS NULL OR l.entryAction <> :st)', {
+        st: 'study_together',
+      })
       .getOne();
-    if (already) {
-      if (already.status === LessonStatus.Locked) {
-        already.status = LessonStatus.Available;
-        await this.lessonsRepo.save(already);
-        const ready = await this.roadmapsRepo.findOne({
-          where: { userId, status: RoadmapStatus.Ready },
-          order: { updatedAt: 'DESC' },
-        });
-        if (ready) {
-          await this.roadmapCache.invalidateRoadmap(ready.id, userId);
-        }
-      }
-      return already;
+    if (
+      personal &&
+      (personal.status === LessonStatus.Available ||
+        personal.status === LessonStatus.Completed)
+    ) {
+      return personal;
+    }
+
+    // Reuse an existing Study Together satellite for this unit.
+    const satellite = await this.lessonsRepo
+      .createQueryBuilder('l')
+      .innerJoin('l.milestone', 'm')
+      .innerJoin('m.phase', 'p')
+      .innerJoin('p.roadmap', 'r')
+      .where('r.userId = :userId', { userId })
+      .andWhere('r.status = :status', { status: RoadmapStatus.Ready })
+      .andWhere('l.unitId = :unitId', { unitId })
+      .andWhere('l.lessonType = :type', { type: 'reading' })
+      .andWhere('l.entryAction = :st', { st: 'study_together' })
+      .getOne();
+    if (satellite) {
+      return satellite;
     }
 
     const anchor = await this.lessonsRepo

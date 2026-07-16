@@ -48,26 +48,30 @@ export function toRoadmapTreeDto(roadmap: Roadmap) {
             title: milestone.title,
             orderIndex: milestone.orderIndex,
             type: milestone.type,
-            lessons: lessons.map((lesson) => ({
-              id: lesson.id,
-              title: lesson.title,
-              missionName: lesson.missionName,
-              lessonType: lesson.lessonType,
-              estimatedMinutes: lesson.estimatedMinutes,
-              xpReward: lesson.xpReward,
-              orderIndex: lesson.orderIndex,
-              status: lesson.status,
-              required: lesson.required !== false,
-              unitId: lesson.unitId ?? null,
-              resource: lesson.resource
-                ? {
-                    id: lesson.resource.id,
-                    title: lesson.resource.title,
-                    url: lesson.resource.url,
-                    provider: lesson.resource.provider,
-                  }
-                : null,
-            })),
+            // Study Together satellites stay on the personal roadmap for
+            // session content, but must not appear as career-path progress.
+            lessons: lessons
+              .filter((lesson) => lesson.entryAction !== 'study_together')
+              .map((lesson) => ({
+                id: lesson.id,
+                title: lesson.title,
+                missionName: lesson.missionName,
+                lessonType: lesson.lessonType,
+                estimatedMinutes: lesson.estimatedMinutes,
+                xpReward: lesson.xpReward,
+                orderIndex: lesson.orderIndex,
+                status: lesson.status,
+                required: lesson.required !== false,
+                unitId: lesson.unitId ?? null,
+                resource: lesson.resource
+                  ? {
+                      id: lesson.resource.id,
+                      title: lesson.resource.title,
+                      url: lesson.resource.url,
+                      provider: lesson.resource.provider,
+                    }
+                  : null,
+              })),
           };
         }),
       };

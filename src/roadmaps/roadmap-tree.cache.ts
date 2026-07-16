@@ -46,6 +46,8 @@ export function roadmapFromTreeDto(dto: RoadmapTreeCachePayload): Roadmap {
           status: lessonDto.status as LessonStatus,
           required: lessonDto.required !== false,
           unitId: lessonDto.unitId ?? null,
+          entryAction:
+            (lessonDto as { entryAction?: string | null }).entryAction ?? null,
           milestoneId: milestoneDto.id,
           resource: lessonDto.resource,
         });
