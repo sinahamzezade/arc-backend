@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import express from 'express';
 import session from 'express-session';
@@ -46,7 +47,9 @@ async function bootstrap() {
   // imports easily exceed body-parser's 100kb default).
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,
+    bufferLogs: true,
   });
+  app.enableShutdownHooks();
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
   const isProd = config.get<string>('NODE_ENV') === 'production';
@@ -93,6 +96,8 @@ async function bootstrap() {
       { path: 'admin/api/(.*)', method: RequestMethod.ALL },
       { path: 'admin-assets/(.*)', method: RequestMethod.ALL },
       { path: 'uploads/(.*)', method: RequestMethod.ALL },
+      { path: 'health', method: RequestMethod.ALL },
+      { path: 'health/(.*)', method: RequestMethod.ALL },
     ],
   });
 
@@ -103,6 +108,7 @@ async function bootstrap() {
     return helmet()(req, res, next);
   });
 
+  app.use(compression());
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(cookieParser());

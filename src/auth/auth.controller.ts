@@ -66,9 +66,13 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Logout and revoke refresh token' })
-  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+  async logout(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @CurrentUser() user: AuthUserPayload,
+  ) {
     const raw = this.readRefresh(req);
-    await this.authService.logout(raw);
+    await this.authService.logout(raw, user.userId);
     this.clearRefreshCookie(res);
     return { ok: true };
   }

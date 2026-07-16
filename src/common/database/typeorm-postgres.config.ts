@@ -16,9 +16,27 @@ export function typeOrmPostgresConfig(
   opts: DbOpts = {},
 ): TypeOrmModuleOptions {
   const url = config.get<string>('DATABASE_URL')?.trim();
+  const nodeEnv = config.get<string>('NODE_ENV');
+  const isProd = nodeEnv === 'production';
   const synchronize =
-    opts.synchronize ?? config.get<string>('DB_SYNC') !== 'false';
+    opts.synchronize ??
+    (isProd ? false : config.get<string>('DB_SYNC') !== 'false');
   const ssl = resolveSsl(config, url);
+  const poolMax = Number(config.get<string>('DB_POOL_MAX') ?? 20);
+  const poolIdleMs = Number(config.get<string>('DB_POOL_IDLE_MS') ?? 30_000);
+  const statementTimeoutMs = Number(
+    config.get<string>('DB_STATEMENT_TIMEOUT_MS') ?? 30_000,
+  );
+
+  const extra = {
+    max: Number.isFinite(poolMax) && poolMax > 0 ? poolMax : 20,
+    idleTimeoutMillis:
+      Number.isFinite(poolIdleMs) && poolIdleMs > 0 ? poolIdleMs : 30_000,
+    statement_timeout:
+      Number.isFinite(statementTimeoutMs) && statementTimeoutMs > 0
+        ? statementTimeoutMs
+        : 30_000,
+  };
 
   if (url) {
     return {
@@ -28,6 +46,7 @@ export function typeOrmPostgresConfig(
       autoLoadEntities: opts.autoLoadEntities,
       entities: opts.entities,
       synchronize,
+      extra,
     };
   }
 
@@ -42,6 +61,7 @@ export function typeOrmPostgresConfig(
     autoLoadEntities: opts.autoLoadEntities,
     entities: opts.entities,
     synchronize,
+    extra,
   };
 }
 

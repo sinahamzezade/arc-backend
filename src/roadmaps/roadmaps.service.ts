@@ -32,6 +32,7 @@ import {
 } from './roadmap-generation.processor';
 import { RoadmapPersistenceService } from './roadmap-persistence.service';
 import { RoadmapSnapshotService } from './roadmap-snapshot.service';
+import { RoadmapTreeLoader } from './roadmap-tree.loader';
 import { toJobDto, toRoadmapTreeDto } from './roadmap.serializer';
 
 export type RoadmapJobResult = {
@@ -58,6 +59,7 @@ export class RoadmapsService {
     private readonly goalsRepo: Repository<Goal>,
     private readonly processor: RoadmapJobsProcessor,
     private readonly snapshot: RoadmapSnapshotService,
+    private readonly treeLoader: RoadmapTreeLoader,
     private readonly engine: RoadmapEngineClient,
     private readonly persistence: RoadmapPersistenceService,
     private readonly analytics: RoadmapAnalyticsService,
@@ -194,20 +196,7 @@ export class RoadmapsService {
   }
 
   async getActiveRoadmap(userId: string): Promise<Roadmap | null> {
-    return this.roadmapsRepo.findOne({
-      where: {
-        userId,
-        status: In([RoadmapStatus.Ready, RoadmapStatus.Generating]),
-      },
-      order: { updatedAt: 'DESC' },
-      relations: {
-        phases: {
-          milestones: {
-            lessons: { resource: true },
-          },
-        },
-      },
-    });
+    return this.treeLoader.loadActiveRoadmap(userId);
   }
 
   async swapActiveRoadmap(oldId: string, newId: string): Promise<void> {

@@ -17,6 +17,7 @@ import { Milestone } from './entities/milestone.entity';
 import { Roadmap } from './entities/roadmap.entity';
 import { RoadmapGenerationJob } from './entities/roadmap-generation-job.entity';
 import { RoadmapPhase } from './entities/roadmap-phase.entity';
+import { RoadmapCacheService } from './roadmap-cache.service';
 import { RoadmapAnalyticsService } from './roadmap-analytics.service';
 import { RoadmapAiService } from './roadmap-ai.service';
 import { RoadmapEngineClient } from './roadmap-engine.client';
@@ -34,6 +35,7 @@ import { RoadmapPersistenceService } from './roadmap-persistence.service';
 import { RoadmapPipelineService } from './roadmap-pipeline.service';
 import { RoadmapReplanBullProcessor } from './roadmap-replan.processor';
 import { RoadmapSnapshotService } from './roadmap-snapshot.service';
+import { RoadmapTreeLoader } from './roadmap-tree.loader';
 import { RoadmapsService } from './roadmaps.service';
 import { RoadmapsController } from './roadmaps.controller';
 import { resolveRedisUrl } from '../common/redis/resolve-redis-url';
@@ -42,9 +44,6 @@ const redisUrl = resolveRedisUrl();
 
 const bullImports = redisUrl
   ? [
-      BullModule.forRoot({
-        connection: { url: redisUrl },
-      }),
       BullModule.registerQueue(
         { name: ROADMAP_GENERATION_QUEUE },
         { name: ROADMAP_REPLAN_QUEUE },
@@ -97,6 +96,8 @@ const bullProviders = redisUrl
     RoadmapJobsProcessor,
     RoadmapEngineClient,
     RoadmapSnapshotService,
+    RoadmapCacheService,
+    RoadmapTreeLoader,
     RoadmapPersistenceService,
     RoadmapAnalyticsService,
     RoadmapAiService,
@@ -108,6 +109,8 @@ const bullProviders = redisUrl
     RoadmapGeneratorService,
     RoadmapEngineClient,
     RoadmapSnapshotService,
+    RoadmapCacheService,
+    RoadmapTreeLoader,
   ],
 })
 export class RoadmapsModule {}

@@ -17,6 +17,7 @@ import type {
   RoadmapPlanDto,
   SelectedPhaseDto,
 } from './dto/roadmap-engine.types';
+import { RoadmapCacheService } from './roadmap-cache.service';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -30,7 +31,10 @@ function isUuid(value: string): boolean {
 export class RoadmapPersistenceService {
   private readonly logger = new Logger(RoadmapPersistenceService.name);
 
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly roadmapCache: RoadmapCacheService,
+  ) {}
 
   async persistPlan(
     goal: Goal,
@@ -87,16 +91,21 @@ export class RoadmapPersistenceService {
 
       roadmap.currentPhaseId = firstPhaseId;
       return manager.save(roadmap);
+    }).then(async (roadmap) => {
+      await this.roadmapCache.invalidateUser(goal.userId);
+      return roadmap;
     });
   }
 
   /** Atomic active pointer swap: archive old, ensure new is ready. */
   async swapActiveRoadmap(oldId: string, newId: string): Promise<void> {
+    let userId: string | undefined;
     await this.dataSource.transaction(async (manager) => {
       const neu = await manager.findOne(Roadmap, { where: { id: newId } });
       if (!neu || neu.status !== RoadmapStatus.Ready) {
         throw new Error(`New roadmap ${newId} not ready for swap`);
       }
+      userId = neu.userId;
       if (oldId) {
         await manager.update(
           Roadmap,
@@ -115,6 +124,12 @@ export class RoadmapPersistenceService {
         .andWhere('status = :ready', { ready: RoadmapStatus.Ready })
         .execute();
     });
+    if (userId) {
+      if (oldId) {
+        await this.roadmapCache.invalidateRoadmap(oldId, userId);
+      }
+      await this.roadmapCache.invalidateRoadmap(newId, userId);
+    }
     this.logger.log(`Swapped active roadmap ${oldId} → ${newId}`);
   }
 

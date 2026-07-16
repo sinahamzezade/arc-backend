@@ -11,8 +11,13 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
+import { createAdapter } from '@socket.io/redis-adapter';
 import { Namespace, Socket } from 'socket.io';
 import type { AccessTokenPayload } from '../auth/services/token.service';
+import { AuthUserCacheService } from '../auth/services/auth-user-cache.service';
+import { REDIS_PUB_CLIENT, REDIS_SUB_CLIENT } from '../common/redis/redis.constants';
+import { Inject } from '@nestjs/common';
+import Redis from 'ioredis';
 import { UsersService } from '../users/users.service';
 import { StudyTogetherService } from './study-together.service';
 
@@ -25,9 +30,7 @@ import { StudyTogetherService } from './study-together.service';
  *   (must match the client NEXT_PUBLIC_WS_PATH). Default `/socket.io`.
  * - CORS reflects request origin (credentials-safe) — HTTP CORS is enforced
  *   separately in main.ts via CORS_ORIGIN.
- *
- * NOTE: If you scale Nest to >1 replica, polling requires sticky sessions
- * (or a @socket.io/redis-adapter) since Redis is already available.
+ * - Redis adapter enables multi-replica room broadcast without sticky sessions.
  */
 @WebSocketGateway({
   namespace: '/study',
@@ -45,13 +48,15 @@ export class StudyTogetherGateway
   server!: Namespace;
 
   private readonly logger = new Logger(StudyTogetherGateway.name);
-  private readonly socketSessions = new Map<string, string>();
 
   constructor(
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly users: UsersService,
+    private readonly authUserCache: AuthUserCacheService,
     private readonly study: StudyTogetherService,
+    @Inject(REDIS_PUB_CLIENT) private readonly redisPub: Redis | null,
+    @Inject(REDIS_SUB_CLIENT) private readonly redisSub: Redis | null,
   ) {}
 
   /**
@@ -59,6 +64,11 @@ export class StudyTogetherGateway
    * Async handleConnection races with client `join` and drops room membership.
    */
   afterInit(server: Namespace) {
+    if (this.redisPub && this.redisSub) {
+      server.server.adapter(createAdapter(this.redisPub, this.redisSub));
+      this.logger.log('Socket.IO Redis adapter enabled');
+    }
+
     server.use(async (socket, next) => {
       try {
         const raw =
@@ -72,11 +82,22 @@ export class StudyTogetherGateway
         const payload = this.jwt.verify<AccessTokenPayload>(token, {
           secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
         });
+        const cached = await this.authUserCache.get(payload.sub);
+        if (cached) {
+          socket.data.userId = cached.userId;
+          next();
+          return;
+        }
         const user = await this.users.findById(payload.sub);
         if (!user?.isActive || user.deletedAt) {
           next(new Error('Unauthorized'));
           return;
         }
+        await this.authUserCache.set(user.id, {
+          userId: user.id,
+          email: user.email,
+          emailVerified: Boolean(user.emailVerifiedAt),
+        });
         socket.data.userId = user.id;
         next();
       } catch (err) {
@@ -93,14 +114,15 @@ export class StudyTogetherGateway
   }
 
   handleDisconnect(client: Socket) {
-    const sessionId = this.socketSessions.get(client.id);
     const userId = client.data.userId as string | undefined;
+    const sessionId = [...client.rooms].find((room) => room.startsWith('study:'));
     if (sessionId && userId) {
+      const id = sessionId.replace(/^study:/, '');
       client
-        .to(this.roomName(sessionId))
+        .to(sessionId)
         .emit('partner_presence', { online: false, userId });
+      void id;
     }
-    this.socketSessions.delete(client.id);
   }
 
   @SubscribeMessage('join')
@@ -113,7 +135,6 @@ export class StudyTogetherGateway
 
     await this.study.requireParticipant(userId, body.sessionId);
     await client.join(this.roomName(body.sessionId));
-    this.socketSessions.set(client.id, body.sessionId);
 
     const state = await this.study.getState(userId, body.sessionId);
     client
@@ -131,7 +152,6 @@ export class StudyTogetherGateway
     const userId = client.data.userId as string | undefined;
     if (!userId || !body?.sessionId) return { ok: true };
     await client.leave(this.roomName(body.sessionId));
-    this.socketSessions.delete(client.id);
     client
       .to(this.roomName(body.sessionId))
       .emit('partner_presence', { online: false, userId });

@@ -5,6 +5,7 @@ import { BadgesModule } from '../badges/badges.module';
 import { GamificationModule } from '../gamification/gamification.module';
 import { LessonsModule } from '../lessons/lessons.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { ProfilesModule } from '../profiles/profiles.module';
 import { Profile } from '../profiles/entities/profile.entity';
 import { Lesson } from '../roadmaps/entities/lesson.entity';
 import { Roadmap } from '../roadmaps/entities/roadmap.entity';
@@ -33,6 +34,7 @@ import { StudyTogetherService } from './study-together.service';
     ]),
     SocialModule,
     NotificationsModule,
+    ProfilesModule,
     AuthModule,
     UsersModule,
     LessonsModule,

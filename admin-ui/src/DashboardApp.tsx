@@ -86,6 +86,225 @@ function formatTokens(n: number) {
   return String(n);
 }
 
+type HealthComponentStatus = 'up' | 'down' | 'optional' | 'unknown';
+
+type HealthProbe = {
+  key: string;
+  label: string;
+  status: HealthComponentStatus;
+  detail?: string;
+  latencyMs?: number;
+};
+
+type HealthSnapshot = {
+  checkedAt: string;
+  readiness: HealthProbe;
+  liveness: HealthProbe;
+  database: HealthProbe;
+  redis: HealthProbe;
+};
+
+type TerminusPayload = {
+  status?: string;
+  info?: Record<string, { status?: string; optional?: boolean; message?: string }>;
+  error?: Record<string, { status?: string; optional?: boolean; message?: string }>;
+  details?: Record<string, { status?: string; optional?: boolean; message?: string }>;
+};
+
+function mergeTerminusDetails(payload: TerminusPayload | null) {
+  return {
+    ...(payload?.info ?? {}),
+    ...(payload?.details ?? {}),
+    ...(payload?.error ?? {}),
+  };
+}
+
+function componentStatus(
+  payload: TerminusPayload | null,
+  key: string,
+): HealthComponentStatus {
+  const row = mergeTerminusDetails(payload)[key];
+  if (!row) return 'unknown';
+  if (row.optional && row.status !== 'down') return 'optional';
+  if (row.status === 'up') return 'up';
+  if (row.status === 'down') return 'down';
+  return 'unknown';
+}
+
+function formatCheckedAt(iso: string) {
+  return new Date(iso).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+async function fetchHealthSnapshot(): Promise<HealthSnapshot> {
+  const [readinessRes, livenessRes] = await Promise.all([
+    fetch('/health/readiness', { credentials: 'same-origin' }),
+    fetch('/health/live', { credentials: 'same-origin' }),
+  ]);
+
+  const readinessStarted = performance.now();
+  let readinessPayload: TerminusPayload | null = null;
+  let livenessPayload: TerminusPayload | null = null;
+
+  try {
+    readinessPayload = (await readinessRes.json()) as TerminusPayload;
+  } catch {
+    readinessPayload = null;
+  }
+  try {
+    livenessPayload = (await livenessRes.json()) as TerminusPayload;
+  } catch {
+    livenessPayload = null;
+  }
+
+  const readinessLatency = Math.round(performance.now() - readinessStarted);
+
+  const readinessStatus: HealthComponentStatus = readinessRes.ok
+    ? readinessPayload?.status === 'ok'
+      ? 'up'
+      : 'down'
+    : 'down';
+
+  const livenessStatus: HealthComponentStatus = livenessRes.ok
+    ? livenessPayload?.status === 'ok'
+      ? 'up'
+      : 'down'
+    : 'down';
+
+  const dbStatus = componentStatus(readinessPayload, 'database');
+  const redisStatus = componentStatus(readinessPayload, 'redis');
+  const redisRow = mergeTerminusDetails(readinessPayload).redis;
+
+  return {
+    checkedAt: new Date().toISOString(),
+    readiness: {
+      key: 'readiness',
+      label: 'Readiness',
+      status: readinessStatus,
+      detail: readinessStatus === 'up' ? 'Ready for traffic' : 'Not ready',
+      latencyMs: readinessLatency,
+    },
+    liveness: {
+      key: 'liveness',
+      label: 'Liveness',
+      status: livenessStatus,
+      detail: livenessStatus === 'up' ? 'Process alive' : 'Process unhealthy',
+    },
+    database: {
+      key: 'database',
+      label: 'Database',
+      status: dbStatus,
+      detail:
+        dbStatus === 'up'
+          ? 'Postgres reachable'
+          : mergeTerminusDetails(readinessPayload).database?.message ??
+            'Unreachable',
+    },
+    redis: {
+      key: 'redis',
+      label: 'Redis',
+      status: redisStatus,
+      detail:
+        redisStatus === 'optional'
+          ? 'Not configured (optional)'
+          : redisStatus === 'up'
+            ? 'Connected'
+            : redisRow?.message ?? 'Unreachable',
+    },
+  };
+}
+
+function HealthWidget({ probe }: { probe: HealthProbe }) {
+  return (
+    <div className={`health-widget status-${probe.status}`}>
+      <div className="health-widget-head">
+        <span className="health-dot" aria-hidden />
+        <span className="health-label">{probe.label}</span>
+      </div>
+      <div className="health-status">
+        {probe.status === 'up' && 'Healthy'}
+        {probe.status === 'down' && 'Unhealthy'}
+        {probe.status === 'optional' && 'Optional'}
+        {probe.status === 'unknown' && 'Unknown'}
+      </div>
+      <p className="health-detail">{probe.detail}</p>
+      {probe.latencyMs != null ? (
+        <p className="health-latency">{probe.latencyMs} ms</p>
+      ) : null}
+    </div>
+  );
+}
+
+function HealthSection() {
+  const [health, setHealth] = useState<HealthSnapshot | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | undefined;
+
+    const load = async () => {
+      try {
+        const snapshot = await fetchHealthSnapshot();
+        if (!cancelled) {
+          setHealth(snapshot);
+          setError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Health check failed');
+        }
+      }
+    };
+
+    void load();
+    timer = setInterval(() => {
+      void load();
+    }, 30_000);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+    };
+  }, []);
+
+  return (
+    <section className="health-panel">
+      <div className="health-panel-head">
+        <div>
+          <h3>System health</h3>
+          <p className="hint">
+            Live · readiness · dependencies · refreshes every 30s
+          </p>
+        </div>
+        {health ? (
+          <span className="health-checked-at">
+            Checked {formatCheckedAt(health.checkedAt)}
+          </span>
+        ) : null}
+      </div>
+
+      {error ? <p className="health-error">{error}</p> : null}
+
+      {!health && !error ? (
+        <p className="health-loading">Checking health…</p>
+      ) : null}
+
+      {health ? (
+        <div className="health-grid">
+          <HealthWidget probe={health.readiness} />
+          <HealthWidget probe={health.liveness} />
+          <HealthWidget probe={health.database} />
+          <HealthWidget probe={health.redis} />
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function ChartCard({
   title,
   hint,
@@ -249,53 +468,54 @@ export function DashboardApp() {
     };
   }, []);
 
-  if (error) {
-    return <div className="dash-error">{error}</div>;
-  }
-  if (!data) {
-    return <div className="dash-loading">Loading analytics…</div>;
-  }
-
-  const { totals, charts, aiUsage } = data;
-  const signups = charts.signupsByDay.map((d) => ({
+  const signups = data?.charts.signupsByDay.map((d) => ({
     ...d,
     label: shortDay(d.day),
   }));
-  const lessons = charts.lessonCompletions.map((d) => ({
+  const lessons = data?.charts.lessonCompletions.map((d) => ({
     ...d,
     label: shortDay(d.day),
   }));
 
   return (
     <div>
+      <HealthSection />
+
+      {error ? <div className="dash-error">{error}</div> : null}
+      {!data && !error ? (
+        <div className="dash-loading">Loading analytics…</div>
+      ) : null}
+
+      {data ? (
+        <>
       <div className="kpi-row">
         <div className="kpi">
           <div className="label">Users</div>
-          <div className="value">{totals.users}</div>
+          <div className="value">{data.totals.users}</div>
         </div>
         <div className="kpi">
           <div className="label">Active</div>
-          <div className="value">{totals.active}</div>
+          <div className="value">{data.totals.active}</div>
         </div>
         <div className="kpi">
           <div className="label">Admins</div>
-          <div className="value">{totals.admins}</div>
+          <div className="value">{data.totals.admins}</div>
         </div>
         <div className="kpi">
           <div className="label">Lessons done</div>
-          <div className="value">{totals.lessonsCompleted}</div>
+          <div className="value">{data.totals.lessonsCompleted}</div>
         </div>
         <div className="kpi">
           <div className="label">Battles</div>
-          <div className="value">{totals.battles}</div>
+          <div className="value">{data.totals.battles}</div>
         </div>
         <div className="kpi">
           <div className="label">Referrals</div>
-          <div className="value">{totals.referrals}</div>
+          <div className="value">{data.totals.referrals}</div>
         </div>
       </div>
 
-      <AiUsageSection aiUsage={aiUsage} />
+      <AiUsageSection aiUsage={data.aiUsage} />
 
       <div className="dash-grid">
         <ChartCard title="Signups" hint="New accounts · last 30 days" span="8">
@@ -326,14 +546,14 @@ export function DashboardApp() {
           <ResponsiveContainer>
             <PieChart>
               <Pie
-                data={charts.authProviders}
+                data={data.charts.authProviders}
                 dataKey="value"
                 nameKey="name"
                 innerRadius={48}
                 outerRadius={78}
                 paddingAngle={2}
               >
-                {charts.authProviders.map((_, i) => (
+                {data.charts.authProviders.map((_, i) => (
                   <Cell key={i} fill={COLORS[i % COLORS.length]} />
                 ))}
               </Pie>
@@ -347,12 +567,12 @@ export function DashboardApp() {
           <ResponsiveContainer>
             <PieChart>
               <Pie
-                data={charts.userStatus}
+                data={data.charts.userStatus}
                 dataKey="value"
                 nameKey="name"
                 outerRadius={78}
               >
-                {charts.userStatus.map((row, i) => (
+                {data.charts.userStatus.map((row, i) => (
                   <Cell
                     key={i}
                     fill={row.name === 'Active' ? '#2A9D8F' : '#C4785A'}
@@ -371,7 +591,7 @@ export function DashboardApp() {
           span="8"
         >
           <ResponsiveContainer>
-            <BarChart data={charts.questionnaire}>
+            <BarChart data={data.charts.questionnaire}>
               <CartesianGrid strokeDasharray="3 3" stroke="#d5ddd7" />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
               <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
@@ -410,7 +630,7 @@ export function DashboardApp() {
         >
           <ResponsiveContainer>
             <BarChart
-              data={charts.xpByReason}
+              data={data.charts.xpByReason}
               layout="vertical"
               margin={{ left: 24 }}
             >
@@ -434,7 +654,7 @@ export function DashboardApp() {
           span="6"
         >
           <ResponsiveContainer>
-            <BarChart data={charts.rankDistribution}>
+            <BarChart data={data.charts.rankDistribution}>
               <CartesianGrid strokeDasharray="3 3" stroke="#d5ddd7" />
               <XAxis
                 dataKey="name"
@@ -457,7 +677,7 @@ export function DashboardApp() {
           span="6"
         >
           <ResponsiveContainer>
-            <BarChart data={charts.referralFunnel}>
+            <BarChart data={data.charts.referralFunnel}>
               <CartesianGrid strokeDasharray="3 3" stroke="#d5ddd7" />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
               <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
@@ -467,6 +687,8 @@ export function DashboardApp() {
           </ResponsiveContainer>
         </ChartCard>
       </div>
+        </>
+      ) : null}
     </div>
   );
 }

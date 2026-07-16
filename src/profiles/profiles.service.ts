@@ -5,12 +5,14 @@ import { Profile, QuestionnaireStatus } from './entities/profile.entity';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
+import { ProfileCacheService } from './profile-cache.service';
 
 @Injectable()
 export class ProfilesService {
   constructor(
     @InjectRepository(Profile)
     private readonly profilesRepo: Repository<Profile>,
+    private readonly profileCache: ProfileCacheService,
   ) {}
 
   async createEmpty(userId: string): Promise<Profile> {
@@ -197,6 +199,8 @@ export class ProfilesService {
       profile.language = dto.language.trim() || 'en';
     }
 
-    return this.profilesRepo.save(profile);
+    const saved = await this.profilesRepo.save(profile);
+    await this.profileCache.invalidate(userId);
+    return saved;
   }
 }

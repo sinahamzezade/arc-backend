@@ -16,6 +16,7 @@ import { UserLeagueState } from './entities/user-league-state.entity';
 import { LeagueCohortService } from './league-cohort.service';
 import { LeagueFinalizeService } from './league-finalize.service';
 import { LeagueLiveScoresService } from './league-live-scores.service';
+import { LeagueSummaryCacheService } from './league-summary-cache.service';
 import { LeagueScoreService } from './league-score.service';
 import { LeagueSeasonService } from './league-season.service';
 import { LeaguesController } from './leagues.controller';
@@ -47,6 +48,7 @@ import { LeaguesService } from './leagues.service';
     LeagueScoreService,
     LeagueFinalizeService,
     LeagueLiveScoresService,
+    LeagueSummaryCacheService,
   ],
   exports: [LeaguesService, LeagueScoreService],
 })

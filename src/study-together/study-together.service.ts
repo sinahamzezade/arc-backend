@@ -28,6 +28,7 @@ import {
 } from '../notifications/entities/notification.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Profile } from '../profiles/entities/profile.entity';
+import { ProfileCacheService } from '../profiles/profile-cache.service';
 import {
   Lesson,
   LessonStatus,
@@ -95,6 +96,7 @@ const TERMINAL_STATUSES = [
 @Injectable()
 export class StudyTogetherService {
   private readonly logger = new Logger(StudyTogetherService.name);
+  private readonly heartbeatPersistAt = new Map<string, number>();
 
   constructor(
     private readonly dataSource: DataSource,
@@ -115,6 +117,7 @@ export class StudyTogetherService {
     private readonly messagesRepo: Repository<StudySessionMessage>,
     @InjectRepository(Profile)
     private readonly profilesRepo: Repository<Profile>,
+    private readonly profileCache: ProfileCacheService,
     @InjectRepository(User)
     private readonly usersRepo: Repository<User>,
     @InjectRepository(Lesson)
@@ -124,8 +127,6 @@ export class StudyTogetherService {
   ) {}
 
   async create(userId: string, dto: CreateStudySessionDto) {
-    await this.runMaintenance();
-
     if (
       !(STUDY_ALLOWED_DURATIONS_MIN as readonly number[]).includes(
         dto.durationMinutes,
@@ -276,7 +277,6 @@ export class StudyTogetherService {
   }
 
   async listRooms(userId: string) {
-    await this.runMaintenance();
     const sessions = await this.sessionsRepo.find({
       where: [
         { creatorId: userId, status: In(LIVE_STATUSES) },
@@ -286,14 +286,11 @@ export class StudyTogetherService {
       take: 50,
     });
     return {
-      items: await Promise.all(
-        sessions.map((s) => this.getState(userId, s.id)),
-      ),
+      items: await this.buildStatesForSessions(userId, sessions),
     };
   }
 
   async listInvites(userId: string) {
-    await this.runMaintenance();
     const sessions = await this.sessionsRepo.find({
       where: [
         { inviteeId: userId, status: StudySessionStatus.Invited },
@@ -309,14 +306,11 @@ export class StudyTogetherService {
       take: 50,
     });
     return {
-      items: await Promise.all(
-        sessions.map((s) => this.getState(userId, s.id)),
-      ),
+      items: await this.buildStatesForSessions(userId, sessions),
     };
   }
 
   async accept(userId: string, sessionId: string) {
-    await this.runMaintenance();
     const session = await this.requireParticipantSession(userId, sessionId);
     if (session.inviteeId !== userId) {
       throw new AppException(
@@ -370,7 +364,6 @@ export class StudyTogetherService {
   }
 
   async decline(userId: string, sessionId: string) {
-    await this.runMaintenance();
     const session = await this.requireParticipantSession(userId, sessionId);
     if (session.inviteeId !== userId) {
       throw new AppException(
@@ -408,7 +401,6 @@ export class StudyTogetherService {
   }
 
   async cancel(userId: string, sessionId: string) {
-    await this.runMaintenance();
     const session = await this.requireParticipantSession(userId, sessionId);
     if (session.creatorId !== userId) {
       throw new AppException(
@@ -452,7 +444,6 @@ export class StudyTogetherService {
   }
 
   async setTask(userId: string, sessionId: string, dto: StudyTaskDto) {
-    await this.runMaintenance();
     const session = await this.requireParticipantSession(userId, sessionId);
     if (TERMINAL_STATUSES.includes(session.status)) {
       throw new AppException(
@@ -490,7 +481,6 @@ export class StudyTogetherService {
   }
 
   async ready(userId: string, sessionId: string) {
-    await this.runMaintenance();
     const session = await this.requireParticipantSession(userId, sessionId);
     if (
       ![
@@ -598,7 +588,6 @@ export class StudyTogetherService {
     sessionId: string,
     dto: StudyHeartbeatDto = {},
   ) {
-    await this.runMaintenance();
     const session = await this.requireParticipantSession(userId, sessionId);
     if (session.status !== StudySessionStatus.Active) {
       return this.getState(userId, sessionId);
@@ -607,33 +596,39 @@ export class StudyTogetherService {
     const now = new Date();
     const appVisible = dto.appVisible !== false;
     const focusActive = dto.focusActive !== false;
+    const persistKey = `${sessionId}:${userId}`;
+    const lastPersist = this.heartbeatPersistAt.get(persistKey) ?? 0;
+    const shouldPersist = now.getTime() - lastPersist >= 5_000;
 
-    await this.dataSource.transaction(async (manager) => {
-      const p = await manager.findOneOrFail(StudySessionParticipant, {
-        where: { sessionId, userId },
-      });
-      p.appVisible = appVisible;
-      p.heartbeatCount += 1;
+    if (shouldPersist) {
+      await this.dataSource.transaction(async (manager) => {
+        const p = await manager.findOneOrFail(StudySessionParticipant, {
+          where: { sessionId, userId },
+        });
+        p.appVisible = appVisible;
+        p.heartbeatCount += 1;
 
-      let delta = 0;
-      if (appVisible && focusActive && !p.leftAt) {
-        if (p.lastHeartbeatAt) {
-          const gapSec = Math.floor(
-            (now.getTime() - p.lastHeartbeatAt.getTime()) / 1000,
-          );
-          if (gapSec > 0 && gapSec <= STUDY_DISCONNECT_GRACE_SEC) {
-            delta = Math.min(gapSec, STUDY_HEARTBEAT_INTERVAL_SEC + 5);
-          } else if (gapSec > 0 && gapSec <= STUDY_HEARTBEAT_INTERVAL_SEC + 5) {
-            delta = gapSec;
+        let delta = 0;
+        if (appVisible && focusActive && !p.leftAt) {
+          if (p.lastHeartbeatAt) {
+            const gapSec = Math.floor(
+              (now.getTime() - p.lastHeartbeatAt.getTime()) / 1000,
+            );
+            if (gapSec > 0 && gapSec <= STUDY_DISCONNECT_GRACE_SEC) {
+              delta = Math.min(gapSec, STUDY_HEARTBEAT_INTERVAL_SEC + 5);
+            } else if (gapSec > 0 && gapSec <= STUDY_HEARTBEAT_INTERVAL_SEC + 5) {
+              delta = gapSec;
+            }
+          } else {
+            delta = STUDY_HEARTBEAT_INTERVAL_SEC;
           }
-        } else {
-          delta = STUDY_HEARTBEAT_INTERVAL_SEC;
+          p.verifiedActiveSeconds += delta;
         }
-        p.verifiedActiveSeconds += delta;
-      }
-      p.lastHeartbeatAt = now;
-      await manager.save(p);
-    });
+        p.lastHeartbeatAt = now;
+        await manager.save(p);
+      });
+      this.heartbeatPersistAt.set(persistKey, now.getTime());
+    }
 
     // Auto-complete when timer elapsed
     if (
@@ -647,7 +642,6 @@ export class StudyTogetherService {
   }
 
   async leave(userId: string, sessionId: string) {
-    await this.runMaintenance();
     const session = await this.requireParticipantSession(userId, sessionId);
     if (TERMINAL_STATUSES.includes(session.status)) {
       return this.getState(userId, sessionId);
@@ -740,7 +734,6 @@ export class StudyTogetherService {
     sessionId: string,
     opts: { soloAdvance?: boolean } = {},
   ) {
-    await this.runMaintenance();
     const session = await this.requireParticipantSession(userId, sessionId);
     if (
       ![
@@ -1010,15 +1003,84 @@ export class StudyTogetherService {
 
   async getState(userId: string, sessionId: string) {
     const session = await this.requireParticipantSession(userId, sessionId);
-    const participants = await this.participantsRepo.find({
-      where: { sessionId },
-    });
-    const ids = [session.creatorId, session.inviteeId];
-    const profiles = await this.profilesRepo.find({
-      where: { userId: In(ids) },
-    });
-    const profileMap = new Map(profiles.map((p) => [p.userId, p]));
+    const [state] = await this.buildStatesForSessions(userId, [session]);
+    return state;
+  }
 
+  private async buildStatesForSessions(
+    userId: string,
+    sessions: StudySession[],
+  ) {
+    if (!sessions.length) return [];
+    const sessionIds = sessions.map((s) => s.id);
+    const participants = await this.participantsRepo.find({
+      where: { sessionId: In(sessionIds) },
+    });
+    const participantsBySession = new Map<string, StudySessionParticipant[]>();
+    for (const participant of participants) {
+      const bucket = participantsBySession.get(participant.sessionId) ?? [];
+      bucket.push(participant);
+      participantsBySession.set(participant.sessionId, bucket);
+    }
+
+    const userIds = new Set<string>();
+    for (const session of sessions) {
+      userIds.add(session.creatorId);
+      userIds.add(session.inviteeId);
+    }
+    const profileMap = await this.loadProfilesForUsers([...userIds]);
+
+    return sessions.map((session) =>
+      this.buildStateDto(
+        userId,
+        session,
+        participantsBySession.get(session.id) ?? [],
+        profileMap,
+      ),
+    );
+  }
+
+  private async loadProfilesForUsers(
+    userIds: string[],
+  ): Promise<Map<string, Profile>> {
+    const map = new Map<string, Profile>();
+    const missing: string[] = [];
+
+    for (const id of userIds) {
+      const cached = await this.profileCache.get(id);
+      if (cached) {
+        map.set(
+          id,
+          Object.assign(new Profile(), {
+            userId: cached.userId,
+            displayName: cached.displayName,
+            username: cached.username,
+          }),
+        );
+      } else {
+        missing.push(id);
+      }
+    }
+
+    if (missing.length) {
+      const profiles = await this.profilesRepo.find({
+        where: { userId: In(missing) },
+      });
+      await this.profileCache.setMany(profiles);
+      for (const profile of profiles) {
+        map.set(profile.userId, profile);
+      }
+    }
+
+    return map;
+  }
+
+  private buildStateDto(
+    userId: string,
+    session: StudySession,
+    participants: StudySessionParticipant[],
+    profileMap: Map<string, Profile>,
+  ) {
     const now = Date.now();
     let remainingSeconds: number | null = null;
     if (
@@ -1086,7 +1148,6 @@ export class StudyTogetherService {
   }
 
   async history(userId: string, cursor?: string, limit = 20) {
-    await this.runMaintenance();
     const take = Math.min(Math.max(limit, 1), 50);
     const qb = this.sessionsRepo
       .createQueryBuilder('s')
@@ -1135,7 +1196,6 @@ export class StudyTogetherService {
     sessionId: string,
     dto: StudyCompleteDto,
   ) {
-    await this.runMaintenance();
     const session = await this.requireParticipantSession(userId, sessionId);
 
     if (
@@ -1623,7 +1683,7 @@ export class StudyTogetherService {
     return profile?.displayName || profile?.username || 'Someone';
   }
 
-  private async runMaintenance() {
+  async performMaintenance() {
     const now = new Date();
     const expired = await this.sessionsRepo.find({
       where: {

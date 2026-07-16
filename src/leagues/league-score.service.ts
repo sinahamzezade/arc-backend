@@ -14,6 +14,7 @@ import {
 } from './entities/league.enums';
 import { UserLeagueState } from './entities/user-league-state.entity';
 import { LeagueLiveScoresService } from './league-live-scores.service';
+import { LeagueSummaryCacheService } from './league-summary-cache.service';
 import { localDayKey, isWithinSeason } from './league-season-bounds';
 import { rankByTieBreak } from './league-tiebreak';
 import {
@@ -59,6 +60,7 @@ export class LeagueScoreService {
     private readonly dataSource: DataSource,
     private readonly liveScores: LeagueLiveScoresService,
     private readonly notifications: NotificationsService,
+    private readonly summaryCache: LeagueSummaryCacheService,
   ) {}
 
   /**
@@ -151,7 +153,7 @@ export class LeagueScoreService {
     const isProof =
       input.isProofWeighted ?? PROOF_SOURCES.has(input.sourceType);
 
-    return this.dataSource.transaction(async (manager) => {
+    const event = await this.dataSource.transaction(async (manager) => {
       const membership = await manager.findOne(LeagueMembership, {
         where: { id: input.membershipId },
         lock: { mode: 'pessimistic_write' },
@@ -267,5 +269,7 @@ export class LeagueScoreService {
 
       return event;
     });
+    await this.summaryCache.invalidateUser(input.userId);
+    return event;
   }
 }

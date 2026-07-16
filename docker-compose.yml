@@ -36,6 +36,33 @@ services:
         condition: service_started
       roadmap-engine:
         condition: service_started
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:9000/health/readiness']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    build: .
+    command: ['node', 'dist/worker.js']
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USERNAME: arc
+      DB_PASSWORD: arc
+      DB_NAME: arc
+      DB_SYNC: 'false'
+      NODE_ENV: production
+      REDIS_URL: redis://redis:6379
+      TIMING_JOBS_DISABLED: ${TIMING_JOBS_DISABLED:-false}
+      TIMING_JOBS_INTERVAL_MS: ${TIMING_JOBS_INTERVAL_MS:-60000}
+      STREAK_TICK: ${STREAK_TICK:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
   roadmap-engine:
     build:

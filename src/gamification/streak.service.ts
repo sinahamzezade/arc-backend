@@ -20,6 +20,7 @@ import {
   RewardReasonType,
 } from './entities/reward-ledger-entry.entity';
 import { RewardLedgerService } from './reward-ledger.service';
+import { resolveRedisUrl } from '../common/redis/resolve-redis-url';
 
 const RECOVERY_HOURS = 48;
 const MAX_CONSECUTIVE_PROTECTED = 3;
@@ -46,6 +47,10 @@ export class StreakService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit() {
+    if (resolveRedisUrl()) {
+      this.logger.log('Streak tick delegated to BullMQ worker');
+      return;
+    }
     if (process.env.STREAK_TICK === 'false') return;
     this.tickHandle = setInterval(() => {
       void this.closeMissedDays().catch((err) =>

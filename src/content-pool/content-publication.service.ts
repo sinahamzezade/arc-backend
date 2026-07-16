@@ -58,7 +58,12 @@ export class ContentPublicationService {
     versionId: string,
     actorId?: string,
   ) {
-    return this.transition(entityType, versionId, ContentPublicationStatus.Review, actorId);
+    return this.transition(
+      entityType,
+      versionId,
+      ContentPublicationStatus.Review,
+      actorId,
+    );
   }
 
   async publish(
@@ -91,8 +96,8 @@ export class ContentPublicationService {
       await this.questionVersionsRepo.save(qv);
     }
 
-    this.cache.invalidatePrefix('recipe:');
-    this.cache.invalidatePrefix('graph:');
+    await this.cache.invalidatePrefix('content:recipe:');
+    await this.cache.invalidatePrefix('content:graph:');
     this.analytics.emit('content_version_published', {
       entityType,
       versionId,
@@ -139,8 +144,8 @@ export class ContentPublicationService {
       }
     }
 
-    this.cache.invalidatePrefix('recipe:');
-    this.cache.invalidatePrefix('graph:');
+    await this.cache.invalidatePrefix('content:recipe:');
+    await this.cache.invalidatePrefix('content:graph:');
     this.analytics.emit('content_cache_invalidated', { reason: 'retire' });
 
     return version;
@@ -149,14 +154,20 @@ export class ContentPublicationService {
   /**
    * Validate skill graph is a DAG. Throws CONTENT_GRAPH_CYCLE on cycle.
    */
-  async validateGraph(): Promise<{ ok: true; nodeCount: number; edgeCount: number }> {
+  async validateGraph(): Promise<{
+    ok: true;
+    nodeCount: number;
+    edgeCount: number;
+  }> {
     const skills = await this.skillsRepo.find({ where: { isActive: true } });
     const ids = new Set(skills.map((s) => s.id));
     const adj = new Map<string, string[]>();
 
     let edgeCount = 0;
     for (const skill of skills) {
-      const deps = (skill.prerequisiteSkillIds ?? []).filter((id) => ids.has(id));
+      const deps = (skill.prerequisiteSkillIds ?? []).filter((id) =>
+        ids.has(id),
+      );
       adj.set(skill.id, deps);
       edgeCount += deps.length;
     }

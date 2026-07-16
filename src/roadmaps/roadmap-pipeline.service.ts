@@ -105,7 +105,9 @@ export class RoadmapPipelineService {
   }): Promise<PipelinePlanResult> {
     const recipe = await this.loadRecipe(input.profile);
     const skills = await this.unitsCatalog.listActiveSkills();
-    const units = await this.unitsCatalog.listActiveUnits();
+    const units = await this.unitsCatalog.listActiveUnits(undefined, {
+      includeContent: false,
+    });
     if (!skills.length || !units.length) {
       throw new AppException(
         AuthErrorCode.CONTENT_NOT_FOUND,

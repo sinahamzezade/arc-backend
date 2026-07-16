@@ -8,6 +8,7 @@ import { ProfilesModule } from '../profiles/profiles.module';
 import { Lesson } from '../roadmaps/entities/lesson.entity';
 import { LessonProgress } from '../roadmaps/entities/lesson-progress.entity';
 import { Roadmap } from '../roadmaps/entities/roadmap.entity';
+import { RoadmapsModule } from '../roadmaps/roadmaps.module';
 import { SystemFlagsModule } from '../system-flags/system-flags.module';
 import { WeeksModule } from '../weeks/weeks.module';
 import { LessonAttempt } from './entities/lesson-attempt.entity';
@@ -39,6 +40,7 @@ import { LessonsService } from './lessons.service';
     ProfilesModule,
     GamificationModule,
     ContentPoolModule,
+    forwardRef(() => RoadmapsModule),
     CourseTimingModule,
     SystemFlagsModule,
     LessonBodyAiModule,

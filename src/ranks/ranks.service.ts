@@ -718,6 +718,13 @@ export class RanksService implements OnModuleInit {
           evaluatedAt: now,
         });
       } else {
+        if (
+          row.requiredValue === req.required &&
+          row.currentValue === req.current &&
+          row.complete === req.complete
+        ) {
+          continue;
+        }
         row.requiredValue = req.required;
         row.currentValue = req.current;
         row.complete = req.complete;

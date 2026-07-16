@@ -18,6 +18,7 @@ import { EmailService } from './services/email.service';
 import { OAuthService } from './services/oauth.service';
 import { PasswordService } from './services/password.service';
 import { TokenService } from './services/token.service';
+import { AuthUserCacheService } from './services/auth-user-cache.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
@@ -47,9 +48,10 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     TokenService,
     EmailService,
     OAuthService,
+    AuthUserCacheService,
     JwtStrategy,
     JwtAuthGuard,
   ],
-  exports: [AuthService, JwtAuthGuard, PasswordService, JwtModule],
+  exports: [AuthService, JwtAuthGuard, PasswordService, JwtModule, AuthUserCacheService],
 })
 export class AuthModule {}

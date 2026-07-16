@@ -30,6 +30,7 @@ import { LessonContentService } from './lesson-content.service';
 import { isQuizContent, type UnitPlayContent } from './lesson-play.types';
 import { LessonRewardsService } from './lesson-rewards.service';
 import { LessonUnlockService } from './lesson-unlock.service';
+import { RoadmapTreeLoader } from '../roadmaps/roadmap-tree.loader';
 
 const QUIZ_LESSON_TYPE = 'quiz';
 const SELF_ATTEST_LESSON_TYPES = new Set([
@@ -56,6 +57,7 @@ export class LessonsService {
     private readonly content: LessonContentService,
     private readonly rewards: LessonRewardsService,
     private readonly unlock: LessonUnlockService,
+    private readonly treeLoader: RoadmapTreeLoader,
     private readonly orchestrator: LessonCompletionOrchestrator,
     private readonly arlo: LessonArloService,
     @Inject(forwardRef(() => WeeksService))
@@ -593,13 +595,7 @@ export class LessonsService {
       relations: {
         milestone: {
           phase: {
-            roadmap: {
-              phases: {
-                milestones: {
-                  lessons: true,
-                },
-              },
-            },
+            roadmap: true,
           },
         },
       },
@@ -630,7 +626,7 @@ export class LessonsService {
       );
     }
 
-    const lessonNumber = this.ordinalInRoadmap(roadmap, lesson.id);
+    const lessonNumber = await this.lessonOrdinal(roadmap.id, lessonId);
     const progress = await this.progressRepo.findOne({
       where: { userId, lessonId },
     });
@@ -638,25 +634,11 @@ export class LessonsService {
     return { lesson, lessonNumber, progress };
   }
 
-  private ordinalInRoadmap(roadmap: Roadmap, lessonId: string): number {
-    let ordinal = 0;
-    const phases = [...(roadmap.phases ?? [])].sort(
-      (a, b) => a.orderIndex - b.orderIndex,
-    );
-    for (const phase of phases) {
-      const milestones = [...(phase.milestones ?? [])].sort(
-        (a, b) => a.orderIndex - b.orderIndex,
-      );
-      for (const milestone of milestones) {
-        const lessons = [...(milestone.lessons ?? [])].sort(
-          (a, b) => a.orderIndex - b.orderIndex,
-        );
-        for (const lesson of lessons) {
-          ordinal += 1;
-          if (lesson.id === lessonId) return ordinal;
-        }
-      }
-    }
-    return ordinal || 1;
+  private async lessonOrdinal(
+    roadmapId: string,
+    lessonId: string,
+  ): Promise<number> {
+    const ordinals = await this.treeLoader.getLessonOrdinals(roadmapId);
+    return ordinals[lessonId] ?? 0;
   }
 }

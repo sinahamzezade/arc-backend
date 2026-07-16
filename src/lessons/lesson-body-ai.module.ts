@@ -18,12 +18,7 @@ import { LessonBodyPersonalizerService } from './lesson-body-personalizer.servic
 const redisUrl = resolveRedisUrl();
 
 const bullImports = redisUrl
-  ? [
-      BullModule.forRoot({
-        connection: { url: redisUrl },
-      }),
-      BullModule.registerQueue({ name: LESSON_BODY_PERSONALIZATION_QUEUE }),
-    ]
+  ? [BullModule.registerQueue({ name: LESSON_BODY_PERSONALIZATION_QUEUE })]
   : [];
 
 const nullQueueProviders = redisUrl

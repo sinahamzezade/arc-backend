@@ -23,8 +23,11 @@ export class UploadedAsset {
   @Column({ type: 'varchar', length: 64 })
   mime: string;
 
-  @Column({ type: 'bytea' })
-  data: Buffer;
+  @Column({ type: 'varchar', length: 8, default: 'db' })
+  storage: 'db' | 's3';
+
+  @Column({ type: 'bytea', nullable: true })
+  data: Buffer | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
-import Redis from 'ioredis';
-import { resolveRedisUrl } from '../common/redis/resolve-redis-url';
+import { JsonCacheService } from '../common/cache/json-cache.service';
 import { Goal } from '../goals/entities/goal.entity';
 import type { LearnerProfileSnapshot } from '../questionnaire/entities/learner-profile-snapshot.entity';
 import { SkillGraphService } from '../skill-graph/skill-graph.service';
@@ -13,27 +12,14 @@ import type {
 @Injectable()
 export class RoadmapSnapshotService {
   private readonly logger = new Logger(RoadmapSnapshotService.name);
-  private redis: Redis | null = null;
 
-  constructor(private readonly skillGraph: SkillGraphService) {
-    const url = resolveRedisUrl();
-    if (url) {
-      try {
-        this.redis = new Redis(url, {
-          maxRetriesPerRequest: 1,
-          lazyConnect: true,
-        });
-        this.redis.on('error', (err) => {
-          this.logger.warn(`Snapshot Redis error: ${err.message}`);
-        });
-        void this.redis.connect().catch(() => {
-          void this.redis?.disconnect();
-          this.redis = null;
-        });
-      } catch {
-        this.redis = null;
-      }
-    }
+  constructor(
+    private readonly skillGraph: SkillGraphService,
+    private readonly cache: JsonCacheService,
+  ) {}
+
+  private snapshotKey(roleSlug: string, version: number): string {
+    return `content:recipe:${roleSlug}:v${version}`;
   }
 
   goalRevision(goal: Goal): string {
@@ -82,7 +68,6 @@ export class RoadmapSnapshotService {
         provisional_stage: e.provisionalStage,
         verified_stage: e.verifiedStage,
         confidence: e.confidence,
-        // Placement gates any skip on unverified skills until it clears.
         diagnostic_required:
           profileSnapshot.diagnosticRequired && e.verifiedStage == null,
       })),
@@ -95,10 +80,6 @@ export class RoadmapSnapshotService {
     };
   }
 
-  /**
-   * Prefer column; heal from rawAnswers when target_roles was wiped
-   * (e.g. goal stored as string under multi-select normalize).
-   */
   resolveTargetRoles(goal: Goal): string[] {
     const fromCol = (goal.targetRoles ?? []).filter(Boolean);
     if (fromCol.length) return fromCol;
@@ -113,8 +94,7 @@ export class RoadmapSnapshotService {
         if (typeof item === 'string' && item.trim()) fromRaw.push(item.trim());
       }
     }
-    const other =
-      typeof raw.goalOther === 'string' ? raw.goalOther.trim() : '';
+    const other = typeof raw.goalOther === 'string' ? raw.goalOther.trim() : '';
     if (other) {
       const slug = other
         .toLowerCase()
@@ -126,7 +106,6 @@ export class RoadmapSnapshotService {
     return [...new Set(fromRaw)];
   }
 
-  /** Throws if roles empty or no active recipe — used before enqueue. */
   async assertHasRecipe(goal: Goal): Promise<string[]> {
     const roles = this.resolveTargetRoles(goal);
     if (!roles.length) {
@@ -150,18 +129,10 @@ export class RoadmapSnapshotService {
       );
     }
 
-    const cacheKey = `recipe:${recipe.targetRoleSlug}:${recipe.version}`;
-    if (this.redis) {
-      try {
-        const cached = await this.redis.get(cacheKey);
-        if (cached) {
-          return JSON.parse(cached) as ContentSnapshotDto;
-        }
-      } catch (err) {
-        this.logger.warn(
-          `Snapshot cache read failed: ${err instanceof Error ? err.message : err}`,
-        );
-      }
+    const cacheKey = this.snapshotKey(recipe.targetRoleSlug, recipe.version);
+    const cached = await this.cache.getJson<ContentSnapshotDto>(cacheKey);
+    if (cached) {
+      return cached;
     }
 
     const subgraph = await this.skillGraph.loadSubgraphForRecipe(recipe);
@@ -238,43 +209,23 @@ export class RoadmapSnapshotService {
       projects: [],
     };
 
-    if (this.redis) {
-      try {
-        await this.redis.set(
-          cacheKey,
-          JSON.stringify(snapshot),
-          'EX',
-          60 * 30,
-        );
-      } catch (err) {
-        this.logger.warn(
-          `Snapshot cache write failed: ${err instanceof Error ? err.message : err}`,
-        );
-      }
-    }
-
+    await this.cache.setJson(cacheKey, snapshot, 30 * 60);
     return snapshot;
   }
 
-  /** Drop recipe snapshots after catalog/import mutations (stack IDs change). */
   async invalidateRecipeCaches(roleSlugs?: string[]): Promise<void> {
-    if (!this.redis) return;
     try {
       if (roleSlugs?.length) {
-        const keys: string[] = [];
         for (const slug of roleSlugs) {
-          const found = await this.redis.keys(`recipe:${slug}:*`);
-          keys.push(...found);
+          await this.cache.delByPrefix(`content:recipe:${slug}:`);
         }
-        if (keys.length) await this.redis.del(...keys);
         this.logger.log(
-          `Invalidated ${keys.length} recipe snapshot(s) for ${roleSlugs.join(',')}`,
+          `Invalidated recipe snapshot(s) for ${roleSlugs.join(',')}`,
         );
         return;
       }
-      const keys = await this.redis.keys('recipe:*');
-      if (keys.length) await this.redis.del(...keys);
-      this.logger.log(`Invalidated ${keys.length} recipe snapshot(s)`);
+      const removed = await this.cache.delByPrefix('content:recipe:');
+      this.logger.log(`Invalidated ${removed} recipe snapshot(s)`);
     } catch (err) {
       this.logger.warn(
         `Recipe cache invalidate failed: ${err instanceof Error ? err.message : err}`,

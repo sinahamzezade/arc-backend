@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { resolveRedisUrl } from '../common/redis/resolve-redis-url';
 import { ReminderPlannerService } from './reminder-planner.service';
 import { TimingService } from './timing.service';
 
@@ -17,6 +18,10 @@ export class TimingJobsProcessor implements OnModuleInit {
   ) {}
 
   onModuleInit() {
+    if (resolveRedisUrl()) {
+      this.logger.log('Course timing jobs delegated to BullMQ worker');
+      return;
+    }
     if (process.env.TIMING_JOBS_DISABLED === 'true') return;
     if (this.started) return;
     this.started = true;

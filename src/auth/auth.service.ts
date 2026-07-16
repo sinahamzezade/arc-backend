@@ -28,6 +28,7 @@ import { AuthIdentity, OAuthProvider } from './entities/auth-identity.entity';
 import { EmailService } from './services/email.service';
 import { OAuthService, VerifiedOAuthIdentity } from './services/oauth.service';
 import { PasswordService } from './services/password.service';
+import { AuthUserCacheService } from './services/auth-user-cache.service';
 import { TokenService } from './services/token.service';
 import { SystemFlagsService } from '../system-flags/system-flags.service';
 import { SystemFlagKey } from '../system-flags/system-flag.keys';
@@ -50,6 +51,7 @@ export class AuthService {
     private readonly profilesService: ProfilesService,
     private readonly passwordService: PasswordService,
     private readonly tokenService: TokenService,
+    private readonly authUserCache: AuthUserCacheService,
     private readonly emailService: EmailService,
     private readonly oauthService: OAuthService,
     private readonly config: ConfigService,
@@ -170,9 +172,12 @@ export class AuthService {
     return this.buildAuthResponse(user, profile, meta);
   }
 
-  async logout(refreshToken?: string) {
+  async logout(refreshToken?: string, userId?: string) {
     if (refreshToken) {
       await this.tokenService.revokeRefreshToken(refreshToken);
+    }
+    if (userId) {
+      await this.authUserCache.invalidate(userId);
     }
     return { ok: true };
   }

@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import { Repository } from 'typeorm';
+import { JsonCacheService } from '../common/cache/json-cache.service';
 import { CareerRole } from './entities/career-role.entity';
 import { Skill } from './entities/skill.entity';
 import { Unit } from './entities/unit.entity';
@@ -26,6 +27,8 @@ export class UnitsCatalogService implements OnModuleInit {
   /** Called after any catalog mutation (import/upsert/activate/remove). */
   private readonly changeListeners: Array<() => Promise<void> | void> = [];
 
+  private readonly catalogTtlSec = 600;
+
   constructor(
     @InjectRepository(Skill)
     private readonly skillsRepo: Repository<Skill>,
@@ -35,6 +38,7 @@ export class UnitsCatalogService implements OnModuleInit {
     private readonly recipesRepo: Repository<RoleRecipe>,
     @InjectRepository(CareerRole)
     private readonly careersRepo: Repository<CareerRole>,
+    private readonly jsonCache: JsonCacheService,
   ) {}
 
   async onModuleInit() {
@@ -47,6 +51,7 @@ export class UnitsCatalogService implements OnModuleInit {
   }
 
   private async notifyCatalogChanged(): Promise<void> {
+    await this.jsonCache.delByPrefix('catalog:');
     for (const listener of this.changeListeners) {
       try {
         await listener();
@@ -210,23 +215,72 @@ export class UnitsCatalogService implements OnModuleInit {
   }
 
   async listActiveSkills(): Promise<Skill[]> {
-    return this.skillsRepo.find({
+    const key = 'catalog:skills:active';
+    const cached = await this.jsonCache.getJson<Skill[]>(key);
+    if (cached) return cached;
+
+    const skills = await this.skillsRepo.find({
       where: { isActive: true },
       order: { level: 'ASC', id: 'ASC' },
     });
+    await this.jsonCache.setJson(key, skills, this.catalogTtlSec);
+    return skills;
   }
 
-  async listActiveUnits(filter?: {
-    stack?: string;
-    domain?: string;
-  }): Promise<Unit[]> {
+  async listActiveUnits(
+    filter?: {
+      stack?: string;
+      domain?: string;
+    },
+    opts?: { includeContent?: boolean },
+  ): Promise<Unit[]> {
     const where: Record<string, unknown> = { isActive: true };
     if (filter?.stack) where.stack = filter.stack;
     if (filter?.domain) where.domain = filter.domain;
-    return this.unitsRepo.find({
-      where,
-      order: { level: 'ASC', id: 'ASC' },
-    });
+    const includeContent = opts?.includeContent !== false;
+    if (includeContent) {
+      return this.unitsRepo.find({
+        where,
+        order: { level: 'ASC', id: 'ASC' },
+      });
+    }
+
+    const key = `catalog:units:active:${filter?.stack ?? '*'}:${filter?.domain ?? '*'}`;
+    const cached = await this.jsonCache.getJson<Unit[]>(key);
+    if (cached) return cached;
+
+    const units = await this.unitsRepo
+      .createQueryBuilder('unit')
+      .where('unit.is_active = true')
+      .andWhere(filter?.stack ? 'unit.stack = :stack' : '1=1', {
+        stack: filter?.stack,
+      })
+      .andWhere(filter?.domain ? 'unit.domain = :domain' : '1=1', {
+        domain: filter?.domain,
+      })
+      .select([
+        'unit.id',
+        'unit.stack',
+        'unit.domain',
+        'unit.level',
+        'unit.title',
+        'unit.lessonType',
+        'unit.estimatedMinutes',
+        'unit.difficulty',
+        'unit.xp',
+        'unit.url',
+        'unit.servesStage',
+        'unit.unitRole',
+        'unit.profileSkillSlug',
+        'unit.sourceTemplateId',
+        'unit.sourceVersionId',
+        'unit.isActive',
+      ])
+      .orderBy('unit.level', 'ASC')
+      .addOrderBy('unit.id', 'ASC')
+      .getMany();
+    await this.jsonCache.setJson(key, units, this.catalogTtlSec);
+    return units;
   }
 
   async findUnit(id: string): Promise<Unit | null> {

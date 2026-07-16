@@ -6,6 +6,8 @@ import { Lesson, LessonStatus } from '../roadmaps/entities/lesson.entity';
 import { Milestone } from '../roadmaps/entities/milestone.entity';
 import { Roadmap } from '../roadmaps/entities/roadmap.entity';
 import { RoadmapPhase } from '../roadmaps/entities/roadmap-phase.entity';
+import { RoadmapTreeLoader } from '../roadmaps/roadmap-tree.loader';
+import { RoadmapCacheService } from '../roadmaps/roadmap-cache.service';
 import {
   LessonProgress,
   LessonProgressStatus,
@@ -13,6 +15,11 @@ import {
 
 @Injectable()
 export class LessonUnlockService {
+  constructor(
+    private readonly treeLoader: RoadmapTreeLoader,
+    private readonly roadmapCache: RoadmapCacheService,
+  ) {}
+
   /**
    * Mark lesson completed, unlock next locked lesson in roadmap order.
    * XP gate is soft (flag only) — never blocks starting the next lesson.
@@ -95,6 +102,8 @@ export class LessonUnlockService {
     roadmap.progressPercent = String(progressPercent);
     await manager.getRepository(Roadmap).save(roadmap);
 
+    await this.roadmapCache.invalidateRoadmap(roadmap.id, userId);
+
     return { unlockedLessonIds, progressPercent, xpGateBlocked };
   }
 
@@ -120,23 +129,17 @@ export class LessonUnlockService {
     manager: EntityManager,
     lesson: Lesson,
   ): Promise<Roadmap | null> {
-    const withTree = await manager.getRepository(Lesson).findOne({
+    const withRoadmap = await manager.getRepository(Lesson).findOne({
       where: { id: lesson.id },
       relations: {
         milestone: {
-          phase: {
-            roadmap: {
-              phases: {
-                milestones: {
-                  lessons: true,
-                },
-              },
-            },
-          },
+          phase: true,
         },
       },
     });
-    return withTree?.milestone?.phase?.roadmap ?? null;
+    const roadmapId = withRoadmap?.milestone?.phase?.roadmapId;
+    if (!roadmapId) return null;
+    return this.treeLoader.loadRoadmapTree(roadmapId);
   }
 
   private flattenLessons(roadmap: Roadmap): Lesson[] {

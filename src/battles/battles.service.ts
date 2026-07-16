@@ -310,7 +310,6 @@ export class BattlesService {
   }
 
   async listInvites(userId: string) {
-    await this.runMaintenance();
     const battles = await this.battlesRepo.find({
       where: [
         { opponentId: userId, status: In(ACTIVE_STATUSES) },
@@ -332,7 +331,6 @@ export class BattlesService {
   }
 
   async accept(userId: string, battleId: string, idempotencyKey: string) {
-    await this.runMaintenance();
     return this.dataSource
       .transaction(async (manager) => {
         const battleRepo = manager.getRepository(Battle);
@@ -679,7 +677,6 @@ export class BattlesService {
   }
 
   async getBattle(userId: string, battleId: string) {
-    await this.runMaintenance();
     await this.maybeTimeoutCurrentQuestion(battleId);
     await this.enforceDisconnectRules(battleId);
     await this.maybeAutoContinueAfterReveal(battleId);
@@ -2019,7 +2016,7 @@ export class BattlesService {
       .execute();
   }
 
-  private async runMaintenance() {
+  async performMaintenance() {
     await this.expireStaleInvites();
     await this.notifyExpiringInvites();
     await this.expireAsyncPlays();

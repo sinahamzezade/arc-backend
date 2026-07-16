@@ -23,6 +23,7 @@ import {
 import { LeagueCohortService } from './league-cohort.service';
 import { LeagueFinalizeService } from './league-finalize.service';
 import { LeagueLiveScoresService } from './league-live-scores.service';
+import { LeagueSummaryCacheService } from './league-summary-cache.service';
 import {
   regionalBucketForTimezone,
   timezoneForBucket,
@@ -63,6 +64,7 @@ export class LeaguesService {
     private readonly scores: LeagueScoreService,
     private readonly finalize: LeagueFinalizeService,
     private readonly liveScores: LeagueLiveScoresService,
+    private readonly summaryCache: LeagueSummaryCacheService,
     private readonly profiles: ProfilesService,
     private readonly notifications: NotificationsService,
     private readonly socialPermissions: SocialPermissionService,
@@ -165,6 +167,11 @@ export class LeaguesService {
   async getCurrent(userId: string) {
     const { state, season, cohort, membership } =
       await this.ensureAssignment(userId);
+    const cached = await this.summaryCache.get<
+      Awaited<ReturnType<LeaguesService['getCurrent']>>
+    >(userId, cohort.id, 'current');
+    if (cached) return cached;
+
     const peers = await this.cohorts.listMemberships(cohort.id);
     const ranked = rankByTieBreak(peers);
     const activeCount =
@@ -178,7 +185,7 @@ export class LeaguesService {
       activeDays: membership.activeDays,
     });
 
-    return toCurrentLeagueDto({
+    const result = toCurrentLeagueDto({
       serverTimestamp: new Date(),
       season,
       cohort,
@@ -199,6 +206,8 @@ export class LeaguesService {
       breakdown,
       quests,
     });
+    await this.summaryCache.set(userId, cohort.id, 'current', result);
+    return result;
   }
 
   async getLeaderboard(userId: string, cursor?: string) {
@@ -215,15 +224,24 @@ export class LeaguesService {
         : null;
 
     // Prefer live cache when present; fall back to PG ranking.
-    const live = await this.liveScores.getLeaderboard(cohort.id, 100);
-    if (live.length === 0) {
-      await this.liveScores.reconcile(
-        cohort.id,
-        ranked.map((r) => ({
-          userId: r.userId,
-          qualifiedXp: r.qualifiedXp,
-        })),
-      );
+    const live = await this.liveScores.getLeaderboard(cohort.id, offset + pageSize);
+    if (live.length > 0) {
+      const livePage = live.slice(offset, offset + pageSize);
+      const liveRanked = livePage.map((row, index) => ({
+        userId: row.userId,
+        qualifiedXp: row.score,
+        position: offset + index + 1,
+      }));
+      return toLeaderboardDto({
+        serverTimestamp: new Date(),
+        seasonEndsAt: season.endsAt,
+        cohortId: cohort.id,
+        entries: await this.anonymizePeers(liveRanked as never, userId),
+        nextCursor:
+          offset + pageSize < live.length
+            ? String(offset + pageSize)
+            : null,
+      });
     }
 
     return toLeaderboardDto({
@@ -238,6 +256,11 @@ export class LeaguesService {
   async getMe(userId: string) {
     const { state, season, cohort, membership } =
       await this.ensureAssignment(userId);
+    const cached = await this.summaryCache.get<
+      Awaited<ReturnType<LeaguesService['getMe']>>
+    >(userId, cohort.id, 'me');
+    if (cached) return cached;
+
     const peers = await this.cohorts.listMemberships(cohort.id);
     const ranked = rankByTieBreak(peers);
     const me = ranked.find((r) => r.userId === userId);
@@ -261,7 +284,7 @@ export class LeaguesService {
 
     await this.maybeRiskNotify(state, zone, position);
 
-    return {
+    const result = {
       ...toMeDto({
         serverTimestamp: new Date(),
         season,
@@ -281,6 +304,8 @@ export class LeaguesService {
         ),
       liveBackend: this.liveScores.backend,
     };
+    await this.summaryCache.set(userId, cohort.id, 'me', result);
+    return result;
   }
 
   async getHistory(userId: string, cursor?: string) {

@@ -1,45 +1,62 @@
 import { Injectable } from '@nestjs/common';
+import { JsonCacheService } from '../common/cache/json-cache.service';
 
 type CacheEntry<T> = { value: T; expiresAt: number };
 
 /**
- * In-process cache for published recipe/graph snapshots.
- * Key includes content version. Redis-ready interface (get/set/del).
+ * Published recipe/graph snapshots — Redis-backed with in-process L1.
  */
 @Injectable()
 export class ContentCacheService {
   private readonly store = new Map<string, CacheEntry<unknown>>();
   private readonly defaultTtlMs = 5 * 60 * 1000;
 
-  get<T>(key: string): T | null {
+  constructor(private readonly jsonCache: JsonCacheService) {}
+
+  async get<T>(key: string): Promise<T | null> {
     const row = this.store.get(key);
-    if (!row) return null;
-    if (Date.now() > row.expiresAt) {
-      this.store.delete(key);
-      return null;
+    if (row && Date.now() <= row.expiresAt) {
+      return row.value as T;
     }
-    return row.value as T;
+
+    const remote = await this.jsonCache.getJson<T>(key);
+    if (remote != null) {
+      this.store.set(key, {
+        value: remote,
+        expiresAt: Date.now() + this.defaultTtlMs,
+      });
+      return remote;
+    }
+    return null;
   }
 
-  set<T>(key: string, value: T, ttlMs = this.defaultTtlMs): void {
+  async set<T>(
+    key: string,
+    value: T,
+    ttlMs = this.defaultTtlMs,
+  ): Promise<void> {
     this.store.set(key, { value, expiresAt: Date.now() + ttlMs });
+    const ttlSec = Math.max(1, Math.ceil(ttlMs / 1000));
+    await this.jsonCache.setJson(key, value, ttlSec);
   }
 
-  del(key: string): void {
+  async del(key: string): Promise<void> {
     this.store.delete(key);
+    await this.jsonCache.del(key);
   }
 
-  invalidatePrefix(prefix: string): void {
-    for (const key of this.store.keys()) {
+  async invalidatePrefix(prefix: string): Promise<void> {
+    for (const key of [...this.store.keys()]) {
       if (key.startsWith(prefix)) this.store.delete(key);
     }
+    await this.jsonCache.delByPrefix(prefix);
   }
 
   recipeKey(roleSlug: string, version: number): string {
-    return `recipe:${roleSlug}:v${version}`;
+    return `content:recipe:${roleSlug}:v${version}`;
   }
 
   graphKey(recipeId: string, version: number): string {
-    return `graph:${recipeId}:v${version}`;
+    return `content:graph:${recipeId}:v${version}`;
   }
 }

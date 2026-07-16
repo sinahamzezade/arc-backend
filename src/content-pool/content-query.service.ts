@@ -96,7 +96,7 @@ export class ContentQueryService {
       );
     }
     const key = this.cache.recipeKey(recipe.targetRoleSlug, recipe.version);
-    this.cache.set(key, {
+    await this.cache.set(key, {
       id: recipe.id,
       version: recipe.version,
       targetRoleSlug: recipe.targetRoleSlug,
@@ -110,10 +110,10 @@ export class ContentQueryService {
 
   async loadSubgraphForRecipe(recipe: RoleRecipe): Promise<RecipeSubgraph> {
     const key = this.cache.graphKey(recipe.id, recipe.version);
-    const cached = this.cache.get<RecipeSubgraph>(key);
+    const cached = await this.cache.get<RecipeSubgraph>(key);
     if (cached) return cached;
     const subgraph = await this.skillGraph.loadSubgraphForRecipe(recipe);
-    this.cache.set(key, subgraph);
+    await this.cache.set(key, subgraph);
     return subgraph;
   }
 
@@ -389,6 +389,28 @@ export class ContentQueryService {
     const batch = ordered.slice(start, end);
 
     const materializedLessonIds: string[] = [];
+    const lessonsToSave: Lesson[] = [];
+    const templateIds = batch
+      .filter(
+        (lesson) =>
+          !lesson.unitId && !lesson.playContent && lesson.lessonTemplateId,
+      )
+      .map((lesson) => lesson.lessonTemplateId as string);
+    const playableByTemplate = new Map<
+      string,
+      Awaited<ReturnType<ContentQueryService['getPlayableLessonVersion']>>
+    >();
+    for (const templateId of [...new Set(templateIds)]) {
+      try {
+        playableByTemplate.set(
+          templateId,
+          await this.getPlayableLessonVersion(templateId),
+        );
+      } catch {
+        /* skip unpublished templates in window */
+      }
+    }
+
     for (const lesson of batch) {
       // Units model: playContent already snapshotted at roadmap persist.
       if (lesson.unitId || lesson.playContent) {
@@ -396,26 +418,25 @@ export class ContentQueryService {
         if (!lesson.rewardClassSnapshot) {
           lesson.rewardClassSnapshot = 'standard';
         }
-        await this.userLessonsRepo.save(lesson);
+        lessonsToSave.push(lesson);
         materializedLessonIds.push(lesson.id);
         continue;
       }
       if (!lesson.lessonTemplateId) continue;
-      try {
-        const playable = await this.getPlayableLessonVersion(
-          lesson.lessonTemplateId,
-        );
-        lesson.sourceVersionId = playable.lessonVersionId;
-        lesson.rewardClassSnapshot = playable.rewardClass;
-        lesson.materializedWindow = fromWeek;
-        if (!lesson.playContent && playable.body) {
-          lesson.playContent = playable.body;
-        }
-        await this.userLessonsRepo.save(lesson);
-        materializedLessonIds.push(lesson.id);
-      } catch {
-        /* skip unpublished templates in window */
+      const playable = playableByTemplate.get(lesson.lessonTemplateId);
+      if (!playable) continue;
+      lesson.sourceVersionId = playable.lessonVersionId;
+      lesson.rewardClassSnapshot = playable.rewardClass;
+      lesson.materializedWindow = fromWeek;
+      if (!lesson.playContent && playable.body) {
+        lesson.playContent = playable.body;
       }
+      lessonsToSave.push(lesson);
+      materializedLessonIds.push(lesson.id);
+    }
+
+    if (lessonsToSave.length) {
+      await this.userLessonsRepo.save(lessonsToSave);
     }
 
     this.analytics.emit('content_batch_materialized', {
