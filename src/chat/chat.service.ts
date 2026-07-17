@@ -873,10 +873,9 @@ export class ChatService {
     }
     const existing = await this.userKeysRepo.findOne({ where: { userId } });
     if (existing) {
-      if (existing.publicKey !== key) {
-        // Identity rotated on this account — force conversation re-key.
-        await this.wipeKeyWrapsForUserConversations(userId);
-      }
+      // Do not wipe conversation wraps on identity publish.
+      // Global wipe made every device/login rotation unreadable; clients
+      // re-wrap or reset per conversation when seal_open fails on send.
       existing.publicKey = key;
       await this.userKeysRepo.save(existing);
       return {
@@ -893,14 +892,6 @@ export class ChatService {
       publicKey: saved.publicKey,
       updatedAt: saved.updatedAt.toISOString(),
     };
-  }
-
-  /** Drop all wraps in conversations this user belongs to (full rekey). */
-  private async wipeKeyWrapsForUserConversations(userId: string) {
-    const memberships = await this.membersRepo.find({ where: { userId } });
-    const convIds = [...new Set(memberships.map((m) => m.conversationId))];
-    if (!convIds.length) return;
-    await this.keyWrapsRepo.delete({ conversationId: In(convIds) });
   }
 
   async resetConversationKeyWraps(userId: string, conversationId: string) {
