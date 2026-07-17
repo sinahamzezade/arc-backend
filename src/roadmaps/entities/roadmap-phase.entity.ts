@@ -39,6 +39,10 @@ export class RoadmapPhase {
   @Column({ type: 'varchar' })
   title: string;
 
+  /** Identity-progression title from role recipe (falls back to `title`). */
+  @Column({ name: 'narrative_title', type: 'varchar', nullable: true })
+  narrativeTitle: string | null;
+
   @Column({ type: 'text', default: '' })
   description: string;
 

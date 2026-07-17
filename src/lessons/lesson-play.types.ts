@@ -4,7 +4,108 @@
  */
 
 export type UnitLessonType =
-  'reading' | 'practice' | 'mini_project' | 'interactive' | 'quiz' | 'video';
+  | 'reading'
+  | 'practice'
+  | 'mini_project'
+  | 'interactive'
+  | 'quiz'
+  | 'video'
+  | 'scenario'
+  | 'visual_hotspot'
+  | 'debate'
+  | 'sandbox_simulation';
+
+export const ACTIVE_LESSON_TYPES = [
+  'scenario',
+  'visual_hotspot',
+  'debate',
+  'sandbox_simulation',
+] as const satisfies ReadonlyArray<UnitLessonType>;
+
+export type ActiveLessonType = (typeof ACTIVE_LESSON_TYPES)[number];
+
+export type ScenarioOption = {
+  id: string;
+  label: string;
+};
+
+export type Hotspot = {
+  id: string;
+  label?: string;
+  /** Normalized 0–1 coords for FE tap targets (public). */
+  x?: number;
+  y?: number;
+};
+
+export type DragItem = {
+  id: string;
+  label: string;
+};
+
+/** Domain-neutral active + narration blocks inside active-format play bodies. */
+export type ActiveLessonBlock =
+  | { type: 'text'; id: string; body: string }
+  | { type: 'callout'; id: string; title: string; body: string }
+  | { type: 'live_context'; id: string; track_tag: string }
+  | {
+      type: 'scenario_decision';
+      id: string;
+      setup: string;
+      options: ScenarioOption[];
+      /** SECRET — withheld until check. */
+      correctOptionId: string;
+      /** SECRET — outcome copy keyed by option id. */
+      outcomes?: Record<string, string>;
+    }
+  | {
+      type: 'visual_hotspot';
+      id: string;
+      imageAssetKey: string;
+      hotspots: Hotspot[];
+      /** SECRET */
+      correctHotspotId: string;
+      /** SECRET */
+      explanation?: string;
+    }
+  | {
+      type: 'drag_order';
+      id: string;
+      items: DragItem[];
+      /** SECRET — server-side order hash (sha256 of id joined by `|`). */
+      correctOrderHash: string;
+      /** SECRET — canonical ordered ids for grading/replay. */
+      correctOrder?: string[];
+      explanation?: string;
+    }
+  | {
+      type: 'debate_pick';
+      id: string;
+      prompt: string;
+      sideA: string;
+      sideB: string;
+      /** SECRET — preferred side when graded (`a` | `b`); omit for open debate. */
+      preferredSide?: 'a' | 'b';
+      /** SECRET */
+      feedbackA?: string;
+      /** SECRET */
+      feedbackB?: string;
+    }
+  | {
+      type: 'sandbox_simulation';
+      id: string;
+      simulationAssetKey: string;
+      actions: string[];
+      /** SECRET — winning action sequence. */
+      correctActions: string[];
+      /** SECRET */
+      outcomeCopy?: string;
+    };
+
+/** scenario | visual_hotspot | debate | sandbox_simulation play body. */
+export type ActiveFormatPlayContent = {
+  objective: string;
+  blocks: ActiveLessonBlock[];
+};
 
 /** Structured reading section (course-authoring v2). */
 export type ReadingSectionBlock = {
@@ -64,7 +165,11 @@ export type VideoPlayContent = {
 };
 
 export type UnitPlayContent =
-  ReadingPlayContent | TaskPlayContent | QuizPlayContent | VideoPlayContent;
+  | ReadingPlayContent
+  | TaskPlayContent
+  | QuizPlayContent
+  | VideoPlayContent
+  | ActiveFormatPlayContent;
 
 export function isReadingContent(
   value: UnitPlayContent,
@@ -91,8 +196,15 @@ export function isVideoContent(
     typeof (value as VideoPlayContent).note === 'string' &&
     !isReadingContent(value) &&
     !isTaskContent(value) &&
-    !isQuizContent(value)
+    !isQuizContent(value) &&
+    !isActiveFormatContent(value)
   );
+}
+
+export function isActiveFormatContent(
+  value: UnitPlayContent,
+): value is ActiveFormatPlayContent {
+  return Array.isArray((value as ActiveFormatPlayContent).blocks);
 }
 
 function isValidQuizQuestion(value: unknown): boolean {
@@ -131,9 +243,7 @@ function isReadingSection(value: unknown): boolean {
 
 function isValidReadingSections(sections: unknown[]): boolean {
   if (!sections.length) return false;
-  return sections.every(
-    (s) => typeof s === 'string' || isReadingSection(s),
-  );
+  return sections.every((s) => typeof s === 'string' || isReadingSection(s));
 }
 
 /** True for any valid type-specific unit play body. */
@@ -146,9 +256,7 @@ export function isUnitPlayContent(value: unknown): value is UnitPlayContent {
 
   // reading — string[] (legacy) or structured {id,title,blocks[]}[]
   if (Array.isArray(v.sections)) {
-    return (
-      isValidReadingSections(v.sections) && Array.isArray(v.keyTakeaways)
-    );
+    return isValidReadingSections(v.sections) && Array.isArray(v.keyTakeaways);
   }
   // practice / mini_project / interactive
   if (typeof v.task === 'string') {
@@ -162,8 +270,60 @@ export function isUnitPlayContent(value: unknown): value is UnitPlayContent {
       v.questions.every((q) => isValidQuizQuestion(q))
     );
   }
+  // active formats (scenario / visual_hotspot / debate / sandbox_simulation)
+  if (Array.isArray(v.blocks)) {
+    return v.blocks.length > 0 && v.blocks.every(isValidActiveBlock);
+  }
   // video
   return typeof v.note === 'string';
+}
+
+function isValidActiveBlock(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const b = value as Record<string, unknown>;
+  if (typeof b.id !== 'string' || typeof b.type !== 'string') return false;
+  switch (b.type) {
+    case 'text':
+      return typeof b.body === 'string';
+    case 'callout':
+      return typeof b.title === 'string' && typeof b.body === 'string';
+    case 'live_context':
+      return typeof b.track_tag === 'string';
+    case 'scenario_decision':
+      return (
+        typeof b.setup === 'string' &&
+        Array.isArray(b.options) &&
+        b.options.length > 0 &&
+        typeof b.correctOptionId === 'string'
+      );
+    case 'visual_hotspot':
+      return (
+        typeof b.imageAssetKey === 'string' &&
+        Array.isArray(b.hotspots) &&
+        b.hotspots.length > 0 &&
+        typeof b.correctHotspotId === 'string'
+      );
+    case 'drag_order':
+      return (
+        Array.isArray(b.items) &&
+        b.items.length > 0 &&
+        typeof b.correctOrderHash === 'string'
+      );
+    case 'debate_pick':
+      return (
+        typeof b.prompt === 'string' &&
+        typeof b.sideA === 'string' &&
+        typeof b.sideB === 'string'
+      );
+    case 'sandbox_simulation':
+      return (
+        typeof b.simulationAssetKey === 'string' &&
+        Array.isArray(b.actions) &&
+        Array.isArray(b.correctActions)
+      );
+    default:
+      return false;
+  }
 }
 
 /**
@@ -194,6 +354,16 @@ export const PLAY_SECRET_KEYS = [
   'feedbackIncorrect',
   'remediation',
   'badgeCandidateKey',
+  // active-format secrets
+  'correctHotspotId',
+  'correctOrderHash',
+  'correctOrder',
+  'correctActions',
+  'outcomes',
+  'preferredSide',
+  'feedbackA',
+  'feedbackB',
+  'outcomeCopy',
 ] as const;
 
 /**
@@ -250,7 +420,8 @@ export function collectSecretKeyHits(value: unknown, path = ''): string[] {
 export type LessonContentBlock =
   | { type: 'text'; body: string }
   | { type: 'callout'; title: string; body: string }
-  | { type: 'code'; label: string; code: string };
+  | { type: 'code'; label: string; code: string }
+  | ActiveLessonBlock;
 
 export type LessonContentPage = {
   id: string;

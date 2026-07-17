@@ -567,7 +567,7 @@ export class BadgesService {
         const grant = await this.ledger.grantReward(manager, {
           userId,
           reasonType: RewardReasonType.Badge,
-          reasonId: def.code,
+          reasonId: def.id,
           idempotencyKey: `badge:${userId}:${def.code}`,
           lines: [
             {

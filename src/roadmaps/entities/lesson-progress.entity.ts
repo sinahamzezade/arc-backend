@@ -70,6 +70,11 @@ export class LessonProgress {
     /** Keyed by question id (q0..); option index for mcq, boolean otherwise. */
     quizAnswers?: Record<string, number | boolean>;
     quizIndex?: number;
+    /** Resolved active-format block ids → correctness. */
+    activeBlockResolutions?: Record<
+      string,
+      { correct: boolean; resolvedAt: string }
+    >;
   };
 
   @Column({ name: 'gems_awarded', type: 'int', default: 0 })

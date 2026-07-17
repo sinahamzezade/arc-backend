@@ -16,6 +16,8 @@ import {
 import { Goal } from '../goals/entities/goal.entity';
 import { RoleRecipe } from '../skill-graph/entities/role-recipe.entity';
 import { SkillGraphService } from '../skill-graph/skill-graph.service';
+import { SystemFlagKey } from '../system-flags/system-flag.keys';
+import { SystemFlagsService } from '../system-flags/system-flags.service';
 import type {
   ExplanationTraceDto,
   LearnerProfileDto,
@@ -30,14 +32,17 @@ import type {
   NarratorLesson,
 } from './roadmap-narrator.prompt';
 import { RoadmapNarratorService } from './roadmap-narrator.service';
+import { RoadmapUnitsOrchestratorService } from './roadmap-units-orchestrator.service';
 import { decodeTimelineWeeks, decodeWeeklyHours } from './token-decoders';
 
 export type PipelinePlanResult = {
   plan: RoadmapPlanDto;
   model: string;
   promptVersion: string;
-  /** true when narrator output was repaired via deterministic slicing. */
+  /** true when AI output was repaired or deterministic fallback used. */
   usedFallback: boolean;
+  /** orchestrator = AI propose+validate; narrator = deterministic select+pack. */
+  aiMode: 'orchestrator' | 'narrator';
 };
 
 /** One unit scheduled for one skill, in final study order. */
@@ -73,16 +78,18 @@ const FORMAT_ORDER: Record<string, number> = {
   doing: 2,
   practice: 2,
   quiz: 3,
+  scenario: 2,
+  visual_hotspot: 2,
+  debate: 2,
+  sandbox_simulation: 2,
+  interactive: 2,
+  mini_project: 2,
 };
 
 /**
- * Deterministic units pipeline. The app owns selection and order:
- *   1. skill gap  = recipe.requiredSkillIds − known skills (+ prereq closure)
- *   2. topo sort gap skills
- *   3. per-skill unit candidates, learning-style format filter
- *   4. within-skill scoring (SELECTION_WEIGHTS) + format balance
- *   5. budget packing (required first, throw if required alone won't fit)
- *   6. LLM narrator groups + describes — never adds/removes/reorders
+ * Units pipeline. Pre-LLM stages (recipe, gap, topo, allow-list) are
+ * deterministic. When orchestrator is on, LLM proposes ordered units from the
+ * allow-list; server validates/repairs. On failure → select+pack+narrator.
  */
 @Injectable()
 export class RoadmapPipelineService {
@@ -92,10 +99,12 @@ export class RoadmapPipelineService {
     private readonly skillGraph: SkillGraphService,
     private readonly unitsCatalog: UnitsCatalogService,
     private readonly narrator: RoadmapNarratorService,
+    private readonly orchestrator: RoadmapUnitsOrchestratorService,
+    private readonly flags: SystemFlagsService,
   ) {}
 
   getPromptVersion(): string {
-    return this.narrator.getPromptVersion();
+    return this.orchestrator.getPromptVersion();
   }
 
   async plan(input: {
@@ -176,7 +185,113 @@ export class RoadmapPipelineService {
       optionalGap,
     );
 
-    // Stages 3-4: per-skill candidates, format filter, scoring, format balance
+    // Stage 3: allow-list (stage/role + style evidence filters, candidates only)
+    const allowList = this.buildAllowList(
+      orderedGapSkills,
+      units,
+      skillPlans,
+      input.profile.learning_styles,
+    );
+
+    const skillTitleById = new Map(skills.map((s) => [s.id, s.title]));
+    const orchestratorEnabled = await this.flags.getBool(
+      SystemFlagKey.ROADMAP_AI_ORCHESTRATOR_ENABLED,
+      true,
+      input.goal.userId,
+    );
+
+    let attemptedOrchestrator = false;
+    if (orchestratorEnabled && allowList.length) {
+      attemptedOrchestrator = true;
+      const orch = await this.orchestrator.orchestrate({
+        userId: input.goal.userId,
+        learner: {
+          roles: input.profile.target_roles ?? [],
+          known: [...knownSkillIds],
+          required: [...requiredGap],
+          optional: [...optionalGap],
+          styles: input.profile.learning_styles ?? [],
+          hours,
+          weeks,
+          budget,
+          seed: input.seed,
+          goal: input.narrationTitleOverride ?? recipe.title,
+          skillPlans: orderedGapSkills.map(({ entry }) => {
+            const plan = skillPlans.get(entry.id);
+            return {
+              skill: entry.id,
+              action: plan?.action ?? 'foundation',
+              entry: plan?.entryStage ?? 1,
+            };
+          }),
+        },
+        allowList,
+        requiredGap,
+        optionalGap,
+        orderedGapSkillIds: orderedGapSkills.map((s) => s.entry.id),
+        skillPlans,
+        skillTitleById,
+        budgetMinutes: budget,
+        recipeTitle: recipe.title,
+        roleSlug: recipe.targetRoleSlug,
+      });
+
+      if (orch) {
+        const packed = this.mapOrchestratedUnits(
+          orch.unitIds,
+          allowList,
+          orderedGapSkills,
+          requiredGap,
+          skillPlans,
+          skillTitleById,
+        );
+        if (packed.length) {
+          this.logger.log(
+            `[roadmap-pipeline] orchestrator ok goal=${input.goal.id} units=${packed.length} repaired=${orch.repaired} budget=${budget}m`,
+          );
+
+          const narration = {
+            title: orch.draft.title,
+            description: orch.draft.description,
+            why: orch.draft.why,
+            phases: this.phasesFromOrchestrator(orch.draft.phases, orch.unitIds),
+          };
+
+          const plan = this.hydratePlan({
+            recipe,
+            packed,
+            narration,
+            knownSkillIds,
+            seed: input.seed,
+            hours,
+            weeks,
+            budget,
+            repaired: orch.repaired,
+          });
+
+          if (input.narrationTitleOverride) {
+            plan.title = input.narrationTitleOverride;
+            plan.description =
+              plan.description ||
+              'A focused path to close remaining skill gaps before your next goal.';
+          }
+
+          return {
+            plan,
+            model: orch.model,
+            promptVersion: orch.promptVersion,
+            usedFallback: orch.repaired,
+            aiMode: 'orchestrator',
+          };
+        }
+      }
+
+      this.logger.warn(
+        `content_orchestration_fallback user=${input.goal.userId} reason=pipeline_deterministic`,
+      );
+    }
+
+    // Fallback: Stages 3-5 deterministic select + pack, Stage 6 narrator
     const ordered = this.selectUnitsPerSkill(
       orderedGapSkills,
       units,
@@ -256,8 +371,97 @@ export class RoadmapPipelineService {
       plan,
       model: narration.model,
       promptVersion: narration.promptVersion,
-      usedFallback: narration.repaired,
+      usedFallback: attemptedOrchestrator || narration.repaired,
+      aiMode: 'narrator',
     };
+  }
+
+  /**
+   * Union of per-skill candidates after stage/role preference + style evidence
+   * keep — candidates only, not final pick.
+   */
+  private buildAllowList(
+    orderedSkills: Array<{ entry: SkillIndexEntry; required: boolean }>,
+    units: Unit[],
+    skillPlans: Map<string, SkillPlan>,
+    learningStyles: string[],
+  ): Unit[] {
+    const styles = (learningStyles ?? [])
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    const unitsBySkill = new Map<string, Unit[]>();
+    for (const unit of units) {
+      for (const skillId of unit.skillsTaught ?? []) {
+        const list = unitsBySkill.get(skillId) ?? [];
+        list.push(unit);
+        unitsBySkill.set(skillId, list);
+      }
+    }
+
+    const byId = new Map<string, Unit>();
+    for (const { entry } of orderedSkills) {
+      const allCandidates = unitsBySkill.get(entry.id) ?? [];
+      if (!allCandidates.length) continue;
+      const plan = skillPlans.get(entry.id) ?? {
+        action: 'foundation' as SkillAction,
+        entryStage: 1,
+      };
+      const preferred = this.preferStageRoleUnits(allCandidates, plan);
+      const kept = this.keepStyleMatchesWithEvidence(preferred, styles);
+      for (const u of kept) byId.set(u.id, u);
+    }
+    return [...byId.values()];
+  }
+
+  /** Map validated orchestrator unit ids → OrderedLesson in that order. */
+  private mapOrchestratedUnits(
+    unitIds: string[],
+    allowList: Unit[],
+    orderedGapSkills: Array<{ entry: SkillIndexEntry; required: boolean }>,
+    requiredGap: Set<string>,
+    skillPlans: Map<string, SkillPlan>,
+    skillTitleById: Map<string, string>,
+  ): OrderedLesson[] {
+    const byId = new Map(allowList.map((u) => [u.id, u]));
+    const gapOrder = orderedGapSkills.map((s) => s.entry.id);
+    const out: OrderedLesson[] = [];
+
+    for (const id of unitIds) {
+      const unit = byId.get(id);
+      if (!unit) continue;
+      let skillId =
+        gapOrder.find((sk) => (unit.skillsTaught ?? []).includes(sk)) ??
+        (unit.skillsTaught ?? [])[0];
+      if (!skillId) continue;
+      const plan = skillPlans.get(skillId) ?? {
+        action: 'foundation' as SkillAction,
+        entryStage: 1,
+      };
+      out.push({
+        unit,
+        skillId,
+        skillTitle: skillTitleById.get(skillId) ?? skillId,
+        required: requiredGap.has(skillId),
+        score: 1,
+        breakdown: { orchestrator: 1 },
+        action: plan.action,
+      });
+    }
+    return out;
+  }
+
+  private phasesFromOrchestrator(
+    phases: Array<{ key: string; title: string; unitIds: string[] }>,
+    orderedUnitIds: string[],
+  ): Array<{ key: string; title: string; lessonIndices: number[] }> {
+    const indexById = new Map(orderedUnitIds.map((id, i) => [id, i]));
+    return phases.map((p) => ({
+      key: p.key,
+      title: p.title,
+      lessonIndices: p.unitIds
+        .map((id) => indexById.get(id))
+        .filter((n): n is number => n !== undefined),
+    }));
   }
 
   private async loadRecipeBySlug(roleSlug: string): Promise<RoleRecipe> {
@@ -541,7 +745,14 @@ export class RoadmapPipelineService {
       });
 
       // Format balance: reading → doing → quiz, then score, then stable id.
+      // §7.4 variety: among score ties, prefer lesson_type ≠ previous unit.
+      const prevType = out[out.length - 1]?.unit.lessonType?.toLowerCase() ?? '';
       scored.sort((a, b) => {
+        if (Math.abs(a.score - b.score) < 1e-9 && prevType) {
+          const aDiff = a.unit.lessonType?.toLowerCase() !== prevType ? 0 : 1;
+          const bDiff = b.unit.lessonType?.toLowerCase() !== prevType ? 0 : 1;
+          if (aDiff !== bDiff) return aDiff - bDiff;
+        }
         const fa = this.formatRank(a.unit);
         const fb = this.formatRank(b.unit);
         if (fa !== fb) return fa - fb;
@@ -549,7 +760,42 @@ export class RoadmapPipelineService {
         return a.unit.id.localeCompare(b.unit.id);
       });
 
-      for (const row of scored) {
+      // Soft cap: never allow >2 consecutive same lesson_type when an
+      // equally-valid (or near-tied) alternate exists in this skill's pool.
+      // Never drops sole checkpoint/proof or required-role coverage.
+      const pending = [...scored];
+      while (pending.length) {
+        const lastTwo = out.slice(-2).map((r) => r.unit.lessonType?.toLowerCase());
+        let pickIdx = 0;
+        if (
+          lastTwo.length === 2 &&
+          lastTwo[0] &&
+          lastTwo[0] === lastTwo[1]
+        ) {
+          const alt = pending.findIndex(
+            (row) =>
+              row.unit.lessonType?.toLowerCase() !== lastTwo[0] &&
+              !this.isSoleCheckpointOrProof(row.unit, pending.map((p) => p.unit)),
+          );
+          // Prefer alternate unless it is the sole checkpoint/proof in pool
+          // and the default pick is that sole proof — then keep default.
+          if (alt > 0) {
+            const defaultUnit = pending[0].unit;
+            if (
+              !(
+                (defaultUnit.unitRole === 'checkpoint' ||
+                  defaultUnit.unitRole === 'proof') &&
+                this.isSoleCheckpointOrProof(
+                  defaultUnit,
+                  pending.map((p) => p.unit),
+                )
+              )
+            ) {
+              pickIdx = alt;
+            }
+          }
+        }
+        const [row] = pending.splice(pickIdx, 1);
         usedUnits.add(row.unit.id);
         out.push({
           unit: row.unit,
@@ -565,6 +811,18 @@ export class RoadmapPipelineService {
     }
 
     return out;
+  }
+
+  /** True when this unit is the only checkpoint/proof among candidates. */
+  private isSoleCheckpointOrProof(unit: Unit, candidates: Unit[]): boolean {
+    if (unit.unitRole !== 'checkpoint' && unit.unitRole !== 'proof') {
+      return false;
+    }
+    return (
+      candidates.filter(
+        (u) => u.unitRole === 'checkpoint' || u.unitRole === 'proof',
+      ).length === 1
+    );
   }
 
   /**
@@ -826,9 +1084,13 @@ export class RoadmapPipelineService {
           (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
         )[0]?.[0] ?? null;
 
+      const narrativeTitle =
+        input.recipe.phaseNarrativeTitles?.[phases.length] ?? null;
+
       phases.push({
         key: draftPhase.key,
         title: draftPhase.title,
+        narrative_title: narrativeTitle,
         tech_stack_id: null,
         tech_stack_slug: dominantStack,
         order_index: phases.length,

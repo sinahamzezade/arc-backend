@@ -38,11 +38,15 @@ import { QuestionVersion } from './entities/question-version.entity';
 import { Skill } from './entities/skill.entity';
 import { SkillPrerequisite } from './entities/skill-prerequisite.entity';
 import { Unit } from './entities/unit.entity';
+import { LiveContextSnippet } from './entities/live-context-snippet.entity';
 import { UnitsCatalogService } from './units-catalog.service';
 import { BattleCatalogService } from './battle-catalog.service';
 import { BattleQuestionLlmService } from './battle-question-llm.service';
 import { QuestionPoolService } from './question-pool.service';
 import { BattleQuestionSeedService } from './seeds/battle-question.seed';
+import { EngagementSchemaService } from './engagement-schema.service';
+import { LiveContextService } from './live-context.service';
+import { LiveContextSeedService } from './seeds/live-context.seed';
 
 /**
  * Central content pool — shared authoring catalog.
@@ -66,6 +70,7 @@ import { BattleQuestionSeedService } from './seeds/battle-question.seed';
       ContentAuditLog,
       Skill,
       Unit,
+      LiveContextSnippet,
       LessonTemplate,
       RoleRecipe,
       SkillNode,
@@ -96,6 +101,9 @@ import { BattleQuestionSeedService } from './seeds/battle-question.seed';
     ContentQualityService,
     UnitsCatalogService,
     BattleQuestionSeedService,
+    EngagementSchemaService,
+    LiveContextService,
+    LiveContextSeedService,
     AdminRolesGuard,
   ],
   exports: [
@@ -110,6 +118,7 @@ import { BattleQuestionSeedService } from './seeds/battle-question.seed';
     ContentQualityService,
     ContentCatalogService,
     UnitsCatalogService,
+    LiveContextService,
     TypeOrmModule,
     SkillGraphModule,
   ],

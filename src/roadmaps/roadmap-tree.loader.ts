@@ -26,9 +26,17 @@ export class RoadmapTreeLoader {
   async loadActiveRoadmap(userId: string): Promise<Roadmap | null> {
     const cachedId = await this.roadmapCache.getActiveRoadmapId(userId);
     if (cachedId) {
-      const cachedTree = await this.roadmapCache.getTree(cachedId);
-      if (cachedTree) {
-        return roadmapFromTreeDto(cachedTree);
+      const stillExists = await this.roadmapsRepo.exists({
+        where: { id: cachedId, userId },
+      });
+      if (!stillExists) {
+        // Stale after admin reset / hard delete — drop ghost tree.
+        await this.roadmapCache.invalidateRoadmap(cachedId, userId);
+      } else {
+        const cachedTree = await this.roadmapCache.getTree(cachedId);
+        if (cachedTree) {
+          return roadmapFromTreeDto(cachedTree);
+        }
       }
     }
 

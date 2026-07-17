@@ -83,6 +83,17 @@ export class SystemFlagsService implements OnModuleInit {
         ),
       },
       {
+        key: SystemFlagKey.ROADMAP_AI_ORCHESTRATOR_ENABLED,
+        valueType: 'boolean',
+        label: 'Roadmap AI unit orchestrator',
+        description:
+          'When engine mode is llm: AI proposes which units to include and their order from the allow-list; server validates/repairs. Off → deterministic select+pack + narrator only.',
+        defaultValue: this.envBoolDefault(
+          'ROADMAP_AI_ORCHESTRATOR_ENABLED',
+          true,
+        ),
+      },
+      {
         key: SystemFlagKey.INTAKE_CHAT_ENABLED,
         valueType: 'boolean',
         label: 'Intake AI chatbot',

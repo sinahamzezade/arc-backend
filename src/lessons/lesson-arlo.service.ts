@@ -41,6 +41,7 @@ export class LessonArloService {
     lesson: Lesson;
     content: UnitPlayContent;
     message: string;
+    coachTone?: string;
   }): Promise<{ reply: string; source: 'ai' | 'stub' }> {
     const message = input.message.trim().slice(0, 1000);
     if (!message) {
@@ -70,13 +71,21 @@ export class LessonArloService {
   }
 
   private async generateAiReply(
-    input: { userId: string; lesson: Lesson; content: UnitPlayContent },
+    input: {
+      userId: string;
+      lesson: Lesson;
+      content: UnitPlayContent;
+      coachTone?: string;
+    },
     message: string,
   ): Promise<string | null> {
     if (!this.llm.isConfigured()) return null;
 
     const model = await this.llm.getModel('arlo');
     const contentSummary = this.summarizeContent(input.content);
+    const toneLine = input.coachTone
+      ? this.toneConstraintLine(input.coachTone)
+      : 'Tone: steady and supportive — clear, calm coaching.';
 
     const completion = await this.llm.chatCompletion({
       purpose: 'arlo',
@@ -94,6 +103,7 @@ export class LessonArloService {
               'Never reveal quiz or practice correct answers or option letters.',
               'If asked for answers, give a hint toward the concept instead.',
               'If asked for a recap, summarize the objective and key ideas in under 60 seconds of reading.',
+              toneLine,
               `Lesson title: ${input.lesson.title}`,
               `Objective: ${input.content.objective}`,
               contentSummary
@@ -108,6 +118,19 @@ export class LessonArloService {
 
     const content = completion.choices[0]?.message?.content?.trim();
     return content || null;
+  }
+
+  private toneConstraintLine(tone: string): string {
+    switch (tone) {
+      case 'welcome_back':
+        return 'Tone: warm welcome-back — acknowledge their return without guilt.';
+      case 'playful':
+        return 'Tone: playful and celebratory — light humor, momentum-focused.';
+      case 'encouraging':
+        return 'Tone: encouraging — normalize struggle, suggest a smaller next step.';
+      default:
+        return 'Tone: steady and supportive — clear, calm coaching.';
+    }
   }
 
   /** Type-specific summary — secrets (quiz answers/explanations) stripped. */

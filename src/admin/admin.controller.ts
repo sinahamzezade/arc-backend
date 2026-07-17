@@ -362,7 +362,7 @@ export class AdminController {
       suspended: 'User suspended.',
       unsuspended: 'User unsuspended.',
       reset:
-        'Questionnaire + roadmap reset. User can start questionnaire again.',
+        'Questionnaire + roadmap reset. Learner profiles cleared; sessions revoked — user must sign in again.',
       password: 'Password updated. Active sessions revoked.',
       flags: 'User feature flags saved.',
       wallet: 'XP / coins / gems updated.',
@@ -2532,7 +2532,11 @@ export class AdminController {
       countSingular: rows.length === 1,
       q: q ?? '',
       statusOptions: [
-        { value: 'active', label: 'Active', selected: statusFilter === 'active' },
+        {
+          value: 'active',
+          label: 'Active',
+          selected: statusFilter === 'active',
+        },
         {
           value: 'archived',
           label: 'Archived',
@@ -2624,9 +2628,7 @@ export class AdminController {
           : e instanceof Error
             ? e.message
             : 'Save failed';
-      return res.redirect(
-        `/admin/goals/${id}?err=${encodeURIComponent(msg)}`,
-      );
+      return res.redirect(`/admin/goals/${id}?err=${encodeURIComponent(msg)}`);
     }
   }
 

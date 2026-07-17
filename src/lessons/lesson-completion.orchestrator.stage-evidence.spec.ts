@@ -69,6 +69,8 @@ describe('LessonCompletionOrchestrator stage evidence', () => {
       null as never,
       null as never,
       null as never,
+      null as never,
+      null as never,
     );
 
     await (

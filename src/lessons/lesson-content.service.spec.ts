@@ -74,6 +74,7 @@ function makeContentService() {
   return new LessonContentService(
     { save: jest.fn(async (row: Lesson) => row) } as never,
     { getUnitById: jest.fn().mockResolvedValue(null) } as never,
+    { resolveFresh: jest.fn().mockResolvedValue(null) } as never,
   );
 }
 
@@ -158,6 +159,7 @@ describe('LessonContentService', () => {
     const svc = new LessonContentService(
       { save } as never,
       { getUnitById } as never,
+      { resolveFresh: jest.fn().mockResolvedValue(null) } as never,
     );
     const lesson = {
       id: 'lesson-1',

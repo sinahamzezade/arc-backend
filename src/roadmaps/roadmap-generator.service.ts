@@ -168,7 +168,7 @@ export class RoadmapGeneratorService {
     }
 
     this.logger.log(
-      `[roadmap-gen] pipeline done model=${planResult.model} prompt=${planResult.promptVersion} repaired=${planResult.usedFallback} weeks=${planResult.plan.estimated_weeks} phases=${planResult.plan.phases.length}`,
+      `[roadmap-gen] pipeline done mode=${planResult.aiMode} model=${planResult.model} prompt=${planResult.promptVersion} fallback=${planResult.usedFallback} weeks=${planResult.plan.estimated_weeks} phases=${planResult.plan.phases.length}`,
     );
 
     const roadmap = await this.persistence.persistPlan(goal, planResult.plan, {
@@ -178,7 +178,7 @@ export class RoadmapGeneratorService {
       learnerProfileId: profileSnapshot?.id ?? null,
       aiEnrich: true,
       aiModel: planResult.model,
-      aiMode: 'narrator',
+      aiMode: planResult.aiMode,
       aiPromptVersion: planResult.promptVersion,
       aiUsedFallback: planResult.usedFallback,
     });

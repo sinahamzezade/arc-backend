@@ -179,6 +179,7 @@ export class RoadmapPersistenceService {
         techStackId: stack.id,
         techStackSlug: stack.slug,
         title: planned.title,
+        narrativeTitle: planned.narrative_title ?? null,
         orderIndex: planned.order_index,
         locked: planned.locked,
       }),

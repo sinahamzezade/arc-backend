@@ -1,12 +1,14 @@
 import { HttpStatus, Inject, Injectable, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
 import {
   CONTENT_SCHEMA_VERSION,
+  OUTBOX_LESSON_ACTIVE_RESOLVED,
   REWARD_RULE_VERSION,
 } from '../gamification/reward-constants';
+import { OutboxService } from '../gamification/outbox.service';
 import { Lesson, LessonStatus } from '../roadmaps/entities/lesson.entity';
 import {
   LessonProgress,
@@ -14,9 +16,15 @@ import {
 } from '../roadmaps/entities/lesson-progress.entity';
 import { Roadmap } from '../roadmaps/entities/roadmap.entity';
 import { WeeksService } from '../weeks/weeks.service';
+import { UnitsCatalogService } from '../content-pool/units-catalog.service';
 import {
+  CheckDebateDto,
+  CheckDragOrderDto,
   CheckPracticeDto,
   CheckQuizDto,
+  CheckSandboxSimulationDto,
+  CheckScenarioDto,
+  CheckVisualHotspotDto,
   CompleteLessonDto,
   UpdateLessonProgressDto,
 } from './dto/lesson-play.dto';
@@ -25,9 +33,14 @@ import {
   LessonAttemptStatus,
 } from './entities/lesson-attempt.entity';
 import { LessonArloService } from './lesson-arlo.service';
+import { CoachPersonalityService } from './coach-personality.service';
 import { LessonCompletionOrchestrator } from './lesson-completion.orchestrator';
 import { LessonContentService } from './lesson-content.service';
-import { isQuizContent, type UnitPlayContent } from './lesson-play.types';
+import {
+  ACTIVE_LESSON_TYPES,
+  isQuizContent,
+  type UnitPlayContent,
+} from './lesson-play.types';
 import { LessonRewardsService } from './lesson-rewards.service';
 import { LessonUnlockService } from './lesson-unlock.service';
 import { RoadmapTreeLoader } from '../roadmaps/roadmap-tree.loader';
@@ -37,7 +50,9 @@ const SELF_ATTEST_LESSON_TYPES = new Set([
   'practice',
   'mini_project',
   'interactive',
+  ...ACTIVE_LESSON_TYPES,
 ]);
+const ACTIVE_TYPE_SET = new Set<string>(ACTIVE_LESSON_TYPES);
 
 type OwnedLessonContext = {
   lesson: Lesson;
@@ -60,10 +75,15 @@ export class LessonsService {
     private readonly treeLoader: RoadmapTreeLoader,
     private readonly orchestrator: LessonCompletionOrchestrator,
     private readonly arlo: LessonArloService,
+    private readonly coachPersonality: CoachPersonalityService,
+    private readonly unitsCatalog: UnitsCatalogService,
+    private readonly outbox: OutboxService,
+    private readonly dataSource: DataSource,
     @Inject(forwardRef(() => WeeksService))
     private readonly _weeks: WeeksService,
   ) {
     void this._weeks;
+    void ACTIVE_TYPE_SET;
   }
 
   async getPlay(userId: string, lessonId: string) {
@@ -73,7 +93,9 @@ export class LessonsService {
     const { lesson, lessonNumber, progress } = ctx;
 
     const content = await this.content.ensurePlayContent(lesson);
-    const body = this.content.toPublicPlayBody(content);
+    const body = await this.content.toPublicPlayBodyWithLiveContext(content, {
+      preferredSkillTags: lesson.skillsTaught ?? [],
+    });
     const isFirstEver = await this.isFirstLessonEver(userId);
     const roadmap = lesson.milestone.phase.roadmap;
     const pathPercentile = this.unlock.percentileInRoadmap(roadmap, lesson.id);
@@ -129,6 +151,7 @@ export class LessonsService {
         practiceDone: session.practiceDone ?? false,
         quizAnswers: session.quizAnswers ?? {},
         quizIndex: session.quizIndex ?? 0,
+        activeBlockResolutions: session.activeBlockResolutions ?? {},
         startedAt: progress?.startedAt ?? null,
         completedAt: progress?.completedAt ?? null,
       },
@@ -349,6 +372,176 @@ export class LessonsService {
     };
   }
 
+  async checkScenario(
+    userId: string,
+    lessonId: string,
+    blockId: string,
+    dto: CheckScenarioDto,
+  ) {
+    return this.checkActiveBlock(userId, lessonId, blockId, dto.attemptId, (content, resolved) =>
+      this.content.gradeScenario(content, blockId, dto.optionId, resolved),
+    );
+  }
+
+  async checkVisualHotspot(
+    userId: string,
+    lessonId: string,
+    blockId: string,
+    dto: CheckVisualHotspotDto,
+  ) {
+    return this.checkActiveBlock(userId, lessonId, blockId, dto.attemptId, (content, resolved) =>
+      this.content.gradeVisualHotspot(content, blockId, dto.hotspotId, resolved),
+    );
+  }
+
+  async checkDragOrder(
+    userId: string,
+    lessonId: string,
+    blockId: string,
+    dto: CheckDragOrderDto,
+  ) {
+    return this.checkActiveBlock(userId, lessonId, blockId, dto.attemptId, (content, resolved) =>
+      this.content.gradeDragOrder(content, blockId, dto.orderedIds, resolved),
+    );
+  }
+
+  async checkDebate(
+    userId: string,
+    lessonId: string,
+    blockId: string,
+    dto: CheckDebateDto,
+  ) {
+    return this.checkActiveBlock(userId, lessonId, blockId, dto.attemptId, (content, resolved) =>
+      this.content.gradeDebate(content, blockId, dto.side, resolved),
+    );
+  }
+
+  async checkSandboxSimulation(
+    userId: string,
+    lessonId: string,
+    blockId: string,
+    dto: CheckSandboxSimulationDto,
+  ) {
+    const { lesson, progress } = await this.requireOwnedLesson(
+      userId,
+      lessonId,
+      { allowLocked: false },
+    );
+    await this.requireAttempt(userId, lesson, progress, dto.attemptId);
+    const content = await this.content.ensurePlayContent(lesson);
+    const resolutions = progress?.sessionState?.activeBlockResolutions ?? {};
+    const alreadyResolved = Boolean(resolutions[blockId]);
+
+    let unitVocab: string[] = [];
+    let unitAsset: string | null = null;
+    if (lesson.unitId) {
+      const unit = await this.unitsCatalog.getUnitById(lesson.unitId);
+      unitVocab = unit?.actionVocabulary ?? [];
+      unitAsset = unit?.simulationAssetKey ?? null;
+    }
+
+    const graded = this.content.gradeSandboxSimulation(content, blockId, dto.actions, {
+      alreadyResolved,
+      unitActionVocabulary: unitVocab,
+      unitSimulationAssetKey: unitAsset,
+    });
+
+    await this.persistActiveResolution(userId, lesson.id, progress, blockId, graded.correct);
+    await this.emitActiveResolved(userId, lesson.id, graded.blockType, blockId, graded.correct);
+
+    return {
+      blockId: graded.blockId,
+      correct: graded.correct,
+      explanation: graded.explanation,
+      outcome: graded.outcome,
+      xpEligible: graded.xpEligible,
+    };
+  }
+
+  private async checkActiveBlock(
+    userId: string,
+    lessonId: string,
+    blockId: string,
+    attemptId: string,
+    grade: (
+      content: UnitPlayContent,
+      alreadyResolved: boolean,
+    ) => ReturnType<LessonContentService['gradeScenario']>,
+  ) {
+    const { lesson, progress } = await this.requireOwnedLesson(
+      userId,
+      lessonId,
+      { allowLocked: false },
+    );
+    await this.requireAttempt(userId, lesson, progress, attemptId);
+    const content = await this.content.ensurePlayContent(lesson);
+    const resolutions = progress?.sessionState?.activeBlockResolutions ?? {};
+    const alreadyResolved = Boolean(resolutions[blockId]);
+    const graded = grade(content, alreadyResolved);
+
+    await this.persistActiveResolution(
+      userId,
+      lesson.id,
+      progress,
+      blockId,
+      graded.correct,
+    );
+    await this.emitActiveResolved(
+      userId,
+      lesson.id,
+      graded.blockType,
+      blockId,
+      graded.correct,
+    );
+
+    return {
+      blockId: graded.blockId,
+      correct: graded.correct,
+      explanation: graded.explanation,
+      outcome: graded.outcome,
+      xpEligible: graded.xpEligible,
+    };
+  }
+
+  private async persistActiveResolution(
+    userId: string,
+    lessonId: string,
+    progress: LessonProgress | null,
+    blockId: string,
+    correct: boolean,
+  ) {
+    const resolutions = {
+      ...(progress?.sessionState?.activeBlockResolutions ?? {}),
+      [blockId]: { correct, resolvedAt: new Date().toISOString() },
+    };
+    await this.patchSession(userId, lessonId, progress, {
+      activeBlockResolutions: resolutions,
+      practiceDone: true,
+    });
+  }
+
+  private async emitActiveResolved(
+    userId: string,
+    lessonId: string,
+    blockType: string,
+    blockId: string,
+    correct: boolean,
+  ) {
+    await this.dataSource.transaction(async (manager) => {
+      await this.outbox.enqueue(manager, {
+        type: OUTBOX_LESSON_ACTIVE_RESOLVED,
+        aggregateId: lessonId,
+        payload: {
+          userId,
+          lessonId,
+          blockType,
+          blockId,
+          correct,
+        },
+      });
+    });
+  }
+
   async complete(
     userId: string,
     lessonId: string,
@@ -419,11 +612,17 @@ export class LessonsService {
       allowLocked: true,
     });
     const content = await this.content.ensurePlayContent(lesson);
+    const toneCtx = await this.coachPersonality.buildToneContext(userId);
+    const coachTone = await this.coachPersonality.selectAndPersistTone(
+      userId,
+      toneCtx,
+    );
     return this.arlo.chat({
       userId,
       lesson,
       content,
       message,
+      coachTone,
     });
   }
 

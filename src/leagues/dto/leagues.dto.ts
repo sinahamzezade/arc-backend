@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsBoolean,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -22,6 +23,17 @@ export class HistoryQueryDto {
   @IsOptional()
   @IsString()
   cursor?: string;
+}
+
+export class LeagueScopeQueryDto {
+  @ApiPropertyOptional({
+    enum: ['global', 'goal'],
+    default: 'global',
+    description: 'Leaderboard cohort: global division or goal-scoped peers',
+  })
+  @IsOptional()
+  @IsIn(['global', 'goal'])
+  scope?: 'global' | 'goal';
 }
 
 export class UpdateLeaguePrivacyDto {

@@ -46,6 +46,7 @@ import { RoadmapGeneratorService } from './roadmap-generator.service';
 import { RoadmapLegacyAssembler } from './roadmap-legacy.assembler';
 import { RoadmapLlmPlannerService } from './roadmap-llm-planner.service';
 import { RoadmapNarratorService } from './roadmap-narrator.service';
+import { RoadmapUnitsOrchestratorService } from './roadmap-units-orchestrator.service';
 import { RoadmapPersistenceService } from './roadmap-persistence.service';
 import { RoadmapPipelineService } from './roadmap-pipeline.service';
 import { RoadmapReplanBullProcessor } from './roadmap-replan.processor';
@@ -53,6 +54,7 @@ import { RoadmapSnapshotService } from './roadmap-snapshot.service';
 import { RoadmapTreeLoader } from './roadmap-tree.loader';
 import { RoadmapsService } from './roadmaps.service';
 import { RoadmapsController } from './roadmaps.controller';
+import { CrossTrackDiscoveryService } from './cross-track-discovery.service';
 import { resolveRedisUrl } from '../common/redis/resolve-redis-url';
 
 const redisUrl = resolveRedisUrl();
@@ -122,6 +124,7 @@ const bullProviders = redisUrl
     RoadmapLegacyAssembler,
     RoadmapLlmPlannerService,
     RoadmapNarratorService,
+    RoadmapUnitsOrchestratorService,
     RoadmapPipelineService,
     RoadmapJobsProcessor,
     RoadmapEngineClient,
@@ -135,6 +138,7 @@ const bullProviders = redisUrl
     RoadmapCompletionSchemaService,
     RoadmapCompletionCoachProcessor,
     ReEnrollmentService,
+    CrossTrackDiscoveryService,
     ...nullQueueProviders,
     ...bullProviders,
   ],
@@ -146,6 +150,7 @@ const bullProviders = redisUrl
     RoadmapCacheService,
     RoadmapTreeLoader,
     RoadmapCompletionService,
+    CrossTrackDiscoveryService,
   ],
 })
 export class RoadmapsModule {}

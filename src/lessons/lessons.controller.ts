@@ -25,8 +25,13 @@ import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
 import {
   ArloChatDto,
+  CheckDebateDto,
+  CheckDragOrderDto,
   CheckPracticeDto,
   CheckQuizDto,
+  CheckSandboxSimulationDto,
+  CheckScenarioDto,
+  CheckVisualHotspotDto,
   CompleteLessonDto,
   UpdateLessonProgressDto,
 } from './dto/lesson-play.dto';
@@ -91,6 +96,81 @@ export class LessonsController {
     @Body() dto: CheckQuizDto,
   ) {
     return this.lessonsService.checkQuiz(user.userId, lessonId, dto);
+  }
+
+  @Post(':lessonId/scenario/:blockId/check')
+  @ApiOperation({ summary: 'Grade scenario_decision block' })
+  checkScenario(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('lessonId', ParseUUIDPipe) lessonId: string,
+    @Param('blockId') blockId: string,
+    @Body() dto: CheckScenarioDto,
+  ) {
+    return this.lessonsService.checkScenario(
+      user.userId,
+      lessonId,
+      blockId,
+      dto,
+    );
+  }
+
+  @Post(':lessonId/visual-hotspot/:blockId/check')
+  @ApiOperation({ summary: 'Grade visual_hotspot block' })
+  checkVisualHotspot(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('lessonId', ParseUUIDPipe) lessonId: string,
+    @Param('blockId') blockId: string,
+    @Body() dto: CheckVisualHotspotDto,
+  ) {
+    return this.lessonsService.checkVisualHotspot(
+      user.userId,
+      lessonId,
+      blockId,
+      dto,
+    );
+  }
+
+  @Post(':lessonId/drag-order/:blockId/check')
+  @ApiOperation({ summary: 'Grade drag_order block' })
+  checkDragOrder(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('lessonId', ParseUUIDPipe) lessonId: string,
+    @Param('blockId') blockId: string,
+    @Body() dto: CheckDragOrderDto,
+  ) {
+    return this.lessonsService.checkDragOrder(
+      user.userId,
+      lessonId,
+      blockId,
+      dto,
+    );
+  }
+
+  @Post(':lessonId/sandbox-simulation/:blockId/check')
+  @ApiOperation({ summary: 'Grade sandbox_simulation block' })
+  checkSandboxSimulation(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('lessonId', ParseUUIDPipe) lessonId: string,
+    @Param('blockId') blockId: string,
+    @Body() dto: CheckSandboxSimulationDto,
+  ) {
+    return this.lessonsService.checkSandboxSimulation(
+      user.userId,
+      lessonId,
+      blockId,
+      dto,
+    );
+  }
+
+  @Post(':lessonId/debate/:blockId/check')
+  @ApiOperation({ summary: 'Grade debate_pick block (scenario-class proof)' })
+  checkDebate(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('lessonId', ParseUUIDPipe) lessonId: string,
+    @Param('blockId') blockId: string,
+    @Body() dto: CheckDebateDto,
+  ) {
+    return this.lessonsService.checkDebate(user.userId, lessonId, blockId, dto);
   }
 
   @Post(':lessonId/complete')

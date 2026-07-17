@@ -15,7 +15,10 @@ import { LessonAttempt } from './entities/lesson-attempt.entity';
 import { LessonCompletionResult } from './entities/lesson-completion-result.entity';
 import { RemediationEvent } from './entities/remediation-event.entity';
 import { UserBadge } from '../badges/entities/user-badge.entity';
+import { StreakState } from '../gamification/entities/streak-state.entity';
+import { CoachRelationshipState } from './entities/coach-relationship-state.entity';
 import { LessonArloService } from './lesson-arlo.service';
+import { CoachPersonalityService } from './coach-personality.service';
 import { LessonBodyAiModule } from './lesson-body-ai.module';
 import { LessonCompletionOrchestrator } from './lesson-completion.orchestrator';
 import { LessonContentService } from './lesson-content.service';
@@ -35,6 +38,8 @@ import { LessonsService } from './lessons.service';
       LessonAttempt,
       LessonCompletionResult,
       RemediationEvent,
+      CoachRelationshipState,
+      StreakState,
     ]),
     AuthModule,
     ProfilesModule,
@@ -55,7 +60,8 @@ import { LessonsService } from './lessons.service';
     LessonUnlockService,
     LessonCompletionOrchestrator,
     LessonArloService,
+    CoachPersonalityService,
   ],
-  exports: [LessonsService, LessonContentService, LessonBodyAiModule],
+  exports: [LessonsService, LessonContentService, LessonBodyAiModule, CoachPersonalityService],
 })
 export class LessonsModule {}

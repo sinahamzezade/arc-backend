@@ -24,6 +24,7 @@ import {
   HistoryQueryDto,
   IngestLeagueXpDto,
   LeaderboardQueryDto,
+  LeagueScopeQueryDto,
   UpdateLeaguePrivacyDto,
   UpdateRankGateDto,
 } from './dto/leagues.dto';
@@ -53,8 +54,11 @@ export class LeaguesController {
 
   @Get('current/me')
   @ApiOperation({ summary: 'Viewer position, zone, score breakdown' })
-  getMe(@CurrentUser() user: AuthUserPayload) {
-    return this.leagues.getMe(user.userId);
+  getMe(
+    @CurrentUser() user: AuthUserPayload,
+    @Query() query: LeagueScopeQueryDto,
+  ) {
+    return this.leagues.getMe(user.userId, query.scope ?? 'global');
   }
 
   @Get('history')

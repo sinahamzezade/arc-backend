@@ -40,7 +40,9 @@ import { LessonCompletionResult } from './entities/lesson-completion-result.enti
 import { RemediationEvent } from './entities/remediation-event.entity';
 import { LessonRewardsService } from './lesson-rewards.service';
 import { LessonUnlockService } from './lesson-unlock.service';
+import { CoachPersonalityService } from './coach-personality.service';
 import { RoadmapCompletionService } from '../roadmaps/roadmap-completion.service';
+import { CrossTrackDiscoveryService } from '../roadmaps/cross-track-discovery.service';
 
 export type CompleteLessonResponse = {
   lessonId: string;
@@ -53,6 +55,7 @@ export type CompleteLessonResponse = {
     badgeId?: string;
     badgeLabel?: string;
     arloLine: string;
+    variableRoll?: Record<string, unknown> | null;
   };
   wallet: {
     lifetimeXp: number;
@@ -74,6 +77,13 @@ export type CompleteLessonResponse = {
   /** Present when this completion finished the active roadmap. */
   roadmapCompleted?: boolean;
   roadmapId?: string | null;
+  /** Optional cross-track discovery nudge (engagement §10). */
+  crossTrackNudge?: {
+    unitId: string;
+    title: string;
+    estimatedMinutes: number;
+    optional: true;
+  } | null;
 };
 
 @Injectable()
@@ -84,6 +94,7 @@ export class LessonCompletionOrchestrator {
     private readonly unlock: LessonUnlockService,
     private readonly gamification: GamificationService,
     private readonly streaks: StreakService,
+    private readonly coachPersonality: CoachPersonalityService,
     @InjectRepository(LessonCompletionResult)
     private readonly resultsRepo: Repository<LessonCompletionResult>,
     @Inject(forwardRef(() => WeeksService))
@@ -92,6 +103,7 @@ export class LessonCompletionOrchestrator {
     private readonly timing: TimingService,
     @Inject(forwardRef(() => RoadmapCompletionService))
     private readonly roadmapCompletion: RoadmapCompletionService,
+    private readonly crossTrack: CrossTrackDiscoveryService,
   ) {}
 
   resolveContentVersionId(lesson: Lesson): string {
@@ -222,19 +234,6 @@ export class LessonCompletionOrchestrator {
       const pathPercentile = await this.unlock.pathPercentile(manager, lesson);
       const assistance = this.rewards.mapAssistance(attempt?.assistanceUsed);
 
-      const reward = this.rewards.computeReward({
-        lesson,
-        quizCorrect,
-        quizTotal,
-        alreadyCompleted: previouslyAwarded,
-        isFirstLessonEver,
-        pathPercentile,
-        assistance,
-        attemptKind: previouslyAwarded ? 'review_later' : 'first',
-      });
-
-      const qualifiedLeagueXp = reward.firstTime ? reward.xp : 0;
-
       if (!progress) {
         progress = progressRepo.create({
           userId,
@@ -273,6 +272,22 @@ export class LessonCompletionOrchestrator {
         progress.activeAttemptId = attempt.id;
       }
 
+      const grantKey = `lesson-complete:${lesson.id}:${attempt.id}`;
+
+      const reward = this.rewards.computeReward({
+        lesson,
+        quizCorrect,
+        quizTotal,
+        alreadyCompleted: previouslyAwarded,
+        isFirstLessonEver,
+        pathPercentile,
+        assistance,
+        attemptKind: previouslyAwarded ? 'review_later' : 'first',
+        grantKey,
+      });
+
+      const qualifiedLeagueXp = reward.firstTime ? reward.xp : 0;
+
       const minutes =
         (dto.timeSpentMinutes ?? progress.timeSpentMinutes) ||
         lesson.estimatedMinutes;
@@ -295,7 +310,7 @@ export class LessonCompletionOrchestrator {
         userId,
         reasonType: RewardReasonType.Lesson,
         reasonId: lesson.id,
-        idempotencyKey: `lesson-complete:${lesson.id}:${attempt.id}`,
+        idempotencyKey: grantKey,
         metadata: {
           quizCorrect,
           quizTotal,
@@ -403,6 +418,28 @@ export class LessonCompletionOrchestrator {
         leagueLedgerEntryId: grant.entryIds[RewardCurrency.LeagueXp] ?? null,
       });
 
+      const variableRoll = reward.calcMetadata?.variableRoll;
+      if (
+        !grant.alreadyGranted &&
+        variableRoll &&
+        typeof variableRoll === 'object'
+      ) {
+        await this.gamification.enqueueVariableRoll(manager, {
+          userId,
+          transactionGroupId: grant.transactionGroupId,
+          reasonId: lesson.id,
+          variableRoll: variableRoll as Record<string, unknown>,
+        });
+      }
+
+      if (reward.firstTime) {
+        await this.coachPersonality.updateRapport(
+          userId,
+          'completion',
+          manager,
+        );
+      }
+
       const response: CompleteLessonResponse = {
         lessonId: lesson.id,
         status: LessonProgressStatus.Completed,
@@ -418,6 +455,9 @@ export class LessonCompletionOrchestrator {
           badgeId: unlockedBadgeId ?? reward.badgeId,
           badgeLabel: unlockedBadgeLabel ?? reward.badgeLabel,
           arloLine: reward.arloLine,
+          variableRoll:
+            (reward.calcMetadata?.variableRoll as Record<string, unknown>) ??
+            null,
         },
         wallet: {
           lifetimeXp: grant.wallet.lifetimeXp,
@@ -510,6 +550,25 @@ export class LessonCompletionOrchestrator {
           }
         } catch {
           /* graduation optional — never fail lesson complete */
+        }
+
+        try {
+          const nudge = await this.crossTrack.maybeSurface({
+            userId,
+            roadmapId: txResult.roadmapId,
+            remainingBudgetMinutes: 30,
+            justCompletedUnitRole: lesson.unitRole,
+          });
+          if (nudge.surfaced && nudge.unitId && nudge.title) {
+            txResult.response.crossTrackNudge = {
+              unitId: nudge.unitId,
+              title: nudge.title,
+              estimatedMinutes: nudge.estimatedMinutes ?? 0,
+              optional: true,
+            };
+          }
+        } catch {
+          /* cross-track optional */
         }
       }
     }

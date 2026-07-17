@@ -35,6 +35,8 @@ import { RoadmapPersistenceService } from './roadmap-persistence.service';
 import { RoadmapSnapshotService } from './roadmap-snapshot.service';
 import { RoadmapTreeLoader } from './roadmap-tree.loader';
 import { toJobDto, toRoadmapTreeDto } from './roadmap.serializer';
+import { projectRoadmapMap } from './roadmap-map.projection';
+import { CrossTrackDiscoveryService } from './cross-track-discovery.service';
 
 export type RoadmapJobResult = {
   status: 'queued' | 'processing' | 'ready' | 'failed';
@@ -67,6 +69,7 @@ export class RoadmapsService {
     private readonly contentQuery: ContentQueryService,
     private readonly timing: TimingService,
     private readonly roadmapCache: RoadmapCacheService,
+    private readonly crossTrack: CrossTrackDiscoveryService,
     @Optional()
     @InjectQueue(ROADMAP_REPLAN_QUEUE)
     private readonly replanQueue: Queue<RoadmapReplanJobData> | null,
@@ -475,6 +478,20 @@ export class RoadmapsService {
     };
   }
 
+  async getCurrentMap(userId: string) {
+    const roadmap = await this.getActiveRoadmap(userId);
+    if (!roadmap) {
+      throw new AppException(
+        AuthErrorCode.ROADMAP_NOT_FOUND,
+        'No active roadmap',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    const map = projectRoadmapMap(roadmap);
+    const crossTrackNudge = await this.crossTrack.getActiveNudge(userId);
+    return { ...map, crossTrackNudge };
+  }
+
   async getCurrent(userId: string) {
     const job = await this.jobsRepo.findOne({
       where: { userId },
@@ -492,9 +509,14 @@ export class RoadmapsService {
       }
     }
 
+    const crossTrackNudge = roadmap
+      ? await this.crossTrack.getActiveNudge(userId)
+      : null;
+
     return {
       job: toJobDto(job),
       roadmap: roadmap ? toRoadmapTreeDto(roadmap) : null,
+      crossTrackNudge,
     };
   }
 

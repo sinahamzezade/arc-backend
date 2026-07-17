@@ -17,6 +17,7 @@ import {
   OUTBOX_LESSON_COMPLETED,
   OUTBOX_LESSON_REMEDIATION,
   OUTBOX_REWARD_GRANTED,
+  OUTBOX_REWARD_VARIABLE_ROLL,
   OUTBOX_WEEK_SEALED,
   REWARD_RULE_VERSION,
   SEAL_REWARD_RULE_KEY,
@@ -129,6 +130,32 @@ export class GamificationService {
         leagueLedgerEntryId: input.leagueLedgerEntryId ?? null,
         reasonId: input.reasonId,
         reasonType: input.reasonType,
+      },
+    });
+  }
+
+  async enqueueVariableRoll(
+    manager: EntityManager,
+    input: {
+      userId: string;
+      transactionGroupId: string;
+      reasonId: string;
+      variableRoll: Record<string, unknown>;
+      xpDelta?: number;
+      gemsDelta?: number;
+    },
+  ) {
+    await this.outbox.enqueue(manager, {
+      type: OUTBOX_REWARD_VARIABLE_ROLL,
+      aggregateId: input.transactionGroupId,
+      payload: {
+        userId: input.userId,
+        transactionGroupId: input.transactionGroupId,
+        reasonId: input.reasonId,
+        variableRoll: input.variableRoll,
+        xpDelta: input.xpDelta ?? 0,
+        gemsDelta: input.gemsDelta ?? 0,
+        rewardRuleVersion: REWARD_RULE_VERSION,
       },
     });
   }

@@ -1,6 +1,6 @@
 /**
  * Dynamic lesson reward model — gamification.md §5.
- * Rule version: lesson-reward-v2
+ * Rule version: see reward-constants.ts (lesson-reward-v3).
  */
 
 export type LessonActionKind =

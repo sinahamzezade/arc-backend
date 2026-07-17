@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
 import { GamificationService } from '../gamification/gamification.service';
+import { Wallet } from '../gamification/entities/wallet.entity';
+import { Goal, GoalStatus } from '../goals/entities/goal.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
 import { ProfilesService } from '../profiles/profiles.service';
@@ -59,6 +61,10 @@ export class LeaguesService {
     private readonly resultsRepo: Repository<LeagueFinalResult>,
     @InjectRepository(User)
     private readonly usersRepo: Repository<User>,
+    @InjectRepository(Goal)
+    private readonly goalsRepo: Repository<Goal>,
+    @InjectRepository(Wallet)
+    private readonly walletsRepo: Repository<Wallet>,
     private readonly seasons: LeagueSeasonService,
     private readonly cohorts: LeagueCohortService,
     private readonly scores: LeagueScoreService,
@@ -253,7 +259,19 @@ export class LeaguesService {
     });
   }
 
-  async getMe(userId: string) {
+  async getMe(userId: string, scope: 'global' | 'goal' = 'global') {
+    if (scope !== 'global' && scope !== 'goal') {
+      throw new AppException(
+        AuthErrorCode.LEAGUE_SCOPE_INVALID,
+        'Unknown league scope',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (scope === 'goal') {
+      return this.getMeGoalScope(userId);
+    }
+
     const { state, season, cohort, membership } =
       await this.ensureAssignment(userId);
     const cached = await this.summaryCache.get<
@@ -306,6 +324,67 @@ export class LeaguesService {
     };
     await this.summaryCache.set(userId, cohort.id, 'me', result);
     return result;
+  }
+
+  private async getMeGoalScope(userId: string) {
+    const { season, cohort } = await this.ensureAssignment(userId);
+
+    const activeGoal = await this.goalsRepo.findOne({
+      where: { userId, status: GoalStatus.Active },
+      order: { updatedAt: 'DESC' },
+    });
+    const goalToken = activeGoal?.targetRoles?.[0] ?? null;
+    if (!goalToken) {
+      throw new AppException(
+        AuthErrorCode.GOAL_NOT_FOUND,
+        'No active goal for goal-scoped league',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const peerRows: Array<{ userId: string; weeklyLeagueXp: number }> =
+      await this.walletsRepo
+        .createQueryBuilder('w')
+        .innerJoin(Goal, 'g', 'g.user_id = w.user_id AND g.status = :active', {
+          active: GoalStatus.Active,
+        })
+        .where('g.target_roles[1] = :goalToken', { goalToken })
+        .select('w.user_id', 'userId')
+        .addSelect('w.weekly_league_xp', 'weeklyLeagueXp')
+        .orderBy('w.weekly_league_xp', 'DESC')
+        .addOrderBy('w.user_id', 'ASC')
+        .getRawMany();
+
+    const profiles = await Promise.all(
+      peerRows.map(async (row, index) => {
+        const profile = await this.profiles.findByUserId(row.userId);
+        const isViewer = row.userId === userId;
+        return {
+          rank: index + 1,
+          displayName: isViewer
+            ? (profile?.displayName ?? 'You')
+            : (profile?.displayName ??
+              profile?.username ??
+              'Arc Learner'),
+          weeklyXp: row.weeklyLeagueXp,
+          isViewer,
+        };
+      }),
+    );
+
+    return {
+      scope: 'goal' as const,
+      goalToken,
+      league: {
+        tier: cohort.tier,
+        weekStart: season.startsAt.toISOString().slice(0, 10),
+      },
+      standings: profiles.map(({ rank, displayName, weeklyXp }) => ({
+        rank,
+        displayName,
+        weeklyXp,
+      })),
+    };
   }
 
   async getHistory(userId: string, cursor?: string) {

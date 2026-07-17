@@ -55,7 +55,11 @@ export class RoleRecipe {
   defaultTimelineWeeks: number;
 
   /** Legacy — empty under units model. */
-  @Column({ name: 'stack_plan', type: 'jsonb', default: () => "'{\"phases\":[]}'" })
+  @Column({
+    name: 'stack_plan',
+    type: 'jsonb',
+    default: () => '\'{"phases":[]}\'',
+  })
   stackPlan: StackPlan;
 
   /** Skill slug ids from skills table (source of truth for gap calc). */
@@ -102,6 +106,27 @@ export class RoleRecipe {
 
   @Column({ name: 'prompt_hints', type: 'jsonb', default: () => "'{}'" })
   promptHints: Record<string, unknown>;
+
+  /** Per-track narrative phase titles (identity progression). */
+  @Column({
+    name: 'phase_narrative_titles',
+    type: 'text',
+    array: true,
+    default: '{}',
+  })
+  phaseNarrativeTitles: string[];
+
+  /**
+   * Cross-track complementary skill tags (e.g. `data-analytics:funnel-metrics`).
+   * Used for optional discovery nudges only.
+   */
+  @Column({
+    name: 'complementary_skill_tags',
+    type: 'text',
+    array: true,
+    default: '{}',
+  })
+  complementarySkillTags: string[];
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;

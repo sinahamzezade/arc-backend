@@ -95,6 +95,22 @@ export class Unit {
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 
+  /**
+   * Immutable simulation snapshot key for sandbox_simulation units.
+   * Graded against this snapshot only — never live external data.
+   */
+  @Column({ name: 'simulation_asset_key', type: 'varchar', nullable: true })
+  simulationAssetKey: string | null;
+
+  /** Authored action vocabulary for sandbox_simulation (unit-scoped). */
+  @Column({
+    name: 'action_vocabulary',
+    type: 'text',
+    array: true,
+    default: '{}',
+  })
+  actionVocabulary: string[];
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

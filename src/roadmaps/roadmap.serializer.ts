@@ -36,6 +36,7 @@ export function toRoadmapTreeDto(roadmap: Roadmap) {
       return {
         id: phase.id,
         title: phase.title,
+        narrativeTitle: phase.narrativeTitle ?? null,
         orderIndex: phase.orderIndex,
         locked: phase.locked,
         techStackSlug: phase.techStackSlug,

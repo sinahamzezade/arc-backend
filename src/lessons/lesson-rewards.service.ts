@@ -36,6 +36,7 @@ export class LessonRewardsService {
     attemptKind?: 'first' | 'review_7d' | 'review_later' | 'after_solution';
     weeklyOnTrack?: boolean;
     actionKind?: LessonActionKind;
+    grantKey?: string;
   }): ComputedReward {
     const { lesson, quizCorrect, quizTotal, alreadyCompleted } = input;
 
@@ -70,6 +71,7 @@ export class LessonRewardsService {
       attemptKind: input.attemptKind ?? 'first',
       weeklyOnTrack: input.weeklyOnTrack,
       isFirstLessonEver: input.isFirstLessonEver,
+      grantKey: input.grantKey,
     });
 
     let badgeId: string | undefined;

@@ -7,6 +7,8 @@ import { QuestsModule } from '../quests/quests.module';
 import { RankAvatarModule } from '../ranks/rank-avatar.module';
 import { SocialModule } from '../social/social.module';
 import { User } from '../users/entities/user.entity';
+import { Goal } from '../goals/entities/goal.entity';
+import { Wallet } from '../gamification/entities/wallet.entity';
 import { LeagueCohort } from './entities/league-cohort.entity';
 import { LeagueFinalResult } from './entities/league-final-result.entity';
 import { LeagueMembership } from './entities/league-membership.entity';
@@ -32,6 +34,8 @@ import { LeaguesService } from './leagues.service';
       LeagueFinalResult,
       UserLeagueState,
       User,
+      Goal,
+      Wallet,
     ]),
     ProfilesModule,
     NotificationsModule,

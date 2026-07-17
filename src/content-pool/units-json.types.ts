@@ -38,6 +38,10 @@ export type UnitsJsonUnit = {
   profile_skill_slug?: string | null;
   source_template_id?: string | null;
   source_version_id?: string | null;
+  /** sandbox_simulation only — immutable snapshot key. */
+  simulation_asset_key?: string | null;
+  /** sandbox_simulation only — authored action vocabulary. */
+  action_vocabulary?: string[];
 };
 
 export type UnitsJsonDocument = {

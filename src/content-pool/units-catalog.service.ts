@@ -424,6 +424,8 @@ export class UnitsCatalogService implements OnModuleInit {
           : null),
       sourceTemplateId: u.source_template_id ?? null,
       sourceVersionId: u.source_version_id ?? null,
+      simulationAssetKey: u.simulation_asset_key ?? null,
+      actionVocabulary: u.action_vocabulary ?? [],
       isActive: true,
     });
   }
@@ -515,9 +517,20 @@ export class UnitsCatalogService implements OnModuleInit {
         existing.optionalSkillNodeIds = [];
         existing.isActive = true;
         existing.careerRoleId = career.id;
+        const narrativeTitles = PHASE_NARRATIVE_TITLES[domain];
+        if (narrativeTitles?.length) {
+          existing.phaseNarrativeTitles = narrativeTitles;
+        }
+        const complementary = COMPLEMENTARY_SKILL_TAGS[domain];
+        if (complementary?.length) {
+          existing.complementarySkillTags = complementary;
+        }
         await this.recipesRepo.save(existing);
         continue;
       }
+
+      const narrativeTitles = PHASE_NARRATIVE_TITLES[domain] ?? [];
+      const complementary = COMPLEMENTARY_SKILL_TAGS[domain] ?? [];
 
       await this.recipesRepo.save(
         this.recipesRepo.create({
@@ -534,6 +547,8 @@ export class UnitsCatalogService implements OnModuleInit {
           optionalSkillNodeIds: [],
           minimumAssessmentRules: { requireDiagnosticForSkip: false },
           promptHints: {},
+          phaseNarrativeTitles: narrativeTitles,
+          complementarySkillTags: complementary,
           isActive: true,
         }),
       );
@@ -550,6 +565,49 @@ export class UnitsCatalogService implements OnModuleInit {
     }
   }
 }
+
+/** Domain slug → ordered narrative phase titles (engagement layer §9.2). */
+const PHASE_NARRATIVE_TITLES: Record<string, string[]> = {
+  frontend: [
+    'Layout Apprentice',
+    'Component Builder',
+    'Interface Engineer',
+    'Performance Tuner',
+    'Production-Ready Engineer',
+  ],
+  'frontend-developer': [
+    'Layout Apprentice',
+    'Component Builder',
+    'Interface Engineer',
+    'Performance Tuner',
+    'Production-Ready Engineer',
+  ],
+  'digital-marketing': [
+    'Content Rookie',
+    'Channel Operator',
+    'Campaign Strategist',
+    'Growth Analyst',
+    'Marketing Lead',
+  ],
+  'digital-marketing-specialist': [
+    'Content Rookie',
+    'Channel Operator',
+    'Campaign Strategist',
+    'Growth Analyst',
+    'Marketing Lead',
+  ],
+};
+
+/** Cross-track complementary skill tags (engagement §10). */
+const COMPLEMENTARY_SKILL_TAGS: Record<string, string[]> = {
+  frontend: ['digital-marketing:landing-page-basics'],
+  'frontend-developer': ['digital-marketing:landing-page-basics'],
+  'digital-marketing': ['data-analytics:funnel-metrics', 'frontend:landing-page-basics'],
+  'digital-marketing-specialist': [
+    'data-analytics:funnel-metrics',
+    'frontend:landing-page-basics',
+  ],
+};
 
 /** 'frontend' → 'Frontend', 'data-science' → 'Data Science'. */
 export function domainTitle(domain: string): string {

@@ -32,6 +32,12 @@ export class RoadmapsController {
     private readonly reenrollment: ReEnrollmentService,
   ) {}
 
+  @Get('current/map')
+  @ApiOperation({ summary: 'Visual path projection for the current roadmap' })
+  getCurrentMap(@CurrentUser() user: AuthUserPayload) {
+    return this.roadmapsService.getCurrentMap(user.userId);
+  }
+
   @Get('current')
   @ApiOperation({ summary: 'Current user roadmap tree or generation status' })
   getCurrent(@CurrentUser() user: AuthUserPayload) {

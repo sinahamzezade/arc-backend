@@ -159,6 +159,8 @@ export type SelectedMilestoneDto = {
 export type SelectedPhaseDto = {
   key: string;
   title: string;
+  /** Identity-progression title from role recipe phaseNarrativeTitles. */
+  narrative_title?: string | null;
   tech_stack_id: string | null;
   tech_stack_slug: string | null;
   order_index: number;

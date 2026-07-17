@@ -33,6 +33,7 @@ import type {
   QuestionVersionPrompt,
 } from '../entities/question-version.entity';
 import { UnitsCatalogService } from '../units-catalog.service';
+import { LiveContextService } from '../live-context.service';
 import {
   isUnitsJsonDocument,
   type UnitsJsonSkill,
@@ -60,6 +61,7 @@ export class ContentAdminController {
     private readonly query: ContentQueryService,
     private readonly catalog: ContentCatalogService,
     private readonly unitsCatalog: UnitsCatalogService,
+    private readonly liveContext: LiveContextService,
   ) {}
 
   private actorId(req: AuthedRequest): string | undefined {
@@ -383,5 +385,46 @@ export class ContentAdminController {
       weeks: body.weeks ?? 3,
       fromWeek: body.fromWeek ?? 1,
     });
+  }
+
+  @Get('live-context')
+  @ApiOperation({ summary: 'List live context snippets (engagement §8)' })
+  listLiveContext() {
+    return this.liveContext.listAdmin();
+  }
+
+  @Post('live-context')
+  @ApiOperation({ summary: 'Create or update a live context snippet' })
+  upsertLiveContext(
+    @Body()
+    body: {
+      id?: string;
+      trackTag: string;
+      headline: string;
+      body: string;
+      sourceUrl?: string | null;
+      publishedAt: string;
+      expiresAt: string;
+      relatedSkillTags?: string[];
+      isActive?: boolean;
+    },
+  ) {
+    return this.liveContext.upsert({
+      id: body.id,
+      trackTag: body.trackTag,
+      headline: body.headline,
+      body: body.body,
+      sourceUrl: body.sourceUrl,
+      publishedAt: new Date(body.publishedAt),
+      expiresAt: new Date(body.expiresAt),
+      relatedSkillTags: body.relatedSkillTags,
+      isActive: body.isActive,
+    });
+  }
+
+  @Post('live-context/:id/deactivate')
+  @ApiOperation({ summary: 'Soft-deactivate a live context snippet' })
+  deactivateLiveContext(@Param('id', ParseUUIDPipe) id: string) {
+    return this.liveContext.softDeactivate(id);
   }
 }

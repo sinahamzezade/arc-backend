@@ -1,6 +1,8 @@
 export const SystemFlagKey = {
   OTP_VERIFICATION_ENABLED: 'otp_verification_enabled',
   ROADMAP_ENGINE_MODE: 'roadmap_engine_mode',
+  /** Kill-switch: AI propose+validate units order when engine mode=llm. */
+  ROADMAP_AI_ORCHESTRATOR_ENABLED: 'roadmap_ai_orchestrator_enabled',
   INTAKE_CHAT_ENABLED: 'intake_chat_enabled',
   INTAKE_DEFAULT_MODE: 'intake_default_mode',
   QUESTIONNAIRE_AI_ENABLED: 'questionnaire_ai_enabled',
@@ -34,6 +36,7 @@ export const PUBLIC_SYSTEM_FLAG_KEYS = [
 export const USER_OVERRIDABLE_FLAG_KEYS = [
   SystemFlagKey.OTP_VERIFICATION_ENABLED,
   SystemFlagKey.ROADMAP_ENGINE_MODE,
+  SystemFlagKey.ROADMAP_AI_ORCHESTRATOR_ENABLED,
   SystemFlagKey.INTAKE_CHAT_ENABLED,
   SystemFlagKey.INTAKE_DEFAULT_MODE,
   SystemFlagKey.ARLO_AI_ENABLED,

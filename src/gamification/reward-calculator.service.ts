@@ -1,4 +1,6 @@
+import { createHash } from 'crypto';
 import { Injectable } from '@nestjs/common';
+import { AuthErrorCode } from '../common/errors/auth-error.codes';
 import {
   ASSISTANCE_MULT,
   AssistanceLevel,
@@ -13,6 +15,27 @@ import {
   positionMultiplier,
   XP_CAP,
 } from './reward-calculator.constants';
+import { REWARD_RULE_VERSION } from './reward-constants';
+
+export type VariableRollOutcome =
+  | {
+      kind: 'bonus_xp';
+      bonusPercent: number;
+      bonusXp: number;
+    }
+  | {
+      kind: 'bonus_gems';
+      gems: number;
+    }
+  | {
+      kind: 'mystery_unlock';
+      flag: true;
+    }
+  | {
+      kind: 'jackpot';
+      multiplier: 2;
+      bonusXp: number;
+    };
 
 export type RewardCalcInput = {
   actionKind?: LessonActionKind;
@@ -37,6 +60,8 @@ export type RewardCalcInput = {
   remediationRoundsUsed?: number;
   /** Any shaky concept → withhold perfect-run bonuses */
   hasShakyConcepts?: boolean;
+  /** Idempotency / transaction key for deterministic variable roll */
+  grantKey?: string;
 };
 
 export type RewardCalcResult = {
@@ -46,6 +71,15 @@ export type RewardCalcResult = {
   firstTime: boolean;
   metadata: Record<string, unknown>;
 };
+
+const ACTIVE_MODALITIES = new Set([
+  'scenario',
+  'sandbox_simulation',
+  'visual_hotspot',
+  'debate',
+]);
+
+const PASSIVE_MODALITIES = new Set(['text', 'video', 'reading', 'audio']);
 
 @Injectable()
 export class RewardCalculatorService {
@@ -141,6 +175,37 @@ export class RewardCalculatorService {
       coins = 0;
     }
 
+    const metadata: Record<string, unknown> = {
+      kind,
+      difficulty: diff,
+      diffM,
+      posM,
+      perfM,
+      assistM,
+      repeatM,
+      attemptKind: input.attemptKind,
+      pathPercentile: input.pathPercentile ?? 40,
+      ruleVersion: REWARD_RULE_VERSION,
+      conceptsMastered: input.conceptsMastered ?? null,
+      conceptsTotal: input.conceptsTotal ?? null,
+      remediationRoundsUsed: remediationRounds,
+      hasShakyConcepts: hasShaky,
+    };
+
+    if (firstTime && input.grantKey) {
+      const rollResult = this.applyVariableRoll({
+        input,
+        kind,
+        perfM,
+        xpBeforeRoll: xp,
+        gemsBeforeRoll: gems,
+        grantKey: input.grantKey,
+      });
+      xp = rollResult.xp;
+      gems = rollResult.gems;
+      Object.assign(metadata, rollResult.metadata);
+    }
+
     xp = Math.min(XP_CAP, Math.max(0, xp));
     gems = Math.min(GEMS_CAP, Math.max(0, gems));
     coins = Math.min(COINS_CAP, Math.max(0, coins));
@@ -150,21 +215,92 @@ export class RewardCalculatorService {
       gems,
       coins,
       firstTime,
+      metadata,
+    };
+  }
+
+  private applyVariableRoll(input: {
+    input: RewardCalcInput;
+    kind: LessonActionKind;
+    perfM: number;
+    xpBeforeRoll: number;
+    gemsBeforeRoll: number;
+    grantKey: string;
+  }): {
+    xp: number;
+    gems: number;
+    metadata: Record<string, unknown>;
+  } {
+    const { input: calcInput, kind, perfM, xpBeforeRoll, gemsBeforeRoll, grantKey } =
+      input;
+    const modality = (calcInput.modality ?? '').toLowerCase();
+    const rewardClass = (calcInput.rewardClass ?? '').toLowerCase();
+    const quizPct =
+      calcInput.quizTotal > 0
+        ? (calcInput.quizCorrect / calcInput.quizTotal) * 100
+        : 0;
+    const highPerformance = quizPct >= 80 || perfM >= 1.0;
+
+    const passiveNoQuiz =
+      PASSIVE_MODALITIES.has(modality) && calcInput.quizTotal <= 0;
+
+    const eligible =
+      !passiveNoQuiz &&
+      (quizPct >= 80 ||
+        ACTIVE_MODALITIES.has(modality) ||
+        rewardClass.includes('project') ||
+        rewardClass.includes('challenge') ||
+        ((kind === 'boss' || kind === 'coding') && highPerformance));
+
+    if (!eligible) {
+      if (passiveNoQuiz) {
+        return {
+          xp: xpBeforeRoll,
+          gems: gemsBeforeRoll,
+          metadata: {
+            rollSkipped: AuthErrorCode.REWARD_ROLL_INELIGIBLE_ACTION,
+          },
+        };
+      }
+      return {
+        xp: xpBeforeRoll,
+        gems: gemsBeforeRoll,
+        metadata: { variableRoll: null, rollSkipped: 'not_proof_gated' },
+      };
+    }
+
+    const hash = createHash('sha256').update(grantKey).digest();
+    const bucket = hash.readUInt32BE(0) % 100;
+    const subRoll = hash.readUInt32BE(4);
+
+    let xp = xpBeforeRoll;
+    let gems = gemsBeforeRoll;
+    let variableRoll: VariableRollOutcome;
+
+    if (bucket < 60) {
+      const bonusPercent = 10 + (subRoll % 31);
+      const bonusXp = Math.round(xpBeforeRoll * (bonusPercent / 100));
+      xp += bonusXp;
+      variableRoll = { kind: 'bonus_xp', bonusPercent, bonusXp };
+    } else if (bucket < 85) {
+      const bonusGems = 2 + (subRoll % 4);
+      gems += bonusGems;
+      variableRoll = { kind: 'bonus_gems', gems: bonusGems };
+    } else if (bucket < 97) {
+      variableRoll = { kind: 'mystery_unlock', flag: true };
+    } else {
+      const bonusXp = xpBeforeRoll;
+      xp += bonusXp;
+      variableRoll = { kind: 'jackpot', multiplier: 2, bonusXp };
+    }
+
+    return {
+      xp,
+      gems,
       metadata: {
-        kind,
-        difficulty: diff,
-        diffM,
-        posM,
-        perfM,
-        assistM,
-        repeatM,
-        attemptKind: input.attemptKind,
-        pathPercentile: input.pathPercentile ?? 40,
-        ruleVersion: 'lesson-reward-v2',
-        conceptsMastered: input.conceptsMastered ?? null,
-        conceptsTotal: input.conceptsTotal ?? null,
-        remediationRoundsUsed: remediationRounds,
-        hasShakyConcepts: hasShaky,
+        variableRoll,
+        rollBucket: bucket,
+        grantKey,
       },
     };
   }

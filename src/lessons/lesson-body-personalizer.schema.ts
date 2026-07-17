@@ -51,7 +51,11 @@ export function extractSafeFields(content: UnitPlayContent): LessonBodySafeField
   if (isQuizContent(content)) {
     return { objective: content.objective };
   }
-  return { objective: content.objective, note: content.note };
+  if (isVideoContent(content)) {
+    return { objective: content.objective, note: content.note };
+  }
+  // Active formats — only objective is rewrite-safe; blocks stay frozen.
+  return { objective: content.objective };
 }
 
 /** Validate the LLM rewrite against the original safe fields. */

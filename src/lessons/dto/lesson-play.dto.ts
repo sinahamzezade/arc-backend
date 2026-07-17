@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsInt,
   IsObject,
@@ -124,4 +125,56 @@ export class ArloChatDto {
   @ApiProperty()
   @IsString()
   message!: string;
+}
+
+export class CheckScenarioDto {
+  @ApiProperty()
+  @IsString()
+  attemptId!: string;
+
+  @ApiProperty()
+  @IsString()
+  optionId!: string;
+}
+
+export class CheckVisualHotspotDto {
+  @ApiProperty()
+  @IsString()
+  attemptId!: string;
+
+  @ApiProperty()
+  @IsString()
+  hotspotId!: string;
+}
+
+export class CheckDragOrderDto {
+  @ApiProperty()
+  @IsString()
+  attemptId!: string;
+
+  @ApiProperty({ type: [String] })
+  @IsArray()
+  @IsString({ each: true })
+  orderedIds!: string[];
+}
+
+export class CheckSandboxSimulationDto {
+  @ApiProperty()
+  @IsString()
+  attemptId!: string;
+
+  @ApiProperty({ type: [String] })
+  @IsArray()
+  @IsString({ each: true })
+  actions!: string[];
+}
+
+export class CheckDebateDto {
+  @ApiProperty()
+  @IsString()
+  attemptId!: string;
+
+  @ApiProperty({ enum: ['a', 'b'] })
+  @IsString()
+  side!: 'a' | 'b';
 }
