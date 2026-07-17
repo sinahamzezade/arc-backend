@@ -306,12 +306,23 @@ export class QuestionnaireSchemaService implements OnModuleInit {
     );
     if (!goalStep) return;
 
-    if (
-      goalStep.uiKind !== 'track-select' ||
-      goalStep.selection !== QuestionnaireSelection.Single
-    ) {
+    // Keep uiKind as track-select; do not overwrite admin selection (single|multi).
+    if (goalStep.uiKind !== 'track-select') {
       goalStep.uiKind = 'track-select';
-      goalStep.selection = QuestionnaireSelection.Single;
+      await this.dataSource.getRepository(QuestionnaireStep).save(goalStep);
+    }
+
+    // One-shot: legacy sync forced Single + old subtitle. Flip to multi once.
+    // After this, admin Single sticks (subtitle no longer matches).
+    const legacySubtitle =
+      'Pick a primary domain from the content pool. Optionally add secondary interests.';
+    if (
+      goalStep.selection === QuestionnaireSelection.Single &&
+      (goalStep.subtitle ?? '').trim() === legacySubtitle
+    ) {
+      goalStep.selection = QuestionnaireSelection.Multi;
+      goalStep.subtitle =
+        'Select all that apply; first pick is your primary track.';
       await this.dataSource.getRepository(QuestionnaireStep).save(goalStep);
     }
 

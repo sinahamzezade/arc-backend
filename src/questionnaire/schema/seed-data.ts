@@ -11,8 +11,8 @@ export const QUESTIONNAIRE_SEED: QuestionnaireSchemaDto = {
       stepNumber: 1,
       title: 'What do you want to learn or become?',
       subtitle:
-        'Pick a primary domain from the content pool. Optionally add secondary interests.',
-      selection: 'single',
+        'Select all that apply; first pick is your primary track.',
+      selection: 'multi',
       allowOther: false,
       uiKind: 'track-select',
       reviewLabel: 'Track',

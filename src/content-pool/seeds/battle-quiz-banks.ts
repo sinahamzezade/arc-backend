@@ -1,31 +1,11 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import {
-  BATTLE_POOL_MIN_MULTIPLIER,
-  ContentPublicationStatus,
-} from '../content-pool.constants';
-import { QuestionTemplate } from '../entities/question-template.entity';
-import { QuestionVersion } from '../entities/question-version.entity';
-import { sealQuestionAnswer } from '../question-answer.util';
-
-/** Max battle length (UI) × pool multiplier — each subject needs this many published Qs. */
-export const BATTLE_SEED_PER_SUBJECT = 20 * BATTLE_POOL_MIN_MULTIPLIER;
-
-type DiffBand = {
-  difficulty: 'easy' | 'medium' | 'hard' | 'expert';
-  score: string;
+type StemBank = {
+  stem: string;
+  correct: string;
+  wrong: [string, string, string];
 };
 
-const DIFF_BANDS: DiffBand[] = [
-  { difficulty: 'easy', score: '0.25' },
-  { difficulty: 'medium', score: '0.50' },
-  { difficulty: 'hard', score: '0.75' },
-  { difficulty: 'expert', score: '1.00' },
-];
-
 /** Matches FE battleSubjects after `toLowerCase().replace(/\s+/g, '-')`. */
-const SUBJECTS = [
+export const SUBJECTS = [
   'sql',
   'python',
   'excel',
@@ -34,7 +14,7 @@ const SUBJECTS = [
 ] as const;
 
 /** Matches FE battleTopics — embedded in slug so topic ILIKE filter works. */
-const TOPICS: Record<(typeof SUBJECTS)[number], string[]> = {
+export const TOPICS: Record<(typeof SUBJECTS)[number], string[]> = {
   sql: ['SELECT', 'WHERE', 'JOIN', 'GROUP BY', 'Aggregations'],
   python: ['Lists', 'Dicts', 'Pandas', 'Loops'],
   excel: ['VLOOKUP', 'Pivot', 'Charts'],
@@ -42,17 +22,8 @@ const TOPICS: Record<(typeof SUBJECTS)[number], string[]> = {
   frontend: ['HTML', 'CSS', 'JS Basics'],
 };
 
-function topicSlug(topic: string) {
-  return topic.toLowerCase().replace(/\s+/g, '-');
-}
 
-type StemBank = {
-  stem: string;
-  correct: string;
-  wrong: [string, string, string];
-};
-
-const BANKS: Record<(typeof SUBJECTS)[number], StemBank[]> = {
+export const BANKS: Record<(typeof SUBJECTS)[number], StemBank[]> = {
   sql: [
     {
       stem: 'Which clause filters rows before aggregation?',
@@ -737,147 +708,3 @@ const BANKS: Record<(typeof SUBJECTS)[number], StemBank[]> = {
     },
   ],
 };
-
-function optionIds(i: number) {
-  return [`a${i}`, `b${i}`, `c${i}`, `d${i}`] as const;
-}
-
-function buildStem(
-  subject: (typeof SUBJECTS)[number],
-  index: number,
-): {
-  stem: string;
-  options: Array<{ id: string; label: string }>;
-  correctId: string;
-} {
-  const bank = BANKS[subject];
-  const base = bank[index % bank.length]!;
-  const variant = Math.floor(index / bank.length);
-  const stem =
-    variant === 0 ? base.stem : `${base.stem} (variant ${variant + 1})`;
-
-  const ids = optionIds(index);
-  const labels = [base.correct, ...base.wrong];
-  // Rotate correct slot so answers are not always option A.
-  const correctSlot = index % 4;
-  const ordered = [...labels];
-  const [correctLabel] = ordered.splice(0, 1);
-  ordered.splice(correctSlot, 0, correctLabel!);
-
-  const options = ids.map((id, slot) => ({
-    id,
-    label: ordered[slot]!,
-  }));
-
-  return {
-    stem,
-    options,
-    correctId: ids[correctSlot]!,
-  };
-}
-
-@Injectable()
-export class BattleQuestionSeedService implements OnModuleInit {
-  private readonly logger = new Logger(BattleQuestionSeedService.name);
-
-  constructor(
-    @InjectRepository(QuestionTemplate)
-    private readonly templatesRepo: Repository<QuestionTemplate>,
-    @InjectRepository(QuestionVersion)
-    private readonly versionsRepo: Repository<QuestionVersion>,
-  ) {}
-
-  async onModuleInit() {
-    if (process.env.BATTLE_QUESTION_SEED === 'false') return;
-    try {
-      await this.ensurePool();
-    } catch (err) {
-      this.logger.warn(
-        `Battle question seed skipped: ${err instanceof Error ? err.message : err}`,
-      );
-    }
-  }
-
-  async ensurePool(): Promise<number> {
-    let created = 0;
-
-    for (const subject of SUBJECTS) {
-      const topics = TOPICS[subject];
-      for (const topic of topics) {
-        const tSlug = topicSlug(topic);
-        for (let i = 0; i < BATTLE_SEED_PER_SUBJECT; i++) {
-          const slug = `battle-${subject}-${tSlug}-${String(i + 1).padStart(3, '0')}`;
-          const existing = await this.templatesRepo.findOne({
-            where: { slug },
-          });
-          if (existing?.publishedVersionId) continue;
-
-          const band = DIFF_BANDS[i % DIFF_BANDS.length]!;
-          const built = buildStem(subject, i);
-          // Stamp topic into stem so play UI / debugging shows filter context.
-          built.stem = `[${topic}] ${built.stem}`;
-
-          const template =
-            existing ??
-            (await this.templatesRepo.save(
-              this.templatesRepo.create({
-                slug,
-                questionType: 'multiple_choice',
-                skillNodeId: null,
-                techStackSlug: subject,
-                difficulty: band.difficulty,
-                difficultyScore: band.score,
-                estimatedSeconds: 30 + (i % 4) * 10,
-                allowedContexts: ['battle', 'assessment'],
-                status: ContentPublicationStatus.Published,
-                isActive: true,
-              }),
-            ));
-
-          let version = template.publishedVersionId
-            ? await this.versionsRepo.findOne({
-                where: { id: template.publishedVersionId },
-              })
-            : null;
-
-          if (!version) {
-            version = await this.versionsRepo.save(
-              this.versionsRepo.create({
-                questionTemplateId: template.id,
-                version: 1,
-                status: ContentPublicationStatus.Published,
-                prompt: { stem: built.stem },
-                answer: sealQuestionAnswer({
-                  options: built.options,
-                  correctOptionIds: [built.correctId],
-                  explanation: `Correct: ${built.options.find((o) => o.id === built.correctId)?.label}`,
-                }),
-                explanation: `Correct: ${built.options.find((o) => o.id === built.correctId)?.label}`,
-                changeNote: 'battle pool seed v1',
-                publishedAt: new Date(),
-                authorId: null,
-              }),
-            );
-          }
-
-          if (template.publishedVersionId !== version.id) {
-            template.publishedVersionId = version.id;
-            template.status = ContentPublicationStatus.Published;
-            template.isActive = true;
-            template.techStackSlug = subject;
-            template.allowedContexts = ['battle', 'assessment'];
-            await this.templatesRepo.save(template);
-            created += 1;
-          }
-        }
-      }
-    }
-
-    if (created) {
-      this.logger.log(
-        `Seeded ${created} battle questions (${SUBJECTS.length} subjects × topics × ${BATTLE_SEED_PER_SUBJECT})`,
-      );
-    }
-    return created;
-  }
-}

@@ -1,18 +1,18 @@
-import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
 import { AuthErrorCode } from '../common/errors/auth-error.codes';
 import { BattleCatalogService } from './battle-catalog.service';
-import { BattleQuestionLlmService } from './battle-question-llm.service';
-import {
-  BATTLE_POOL_MIN_MULTIPLIER,
-  ContentPublicationStatus,
-} from './content-pool.constants';
+import { BATTLE_POOL_MIN_MULTIPLIER } from './content-pool.constants';
 import { ContentAnalyticsService } from './content-analytics.service';
-import { QuestionTemplate } from './entities/question-template.entity';
-import { QuestionVersion } from './entities/question-version.entity';
-import { resolveQuestionAnswer } from './question-answer.util';
+import { Unit } from './entities/unit.entity';
+import {
+  flattenQuizUnitsToPool,
+  skillIdMatchesTaught,
+  topicMatchesSkills,
+  type UnitBattlePoolItem,
+} from './unit-battle-question.util';
 
 export type BattleQuestionSelectInput = {
   subject?: string;
@@ -20,12 +20,11 @@ export type BattleQuestionSelectInput = {
   skillNodeId?: string;
   difficultyMix?: string[];
   count: number;
-  /** Hint for LLM stem length / pacing (defaults 30). */
+  /** Hint for pacing (defaults 30). */
   secondsPerQuestion?: number;
   userExposureHistory?: string[];
   opponentExposureHistory?: string[];
   mode: 'live' | 'async';
-  /** Bill AI tokens to this user (usually challenger). */
   userId?: string;
 };
 
@@ -55,52 +54,30 @@ export type BattleQuestionSet = {
 
 @Injectable()
 export class QuestionPoolService {
-  private readonly logger = new Logger(QuestionPoolService.name);
-
   constructor(
-    @InjectRepository(QuestionTemplate)
-    private readonly questionsRepo: Repository<QuestionTemplate>,
-    @InjectRepository(QuestionVersion)
-    private readonly versionsRepo: Repository<QuestionVersion>,
+    @InjectRepository(Unit)
+    private readonly unitsRepo: Repository<Unit>,
     private readonly analytics: ContentAnalyticsService,
-    private readonly battleLlm: BattleQuestionLlmService,
     private readonly battleCatalog: BattleCatalogService,
   ) {}
 
   /**
-   * Prefer LLM (catalog-grounded) when configured; fall back to seeded pool.
+   * Select battle questions from active quiz units (flattened content.questions).
    */
   async selectBattleSet(
     input: BattleQuestionSelectInput,
   ): Promise<BattleQuestionSet> {
     const resolved = await this.resolveCatalogIds(input);
-    const withCatalog = { ...input, ...resolved };
-
-    if (this.battleLlm.isConfigured()) {
-      const llmSet = await this.battleLlm.generateBattleSet(withCatalog);
-      if (llmSet?.questions.length) {
-        this.analytics.emit('battle_question_set_created', {
-          mode: input.mode,
-          count: llmSet.questions.length,
-          subject: input.subject ?? null,
-          source: 'llm',
-        });
-        return llmSet;
-      }
-      this.logger.warn('Battle LLM empty — falling back to seeded pool');
-    }
-
-    return this.selectFromSeededPool(withCatalog);
+    return this.selectFromUnits({ ...input, ...resolved });
   }
 
   /**
-   * Create-invite preflight against seeded pool after catalog resolve.
-   * Empty skill-graph stacks must fail here (not only on accept).
+   * Create-invite preflight against quiz-unit pool after catalog resolve.
    */
   async canFulfillBattleSet(input: BattleQuestionSelectInput): Promise<boolean> {
     const resolved = await this.resolveCatalogIds(input);
     try {
-      await this.selectFromSeededPool({ ...input, ...resolved });
+      await this.selectFromUnits({ ...input, ...resolved });
       return true;
     } catch {
       return false;
@@ -117,8 +94,6 @@ export class QuestionPoolService {
       input.subject?.trim().toLowerCase().replace(/\s+/g, '-');
     if (!stackSlug) return {};
 
-    // Only pin skillNodeId when that skill actually has battle content.
-    // Seeded pool uses tech_stack_slug + slug topic — skill filter would yield 0.
     let skillNodeId = input.skillNodeId;
     if (!skillNodeId && input.topic) {
       const skill = await this.battleCatalog.resolveSkill(
@@ -140,45 +115,31 @@ export class QuestionPoolService {
     return {
       subject: stackSlug,
       ...(skillNodeId ? { skillNodeId } : {}),
-      // Keep topic for slug ILIKE when not skill-bound.
       ...(input.topic && !skillNodeId ? { topic: input.topic } : {}),
     };
   }
 
-  private async selectFromSeededPool(
+  private async selectFromUnits(
     input: BattleQuestionSelectInput,
   ): Promise<BattleQuestionSet> {
-    const templates = await this.loadEligibleTemplates(input);
-    const publishedIds = templates
-      .map((t) => t.publishedVersionId)
-      .filter((id): id is string => Boolean(id));
-
+    const pool = await this.loadEligiblePoolItems(input);
     const minPool = input.count * BATTLE_POOL_MIN_MULTIPLIER;
-    if (publishedIds.length < minPool) {
+    if (pool.length < minPool) {
       throw new AppException(
         AuthErrorCode.CONTENT_QUESTION_POOL_TOO_SMALL,
-        `Battle pool need ≥${minPool} published versions, have ${publishedIds.length}`,
+        `Battle pool need ≥${minPool} quiz-unit questions, have ${pool.length}`,
         HttpStatus.BAD_REQUEST,
       );
     }
-
-    const versions = await this.versionsRepo.find({
-      where: {
-        id: In(publishedIds),
-        status: ContentPublicationStatus.Published,
-      },
-    });
 
     const exposed = new Set([
       ...(input.userExposureHistory ?? []),
       ...(input.opponentExposureHistory ?? []),
     ]);
 
-    const byTemplate = new Map(templates.map((t) => [t.id, t]));
-    let eligible = versions.filter((v) => !exposed.has(v.id));
+    let eligible = pool.filter((p) => !exposed.has(p.questionVersionId));
     if (eligible.length < input.count) {
-      // Fall back to full published set if exposure wiped the pool.
-      eligible = versions;
+      eligible = pool;
     }
 
     if (eligible.length < input.count) {
@@ -190,33 +151,39 @@ export class QuestionPoolService {
     }
 
     const difficultyMix = input.difficultyMix ?? [];
-    const picked = this.pickWithDifficultyMix(
+    let snapshots = this.pickWithDifficultyMix(
       eligible,
-      byTemplate,
       input.count,
       difficultyMix,
     );
 
-    let snapshots = picked.map((v) =>
-      this.toSnapshot(v, byTemplate.get(v.questionTemplateId)!),
-    );
-
     if (input.mode === 'async') {
-      snapshots = this.differentiateAsyncSet(snapshots, versions, byTemplate);
+      snapshots = this.differentiateAsyncSet(snapshots, pool);
     }
 
     this.analytics.emit('battle_question_set_created', {
       mode: input.mode,
       count: snapshots.length,
       subject: input.subject ?? null,
-      source: 'pool',
+      source: 'units',
     });
 
     return {
       mode: input.mode,
-      questions: snapshots,
+      questions: snapshots.map(this.toPublicSnapshot),
       sharedVersionIds: snapshots.map((q) => q.questionVersionId),
     };
+  }
+
+  private toPublicSnapshot(item: UnitBattlePoolItem): BattleQuestionSnapshot {
+    const {
+      unitId: _u,
+      questionIndex: _i,
+      stack: _s,
+      skillsTaught: _sk,
+      ...snap
+    } = item;
+    return snap;
   }
 
   /**
@@ -224,23 +191,22 @@ export class QuestionPoolService {
    * so answer leakage across delayed play is harder.
    */
   private differentiateAsyncSet(
-    snapshots: BattleQuestionSnapshot[],
-    allVersions: QuestionVersion[],
-    byTemplate: Map<string, QuestionTemplate>,
-  ): BattleQuestionSnapshot[] {
+    snapshots: UnitBattlePoolItem[],
+    allPool: UnitBattlePoolItem[],
+  ): UnitBattlePoolItem[] {
     const used = new Set(snapshots.map((s) => s.questionVersionId));
     const out = snapshots.map((snap, i) => {
       if (i % 2 === 1) return snap;
-      const twin = allVersions.find((v) => {
-        if (used.has(v.id)) return false;
-        const t = byTemplate.get(v.questionTemplateId);
-        if (!t) return false;
-        const key = `${t.difficulty}:${Number(t.difficultyScore).toFixed(1)}`;
-        return key === snap.calibrationKey && v.id !== snap.questionVersionId;
+      const twin = allPool.find((v) => {
+        if (used.has(v.questionVersionId)) return false;
+        return (
+          v.calibrationKey === snap.calibrationKey &&
+          v.questionVersionId !== snap.questionVersionId
+        );
       });
       if (!twin) return snap;
-      used.add(twin.id);
-      return this.toSnapshot(twin, byTemplate.get(twin.questionTemplateId)!);
+      used.add(twin.questionVersionId);
+      return twin;
     });
     return [...out].sort(() => Math.random() - 0.5);
   }
@@ -257,89 +223,63 @@ export class QuestionPoolService {
     };
   }
 
-  private async loadEligibleTemplates(input: BattleQuestionSelectInput) {
-    const qb = this.questionsRepo
-      .createQueryBuilder('q')
-      .where('q.is_active = true')
-      .andWhere('q.status = :status', {
-        status: ContentPublicationStatus.Published,
-      })
-      .andWhere(`:ctx = ANY(q.allowed_contexts)`, { ctx: 'battle' });
+  private async loadEligiblePoolItems(
+    input: BattleQuestionSelectInput,
+  ): Promise<UnitBattlePoolItem[]> {
+    const qb = this.unitsRepo
+      .createQueryBuilder('u')
+      .where('u.is_active = true')
+      .andWhere('u.lesson_type = :lt', { lt: 'quiz' });
+
+    if (input.subject) {
+      qb.andWhere('u.stack = :stack', { stack: input.subject });
+    }
+
+    const units = await qb.getMany();
+    let pool = flattenQuizUnitsToPool(units, input.secondsPerQuestion);
 
     if (input.skillNodeId) {
-      qb.andWhere('q.skill_node_id = :skillNodeId', {
-        skillNodeId: input.skillNodeId,
-      });
-    }
-    if (input.subject) {
-      qb.andWhere('q.tech_stack_slug = :subject', { subject: input.subject });
-    }
-    // Topic slug match only when not already pinned to a skill node.
-    if (input.topic && !input.skillNodeId) {
-      const topicRaw = input.topic.trim();
-      const topicSlug = topicRaw.toLowerCase().replace(/\s+/g, '-');
-      qb.andWhere('(q.slug ILIKE :topicRaw OR q.slug ILIKE :topicSlug)', {
-        topicRaw: `%${topicRaw}%`,
-        topicSlug: `%${topicSlug}%`,
-      });
+      pool = pool.filter((p) =>
+        skillIdMatchesTaught(p.skillsTaught, input.skillNodeId),
+      );
+    } else if (input.topic) {
+      pool = pool.filter((p) => topicMatchesSkills(p.skillsTaught, input.topic));
     }
 
-    return qb.getMany();
+    return pool;
   }
 
   private pickWithDifficultyMix(
-    versions: QuestionVersion[],
-    templates: Map<string, QuestionTemplate>,
+    items: UnitBattlePoolItem[],
     count: number,
     difficultyMix: string[],
-  ): QuestionVersion[] {
-    const shuffled = [...versions].sort(() => Math.random() - 0.5);
+  ): UnitBattlePoolItem[] {
+    const shuffled = [...items].sort(() => Math.random() - 0.5);
     if (!difficultyMix.length) {
       return shuffled.slice(0, count);
     }
 
-    const picked: QuestionVersion[] = [];
+    const picked: UnitBattlePoolItem[] = [];
     const used = new Set<string>();
     for (const difficulty of difficultyMix) {
       if (picked.length >= count) break;
       const match = shuffled.find((v) => {
-        if (used.has(v.id)) return false;
-        return templates.get(v.questionTemplateId)?.difficulty === difficulty;
+        if (used.has(v.questionVersionId)) return false;
+        return v.difficulty === difficulty;
       });
       if (match) {
         picked.push(match);
-        used.add(match.id);
+        used.add(match.questionVersionId);
       }
     }
 
     for (const v of shuffled) {
       if (picked.length >= count) break;
-      if (used.has(v.id)) continue;
+      if (used.has(v.questionVersionId)) continue;
       picked.push(v);
-      used.add(v.id);
+      used.add(v.questionVersionId);
     }
 
     return picked;
-  }
-
-  private toSnapshot(
-    version: QuestionVersion,
-    template: QuestionTemplate,
-  ): BattleQuestionSnapshot {
-    const answer = resolveQuestionAnswer(version);
-    return {
-      questionTemplateId: template.id,
-      questionVersionId: version.id,
-      version: version.version,
-      questionType: template.questionType,
-      difficulty: template.difficulty,
-      difficultyScore: Number(template.difficultyScore),
-      estimatedSeconds: template.estimatedSeconds,
-      prompt: version.prompt as Record<string, unknown>,
-      options: (answer.options ?? []).map((o) => ({ id: o.id, label: o.label })),
-      correctOptionIds: answer.correctOptionIds ?? [],
-      explanation: version.explanation || answer.explanation || '',
-      calibrationKey: `${template.difficulty}:${Number(template.difficultyScore).toFixed(1)}`,
-    };
   }
 }

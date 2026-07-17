@@ -103,11 +103,11 @@ function suggestionForStep(
     case 'track-select': {
       const track = asTrackSelection(answers, key);
       if (track.primary) return null;
-      // Chat asks for one primary track; secondary interests are form-only.
+      // Multi: first pick = primary, rest = secondary (applyTrackSelection).
       return {
         fieldId: key,
         title: step.title,
-        selection: 'single',
+        selection: step.selection === 'multi' ? 'multi' : 'single',
         allowOther: false,
         options: toOptions(step.options).filter((o) => o.value !== 'other'),
       };

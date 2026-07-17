@@ -1,15 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { SkillNode } from '../skill-graph/entities/skill-node.entity';
-import { TechStack } from '../skill-graph/entities/tech-stack.entity';
+import { BATTLE_POOL_MIN_MULTIPLIER } from './content-pool.constants';
+import { Skill } from './entities/skill.entity';
+import { Unit } from './entities/unit.entity';
 import {
-  BATTLE_POOL_MIN_MULTIPLIER,
-  ContentPublicationStatus,
-} from './content-pool.constants';
-import { QuestionTemplate } from './entities/question-template.entity';
+  extractQuizQuestions,
+  topicMatchesSkills,
+} from './unit-battle-question.util';
 
-/** Smallest battle (5Q) needs this many published versions. */
+/** Smallest battle (5Q) needs this many quiz-unit questions. */
 const MIN_POOL_FOR_CATALOG = 5 * BATTLE_POOL_MIN_MULTIPLIER;
 
 export type BattleCatalogTopic = {
@@ -26,51 +26,29 @@ export type BattleCatalogSubject = {
   topics: BattleCatalogTopic[];
 };
 
-type PoolRow = {
-  techStackSlug: string;
+export type BattleCatalogSkill = {
+  id: string;
   slug: string;
-  skillNodeId: string | null;
-  publishedVersionId: string | null;
+  title: string;
 };
 
 @Injectable()
 export class BattleCatalogService {
   constructor(
-    @InjectRepository(TechStack)
-    private readonly stacksRepo: Repository<TechStack>,
-    @InjectRepository(SkillNode)
-    private readonly skillsRepo: Repository<SkillNode>,
-    @InjectRepository(QuestionTemplate)
-    private readonly questionsRepo: Repository<QuestionTemplate>,
+    @InjectRepository(Unit)
+    private readonly unitsRepo: Repository<Unit>,
+    @InjectRepository(Skill)
+    private readonly skillsRepo: Repository<Skill>,
   ) {}
 
   /**
-   * Catalog chips — only subjects/topics with enough published battle versions.
-   * Driven by content pool (not empty skill-graph stacks).
+   * Catalog chips — only subjects/topics with enough quiz-unit questions.
    */
   async listCatalog(): Promise<{ subjects: BattleCatalogSubject[] }> {
-    const rows = await this.questionsRepo
-      .createQueryBuilder('q')
-      .select('q.techStackSlug', 'techStackSlug')
-      .addSelect('q.slug', 'slug')
-      .addSelect('q.skillNodeId', 'skillNodeId')
-      .addSelect('q.publishedVersionId', 'publishedVersionId')
-      .where('q.is_active = true')
-      .andWhere('q.status = :status', {
-        status: ContentPublicationStatus.Published,
-      })
-      .andWhere(`:ctx = ANY(q.allowed_contexts)`, { ctx: 'battle' })
-      .andWhere('q.published_version_id IS NOT NULL')
-      .andWhere('q.tech_stack_slug IS NOT NULL')
-      .getRawMany<PoolRow>();
-
-    const stacks = await this.stacksRepo.find({
-      where: { isActive: true },
-      order: { name: 'ASC' },
+    const units = await this.unitsRepo.find({
+      where: { isActive: true, lessonType: 'quiz' },
     });
-    const stackNameBySlug = new Map(
-      stacks.map((s) => [s.slug, s.name] as const),
-    );
+
     const skills = await this.skillsRepo.find({ where: { isActive: true } });
     const skillById = new Map(skills.map((s) => [s.id, s] as const));
 
@@ -80,36 +58,40 @@ export class BattleCatalogService {
         total: number;
         topics: Map<
           string,
-          { count: number; skillNodeId: string | null; name: string }
+          { count: number; skillId: string; name: string }
         >;
       }
     >();
 
-    for (const row of rows) {
-      const subjectSlug = row.techStackSlug?.trim().toLowerCase();
-      if (!subjectSlug || !row.publishedVersionId) continue;
+    for (const unit of units) {
+      const subjectSlug = unit.stack?.trim().toLowerCase();
+      if (!subjectSlug) continue;
+      const qCount = extractQuizQuestions(unit.content ?? {}).length;
+      if (qCount === 0) continue;
 
       let bucket = bySubject.get(subjectSlug);
       if (!bucket) {
         bucket = { total: 0, topics: new Map() };
         bySubject.set(subjectSlug, bucket);
       }
-      bucket.total += 1;
+      bucket.total += qCount;
 
-      const parsed = this.topicFromTemplate(subjectSlug, row, skillById);
-      if (!parsed) continue;
+      const skillId =
+        unit.skillsTaught?.[0] ?? `${subjectSlug}:general`;
+      const skill = skillById.get(skillId);
+      const topicSlug = skill
+        ? this.localSkillSlug(skill.id)
+        : this.localSkillSlug(skillId);
+      const topicName = skill?.title ?? this.titleFromSlug(topicSlug);
 
-      const existing = bucket.topics.get(parsed.slug);
+      const existing = bucket.topics.get(topicSlug);
       if (existing) {
-        existing.count += 1;
-        if (!existing.skillNodeId && parsed.skillNodeId) {
-          existing.skillNodeId = parsed.skillNodeId;
-        }
+        existing.count += qCount;
       } else {
-        bucket.topics.set(parsed.slug, {
-          count: 1,
-          skillNodeId: parsed.skillNodeId,
-          name: parsed.name,
+        bucket.topics.set(topicSlug, {
+          count: qCount,
+          skillId,
+          name: topicName,
         });
       }
     }
@@ -123,15 +105,11 @@ export class BattleCatalogService {
           .map(([topicSlug, t]) => ({
             slug: topicSlug,
             name: t.name,
-            skillNodeId: t.skillNodeId ?? '',
+            skillNodeId: t.skillId,
             publishedCount: t.count,
           }));
 
-        // Subject-wide chip when no topic meets floor but subject pool does.
-        if (
-          topics.length === 0 &&
-          data.total >= MIN_POOL_FOR_CATALOG
-        ) {
+        if (topics.length === 0 && data.total >= MIN_POOL_FOR_CATALOG) {
           topics.push({
             slug: '',
             name: 'All topics',
@@ -142,7 +120,7 @@ export class BattleCatalogService {
 
         return {
           slug,
-          name: stackNameBySlug.get(slug) ?? this.titleFromSlug(slug),
+          name: this.titleFromSlug(slug),
           publishedCount: data.total,
           topics,
         };
@@ -165,39 +143,28 @@ export class BattleCatalogService {
     const needle = raw.trim().toLowerCase().replace(/\s+/g, '-');
     const display = raw.trim().toLowerCase();
 
-    const stacks = await this.stacksRepo.find({ where: { isActive: true } });
-    const stackHit = stacks.find(
-      (s) =>
-        s.slug === needle ||
-        s.name.toLowerCase() === display ||
-        s.name.toLowerCase().replace(/\s+/g, '-') === needle ||
-        s.name.toLowerCase().includes(display) ||
-        s.slug.includes(needle),
-    );
-    if (stackHit) return { slug: stackHit.slug, name: stackHit.name };
+    const stacks: Array<{ stack: string }> = await this.unitsRepo
+      .createQueryBuilder('u')
+      .select('DISTINCT u.stack', 'stack')
+      .where('u.is_active = true')
+      .andWhere('u.lesson_type = :lt', { lt: 'quiz' })
+      .getRawMany();
 
-    // Content-pool-only subjects (seeded battle banks) not in skill graph.
-    const poolSlug = await this.questionsRepo
-      .createQueryBuilder('q')
-      .select('q.tech_stack_slug', 'slug')
-      .where('q.is_active = true')
-      .andWhere('q.status = :status', {
-        status: ContentPublicationStatus.Published,
-      })
-      .andWhere(`:ctx = ANY(q.allowed_contexts)`, { ctx: 'battle' })
-      .andWhere('q.tech_stack_slug IS NOT NULL')
-      .andWhere(
-        `(q.tech_stack_slug = :needle OR LOWER(REPLACE(q.tech_stack_slug, '-', ' ')) = :display)`,
-        { needle, display },
-      )
-      .limit(1)
-      .getRawOne<{ slug: string }>();
+    const hit = stacks.find((s) => {
+      const slug = s.stack?.trim().toLowerCase();
+      if (!slug) return false;
+      return (
+        slug === needle ||
+        slug === display ||
+        this.titleFromSlug(slug).toLowerCase() === display ||
+        slug.includes(needle) ||
+        needle.includes(slug)
+      );
+    });
 
-    if (poolSlug?.slug) {
-      return {
-        slug: poolSlug.slug,
-        name: this.titleFromSlug(poolSlug.slug),
-      };
+    if (hit?.stack) {
+      const slug = hit.stack.trim().toLowerCase();
+      return { slug, name: this.titleFromSlug(slug) };
     }
 
     return null;
@@ -206,78 +173,78 @@ export class BattleCatalogService {
   async resolveSkill(
     stackSlug: string,
     topicRaw?: string | null,
-  ): Promise<SkillNode | null> {
-    const stack = await this.stacksRepo.findOne({
-      where: { slug: stackSlug, isActive: true },
+  ): Promise<BattleCatalogSkill | null> {
+    const units = await this.unitsRepo.find({
+      where: { isActive: true, lessonType: 'quiz', stack: stackSlug },
     });
-    if (!stack) return null;
-    const skills = await this.skillsRepo.find({
-      where: { techStackId: stack.id, isActive: true },
-      order: { orderHint: 'ASC' },
+    if (!units.length) return null;
+
+    const skillIds = new Set<string>();
+    for (const u of units) {
+      for (const s of u.skillsTaught ?? []) skillIds.add(s);
+    }
+    if (skillIds.size === 0) return null;
+
+    const skills = await this.skillsRepo.find({ where: { isActive: true } });
+    const byId = new Map(skills.map((s) => [s.id, s] as const));
+
+    const candidates: BattleCatalogSkill[] = [...skillIds].map((id) => {
+      const skill = byId.get(id);
+      const local = this.localSkillSlug(id);
+      return {
+        id,
+        slug: local,
+        title: skill?.title ?? this.titleFromSlug(local),
+      };
     });
-    if (!topicRaw?.trim()) return skills[0] ?? null;
+
+    if (!topicRaw?.trim()) return candidates[0] ?? null;
     const raw = topicRaw.trim().toLowerCase();
     const needle = raw.replace(/\s+/g, '-');
+
     const exact =
-      skills.find(
+      candidates.find(
         (s) =>
           s.slug === needle ||
           s.title.toLowerCase() === raw ||
-          s.title.toLowerCase().replace(/\s+/g, '-') === needle,
+          s.title.toLowerCase().replace(/\s+/g, '-') === needle ||
+          s.id.toLowerCase() === needle ||
+          s.id.toLowerCase().endsWith(`:${needle}`),
       ) ?? null;
     if (exact) return exact;
+
     return (
-      skills.find(
+      candidates.find(
         (s) =>
           s.title.toLowerCase().includes(raw) ||
           s.slug.includes(needle) ||
-          raw.includes(s.slug),
+          raw.includes(s.slug) ||
+          topicMatchesSkills([s.id], topicRaw),
       ) ?? null
     );
   }
 
   /**
-   * Count published battle versions for a skill node (0 = do not filter by it).
+   * Count quiz-unit questions teaching a skill id (0 = do not filter by it).
    */
-  async publishedBattleCountForSkill(skillNodeId: string): Promise<number> {
-    return this.questionsRepo
-      .createQueryBuilder('q')
-      .where('q.is_active = true')
-      .andWhere('q.status = :status', {
-        status: ContentPublicationStatus.Published,
-      })
-      .andWhere(`:ctx = ANY(q.allowed_contexts)`, { ctx: 'battle' })
-      .andWhere('q.published_version_id IS NOT NULL')
-      .andWhere('q.skill_node_id = :skillNodeId', { skillNodeId })
-      .getCount();
+  async publishedBattleCountForSkill(skillId: string): Promise<number> {
+    if (!skillId?.trim()) return 0;
+    const units = await this.unitsRepo
+      .createQueryBuilder('u')
+      .where('u.is_active = true')
+      .andWhere('u.lesson_type = :lt', { lt: 'quiz' })
+      .andWhere(':skill = ANY(u.skills_taught)', { skill: skillId })
+      .getMany();
+
+    return units.reduce(
+      (sum, u) => sum + extractQuizQuestions(u.content ?? {}).length,
+      0,
+    );
   }
 
-  private topicFromTemplate(
-    subjectSlug: string,
-    row: PoolRow,
-    skillById: Map<string, SkillNode>,
-  ): { slug: string; name: string; skillNodeId: string | null } | null {
-    if (row.skillNodeId) {
-      const skill = skillById.get(row.skillNodeId);
-      if (skill) {
-        return {
-          slug: skill.slug,
-          name: skill.title,
-          skillNodeId: skill.id,
-        };
-      }
-    }
-    const slug = row.slug?.toLowerCase() ?? '';
-    // Seed pattern: battle-{subject}-{topic}-{nnn}
-    const prefix = `battle-${subjectSlug}-`;
-    if (!slug.startsWith(prefix)) return null;
-    const rest = slug.slice(prefix.length).replace(/-\d+$/, '');
-    if (!rest) return null;
-    return {
-      slug: rest,
-      name: this.titleFromSlug(rest),
-      skillNodeId: row.skillNodeId,
-    };
+  private localSkillSlug(skillId: string): string {
+    const s = skillId.trim().toLowerCase();
+    return s.includes(':') ? s.split(':').slice(1).join(':') : s;
   }
 
   private titleFromSlug(slug: string): string {

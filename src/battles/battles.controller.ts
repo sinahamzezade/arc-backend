@@ -44,7 +44,7 @@ export class BattlesController {
 
   @Get('catalog')
   @ApiOperation({
-    summary: 'Battle subject/topic chips from skill-graph catalog',
+    summary: 'Battle subject/topic chips from quiz-unit pool',
   })
   catalog() {
     return this.battles.listCatalog();

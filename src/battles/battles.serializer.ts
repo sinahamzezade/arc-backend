@@ -6,6 +6,7 @@ import { BattleResult } from './entities/battle-result.entity';
 
 function stemFromPrompt(prompt: Record<string, unknown>): string {
   if (typeof prompt.stem === 'string') return prompt.stem;
+  if (typeof prompt.text === 'string') return prompt.text;
   if (typeof prompt.body === 'string') return prompt.body;
   return 'Question';
 }

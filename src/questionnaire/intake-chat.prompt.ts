@@ -3,10 +3,19 @@ import type { IntakeSuggestions } from './intake-chat.suggestions';
 
 export const INTAKE_CHAT_PROMPT_VERSION = 'intake_chat_v4';
 
+/** Rotate so the same ack never repeats twice in a row. */
+const DETERMINISTIC_ACKS = [
+  'Nice.',
+  'Okay.',
+  'Noted.',
+  'Sounds good.',
+  'Alright.',
+] as const;
+
 /** Soft ack + next question title — no LLM. */
 export function buildDeterministicAssistantMessage(
   nextQuestionTitle: string | null,
-  opts: { isStart?: boolean } = {},
+  opts: { isStart?: boolean; assistantTurnIndex?: number } = {},
 ): string {
   if (!nextQuestionTitle) {
     return 'Great — I have everything I need. Review your answers, then generate your roadmap.';
@@ -14,7 +23,9 @@ export function buildDeterministicAssistantMessage(
   if (opts.isStart) {
     return `Hi — quick goal interview. ${nextQuestionTitle}`;
   }
-  return `Got it. ${nextQuestionTitle}`;
+  const idx = Math.max(0, opts.assistantTurnIndex ?? 0);
+  const ack = DETERMINISTIC_ACKS[idx % DETERMINISTIC_ACKS.length]!;
+  return `${ack} ${nextQuestionTitle}`;
 }
 
 /** Drop empty draft pads so prompt stays tiny. */

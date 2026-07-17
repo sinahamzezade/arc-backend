@@ -41,9 +41,8 @@ import { Unit } from './entities/unit.entity';
 import { LiveContextSnippet } from './entities/live-context-snippet.entity';
 import { UnitsCatalogService } from './units-catalog.service';
 import { BattleCatalogService } from './battle-catalog.service';
-import { BattleQuestionLlmService } from './battle-question-llm.service';
 import { QuestionPoolService } from './question-pool.service';
-import { BattleQuestionSeedService } from './seeds/battle-question.seed';
+import { BattleQuizUnitsSeedService } from './seeds/battle-quiz-units.seed';
 import { EngagementSchemaService } from './engagement-schema.service';
 import { LiveContextService } from './live-context.service';
 import { LiveContextSeedService } from './seeds/live-context.seed';
@@ -94,13 +93,12 @@ import { LiveContextSeedService } from './seeds/live-context.seed';
     ContentPersonalizationService,
     QuestionPoolService,
     BattleCatalogService,
-    BattleQuestionLlmService,
     ContentAnalyticsService,
     ContentCacheService,
     ContentCatalogService,
     ContentQualityService,
     UnitsCatalogService,
-    BattleQuestionSeedService,
+    BattleQuizUnitsSeedService,
     EngagementSchemaService,
     LiveContextService,
     LiveContextSeedService,
@@ -113,7 +111,6 @@ import { LiveContextSeedService } from './seeds/live-context.seed';
     ContentPersonalizationService,
     QuestionPoolService,
     BattleCatalogService,
-    BattleQuestionLlmService,
     ContentAnalyticsService,
     ContentQualityService,
     ContentCatalogService,

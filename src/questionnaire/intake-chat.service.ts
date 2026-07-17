@@ -846,9 +846,12 @@ export class IntakeChatService {
     // Chip/start/done — ask from suggestion title, zero LLM tokens.
     if (skipLlm || (!isStart && pendingBefore.length === 0)) {
       const focus = await this.suggestionsFor(userId, priorAnswers, meta);
+      const assistantTurnIndex = transcript.filter(
+        (m) => m.role === 'assistant',
+      ).length;
       const assistantMessage = buildDeterministicAssistantMessage(
         focus?.title ?? null,
-        { isStart },
+        { isStart, assistantTurnIndex },
       );
       const done = pendingBefore.length === 0;
       transcript.push({ role: 'assistant', content: assistantMessage });
