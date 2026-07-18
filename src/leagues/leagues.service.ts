@@ -365,7 +365,7 @@ export class LeaguesService {
             ? (profile?.displayName ?? 'You')
             : (profile?.displayName ??
               profile?.username ??
-              'Arc Learner'),
+              'Arlo Learner'),
           weeklyXp: row.weeklyLeagueXp,
           isViewer,
         };
@@ -595,7 +595,7 @@ export class LeaguesService {
             userId: null as string | null,
             position: p.position,
             qualifiedXp: p.qualifiedXp,
-            displayName: 'Arc Learner',
+            displayName: 'Arlo Learner',
             username: null,
             avatarUrl: null,
             anonymized: true,

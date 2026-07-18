@@ -15,12 +15,12 @@ export class EmailService {
   async sendOtp(email: string, otp: string, purpose: 'verify' | 'reset') {
     const subject =
       purpose === 'verify'
-        ? 'Verify your Arc email'
-        : 'Reset your Arc password';
-    const text = `Your Arc code is ${otp}. It expires in 15 minutes.`;
-    const html = `<p>Your Arc code is <strong>${otp}</strong>.</p><p>It expires in 15 minutes.</p>`;
+        ? 'Verify your Arlo email'
+        : 'Reset your Arlo password';
+    const text = `Your Arlo code is ${otp}. It expires in 15 minutes.`;
+    const html = `<p>Your Arlo code is <strong>${otp}</strong>.</p><p>It expires in 15 minutes.</p>`;
     const from =
-      this.config.get<string>('EMAIL_FROM') || 'Arc <onboarding@resend.dev>';
+      this.config.get<string>('EMAIL_FROM') || 'Arlo <onboarding@resend.dev>';
 
     if (!this.resend) {
       this.logger.log(`[DEV EMAIL] to=${email} subject="${subject}" ${text}`);

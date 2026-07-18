@@ -10,6 +10,7 @@ import { Unit } from './entities/unit.entity';
 import { RoleRecipe } from '../skill-graph/entities/role-recipe.entity';
 import {
   assertPrereqsResolved,
+  domainTitle,
   topologicalSortSkills,
   UnitsGraphError,
 } from './units-graph.util';
@@ -20,6 +21,8 @@ import {
   type UnitsJsonSkill,
   type UnitsJsonUnit,
 } from './units-json.types';
+
+export { domainTitle } from './units-graph.util';
 
 @Injectable()
 export class UnitsCatalogService implements OnModuleInit {
@@ -169,6 +172,18 @@ export class UnitsCatalogService implements OnModuleInit {
         throw new UnitsGraphError(
           'CONTENT_PREREQ_UNRESOLVED',
           `Unit "${u.id}" serves_stage must be an array of positive integers`,
+        );
+      }
+      if (!String(u.domain ?? '').trim()) {
+        throw new UnitsGraphError(
+          'CONTENT_PREREQ_UNRESOLVED',
+          `Unit "${u.id}" domain is required`,
+        );
+      }
+      if (!String(u.stack ?? '').trim()) {
+        throw new UnitsGraphError(
+          'CONTENT_PREREQ_UNRESOLVED',
+          `Unit "${u.id}" stack is required`,
         );
       }
     }
@@ -409,8 +424,8 @@ export class UnitsCatalogService implements OnModuleInit {
       estimatedMinutes: u.estimated_minutes ?? 20,
       formats: u.formats ?? [],
       lessonType: u.lesson_type,
-      domain: u.domain ?? 'frontend',
-      stack: u.stack,
+      domain: String(u.domain).trim(),
+      stack: String(u.stack).trim(),
       provider: u.provider ?? null,
       url: u.url ?? null,
       xp: u.xp ?? 20,
@@ -439,10 +454,7 @@ export class UnitsCatalogService implements OnModuleInit {
     for (const dir of dirs) {
       if (!existsSync(dir)) continue;
       for (const file of readdirSync(dir)) {
-        if (!file.endsWith('-units.json') && file !== 'frontend-units.json') {
-          continue;
-        }
-        if (!file.endsWith('.json')) continue;
+        if (!file.endsWith('-units.json')) continue;
         const raw = JSON.parse(readFileSync(join(dir, file), 'utf8'));
         if (!isUnitsJsonDocument(raw)) {
           this.logger.warn(`Skipping invalid units file ${file}`);
@@ -499,10 +511,13 @@ export class UnitsCatalogService implements OnModuleInit {
             slug: domain,
             title: label,
             description: `Learn ${label} with hands-on units from the content pool.`,
-            category: 'engineering',
+            category: 'general',
             isActive: true,
           }),
         );
+      } else if (career.title !== label) {
+        career.title = label;
+        await this.careersRepo.save(career);
       }
 
       const required = [...(skillsByDomain.get(domain) ?? [])].sort();
@@ -510,6 +525,8 @@ export class UnitsCatalogService implements OnModuleInit {
         where: { targetRoleSlug: domain },
       });
       if (existing) {
+        // Sync skills from units only. Narrative titles + complementary tags
+        // stay authored (admin / recipe row) — never overwritten from code maps.
         existing.requiredSkillIds = required;
         existing.optionalSkillIds = [];
         existing.stackPlan = { phases: [] };
@@ -517,20 +534,11 @@ export class UnitsCatalogService implements OnModuleInit {
         existing.optionalSkillNodeIds = [];
         existing.isActive = true;
         existing.careerRoleId = career.id;
-        const narrativeTitles = PHASE_NARRATIVE_TITLES[domain];
-        if (narrativeTitles?.length) {
-          existing.phaseNarrativeTitles = narrativeTitles;
-        }
-        const complementary = COMPLEMENTARY_SKILL_TAGS[domain];
-        if (complementary?.length) {
-          existing.complementarySkillTags = complementary;
-        }
+        existing.title = label;
+        existing.summary = `${label} track built from the units content pool.`;
         await this.recipesRepo.save(existing);
         continue;
       }
-
-      const narrativeTitles = PHASE_NARRATIVE_TITLES[domain] ?? [];
-      const complementary = COMPLEMENTARY_SKILL_TAGS[domain] ?? [];
 
       await this.recipesRepo.save(
         this.recipesRepo.create({
@@ -547,8 +555,8 @@ export class UnitsCatalogService implements OnModuleInit {
           optionalSkillNodeIds: [],
           minimumAssessmentRules: { requireDiagnosticForSkip: false },
           promptHints: {},
-          phaseNarrativeTitles: narrativeTitles,
-          complementarySkillTags: complementary,
+          phaseNarrativeTitles: [],
+          complementarySkillTags: [],
           isActive: true,
         }),
       );
@@ -564,56 +572,4 @@ export class UnitsCatalogService implements OnModuleInit {
       }
     }
   }
-}
-
-/** Domain slug → ordered narrative phase titles (engagement layer §9.2). */
-const PHASE_NARRATIVE_TITLES: Record<string, string[]> = {
-  frontend: [
-    'Layout Apprentice',
-    'Component Builder',
-    'Interface Engineer',
-    'Performance Tuner',
-    'Production-Ready Engineer',
-  ],
-  'frontend-developer': [
-    'Layout Apprentice',
-    'Component Builder',
-    'Interface Engineer',
-    'Performance Tuner',
-    'Production-Ready Engineer',
-  ],
-  'digital-marketing': [
-    'Content Rookie',
-    'Channel Operator',
-    'Campaign Strategist',
-    'Growth Analyst',
-    'Marketing Lead',
-  ],
-  'digital-marketing-specialist': [
-    'Content Rookie',
-    'Channel Operator',
-    'Campaign Strategist',
-    'Growth Analyst',
-    'Marketing Lead',
-  ],
-};
-
-/** Cross-track complementary skill tags (engagement §10). */
-const COMPLEMENTARY_SKILL_TAGS: Record<string, string[]> = {
-  frontend: ['digital-marketing:landing-page-basics'],
-  'frontend-developer': ['digital-marketing:landing-page-basics'],
-  'digital-marketing': ['data-analytics:funnel-metrics', 'frontend:landing-page-basics'],
-  'digital-marketing-specialist': [
-    'data-analytics:funnel-metrics',
-    'frontend:landing-page-basics',
-  ],
-};
-
-/** 'frontend' → 'Frontend', 'data-science' → 'Data Science'. */
-export function domainTitle(domain: string): string {
-  return domain
-    .split(/[-_\s]+/)
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
 }

@@ -5,7 +5,7 @@ export const ROADMAP_GENERATOR_PROMPT_VERSION = 'roadmap_generator_v1';
 
 export function buildRoadmapAiSystemPrompt(): string {
   return [
-    'You are Arc roadmap_generator_v1, a roadmap NARRATOR.',
+    'You are Arlo roadmap_generator_v1, a roadmap NARRATOR.',
     'The lesson SELECTION and ORDER are already decided by the app and are correct.',
     'Your job is only to name, group, and describe them — never to change them.',
     '',

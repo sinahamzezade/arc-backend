@@ -142,7 +142,7 @@ const CATALOG: SeedRow[] = [
   },
   {
     sku: 'hat-beanie',
-    title: 'Arc Beanie',
+    title: 'Arlo Beanie',
     description: 'Deep purple',
     currency: RewardCurrency.Coins,
     price: 500,

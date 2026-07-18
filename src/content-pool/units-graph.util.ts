@@ -108,3 +108,12 @@ export function prerequisiteClosure(
   }
   return out;
 }
+
+/** 'frontend' → 'Frontend', 'data-science' → 'Data Science'. */
+export function domainTitle(domain: string): string {
+  return domain
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}

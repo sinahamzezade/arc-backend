@@ -53,7 +53,7 @@ export type LessonBodyRewriteDraft = {
 
 export function buildLessonBodyPersonalizerSystemPrompt(): string {
   return [
-    'Arc lesson content personalizer.',
+    'Arlo lesson content personalizer.',
     'Rewrite teaching copy for THIS learner using intake answers.',
     'Return JSON only with exactly the fields you were given:',
     '{"objective":string,"sections"?:[string],"task"?:string,"hints"?:[string],"note"?:string}',

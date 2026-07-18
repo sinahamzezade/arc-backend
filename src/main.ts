@@ -172,8 +172,8 @@ async function bootstrap() {
   );
 
   const swagger = new DocumentBuilder()
-    .setTitle('Arc API')
-    .setDescription('Arc backend — auth & user APIs')
+    .setTitle('Arlo API')
+    .setDescription('Arlo backend — auth & user APIs')
     .setVersion('0.1')
     .addBearerAuth()
     .build();

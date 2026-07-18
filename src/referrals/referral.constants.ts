@@ -61,7 +61,7 @@ export const REFERRAL_MILESTONES: Array<{
   { qualifiedRequired: 3, coins: 300, gems: 0 },
   { qualifiedRequired: 5, coins: 750, gems: 10, badge: 'Connector' },
   { qualifiedRequired: 10, coins: 1500, gems: 25, badge: 'Violet Connector Frame' },
-  { qualifiedRequired: 25, coins: 4000, gems: 50, badge: 'Arc Ambassador' },
+  { qualifiedRequired: 25, coins: 4000, gems: 50, badge: 'Arlo Ambassador' },
 ];
 
 export function publicAppBase(configUrl?: string): string {

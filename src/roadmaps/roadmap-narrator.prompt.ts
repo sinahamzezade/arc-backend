@@ -38,7 +38,7 @@ export type NarratorDraft = {
 };
 
 export function buildRoadmapNarratorSystemPrompt(): string {
-  return `You are Arc, a learning roadmap narrator.
+  return `You are the Arlo learning roadmap narrator.
 The lesson SELECTION and ORDER are already decided by the app and are correct.
 Do NOT add, remove, or reorder lessons. Only group and describe them.
 

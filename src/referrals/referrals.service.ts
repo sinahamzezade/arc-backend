@@ -320,8 +320,8 @@ export class ReferralsService {
       referralCode: code.code,
       url: this.linkUrl(link.publicToken),
       share: {
-        title: 'Join me on Arc',
-        text: 'Learn with Arlo on Arc. Use my link and we’ll both earn rewards.',
+        title: 'Join me on Arlo',
+        text: 'Learn with Arlo. Use my link and we’ll both earn rewards.',
       },
       rewardPreview: {
         inviterCoins: preview.inviterCoins,
@@ -605,7 +605,7 @@ export class ReferralsService {
       userId: attribution.inviterUserId,
       type: NotificationType.Referral,
       title: 'Friend signed up',
-      body: 'Your invite joined Arc. Reward pending until they qualify.',
+      body: 'Your invite joined Arlo. Reward pending until they qualify.',
       actionUrl: '/friends',
       dedupeKey: `referral-signup:${attribution.id}:inviter`,
       payload: { attributionId: attribution.id },

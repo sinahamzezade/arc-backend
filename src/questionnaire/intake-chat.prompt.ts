@@ -101,7 +101,7 @@ export function buildIntakeChatSystemPrompt(
   const shape = shapeHintForFocus(focus);
 
   return [
-    'Arc intake. One short question. Map text→option VALUE tokens only.',
+    'Arlo intake. One short question. Map text→option VALUE tokens only.',
     'Schedule→{days:[],times:[tokens]} (times required). allowOther→"other"+`${id}Other`.',
     ...(shape ? [`Shape: ${shape}`] : []),
     'JSON: {"assistantMessage":string,"partialAnswers":object,"done":boolean}',

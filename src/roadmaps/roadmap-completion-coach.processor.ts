@@ -132,7 +132,7 @@ export class RoadmapCompletionCoachProcessor {
           {
             role: 'system',
             content: [
-              'You are Arc roadmap completion coach.',
+              'You are the Arlo roadmap completion coach.',
               'Return JSON only: { "recommendation": "new_goal"|"same_goal_advanced"|"top_up", "rationale": "<one sentence>" }.',
               'Never invent careers, skills, or recipes.',
               'You may only recommend same_goal_advanced when availableAdvancedRecipes is non-empty.',

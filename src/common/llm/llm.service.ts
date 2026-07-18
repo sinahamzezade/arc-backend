@@ -239,7 +239,7 @@ export class LlmService {
       this.config.get<string>('LLM_HTTP_REFERER')?.trim() ||
       this.config.get<string>('PUBLIC_APP_URL')?.trim() ||
       'http://localhost:3000';
-    const title = this.config.get<string>('LLM_APP_TITLE')?.trim() || 'Arc';
+    const title = this.config.get<string>('LLM_APP_TITLE')?.trim() || 'Arlo';
     return {
       'HTTP-Referer': referer,
       'X-OpenRouter-Title': title,

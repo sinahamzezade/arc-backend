@@ -1439,11 +1439,31 @@ export class AdminController {
   ) {
     const units = await this.unitsCatalog.listActiveUnits();
     const skills = await this.unitsCatalog.listActiveSkills();
+    const byStack = new Map<
+      string,
+      {
+        stack: string;
+        units: typeof units;
+      }
+    >();
+    for (const unit of units) {
+      const key = unit.stack || 'uncategorized';
+      const group = byStack.get(key);
+      if (group) group.units.push(unit);
+      else byStack.set(key, { stack: key, units: [unit] });
+    }
+    const unitGroups = [...byStack.values()].map((g) => ({
+      stack: g.stack,
+      count: g.units.length,
+      countSingular: g.units.length === 1,
+      units: g.units,
+    }));
     return {
       title: 'Units',
       email: req.session.adminEmail ?? '',
       navUnits: true,
       units,
+      unitGroups,
       skills: skills.map((s) => ({
         ...s,
         prerequisitesLabel: (s.prerequisites ?? []).join(', ') || '—',

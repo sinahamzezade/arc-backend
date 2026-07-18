@@ -13,7 +13,7 @@ async function bootstrap() {
   });
   const logger = new Logger('WorkerBootstrap');
   app.enableShutdownHooks();
-  logger.log('Arc worker started');
+  logger.log('Arlo worker started');
 }
 
 bootstrap();

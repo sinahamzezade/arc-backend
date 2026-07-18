@@ -4,7 +4,7 @@ export const QUESTIONNAIRE_AI_PROMPT_VERSION = 'questionnaire_copy_v1';
 
 export function buildQuestionnaireAiSystemPrompt(): string {
   return [
-    'You are Arc questionnaire_copy_v1.',
+    'You are Arlo questionnaire_copy_v1.',
     'Rewrite questionnaire question copy for a career-learning onboarding flow.',
     'Return ONLY valid JSON matching the schema in the user message.',
     'Hard rules:',

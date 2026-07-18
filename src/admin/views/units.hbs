@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{{title}} · Arc Admin</title>
+    <title>{{title}} · Arlo Admin</title>
     {{> layout}}
   </head>
   <body class="bg-mist text-moss font-sans antialiased">
@@ -62,57 +62,86 @@
                 data-bulk-remove
                 onsubmit="return window.confirm('Permanently delete the selected units? This cannot be undone.')"
               >
-                <div class="mb-4 flex items-center gap-3">
+                <div class="mb-4 flex flex-wrap items-center gap-3">
+                  <label class="inline-flex cursor-pointer items-center gap-2 text-sm text-moss">
+                    <input type="checkbox" data-bulk-all aria-label="Select all units" class="h-4 w-4 accent-fern" />
+                    Select all
+                  </label>
                   <p class="mr-auto text-sm text-sage" data-bulk-count>No units selected</p>
                   <button
                     type="submit"
                     disabled
                     data-bulk-submit
-                    class="rounded-full bg-coral px-5 py-2.5 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-40"
+                    class="cursor-pointer rounded-full bg-coral px-5 py-2.5 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Delete selected
                   </button>
                 </div>
-                <div class="overflow-hidden rounded-blob border border-[#d5ddd7] bg-foam/95 shadow-lift">
-                  <table class="w-full text-left text-sm">
-                    <thead class="border-b border-[#d5ddd7] bg-mist/40 text-xs uppercase tracking-wide text-sage">
-                      <tr>
-                        <th class="w-10 px-4 py-3">
-                          <input type="checkbox" data-bulk-all aria-label="Select all units" class="h-4 w-4 accent-fern" />
-                        </th>
-                        <th class="px-4 py-3">Id</th>
-                        <th class="px-4 py-3">Title</th>
-                        <th class="px-4 py-3">Type</th>
-                        <th class="px-4 py-3">Stack</th>
-                        <th class="px-4 py-3">Min</th>
-                        <th class="px-4 py-3">XP</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {{#each units}}
-                        <tr class="border-b border-[#e8eee9] last:border-0 transition hover:bg-mist/40">
-                          <td class="px-4 py-3">
-                            <input type="checkbox" name="ids" value="{{id}}" data-bulk-row aria-label="Select {{id}}" class="h-4 w-4 accent-fern" />
-                          </td>
-                          <td class="px-4 py-3 font-mono text-[12px]">
-                            <a href="/admin/units/{{id}}" class="underline decoration-leaf underline-offset-2 hover:text-fern">{{id}}</a>
-                          </td>
-                          <td class="px-4 py-3 font-medium">
-                            <a href="/admin/units/{{id}}" class="hover:text-fern">{{title}}</a>
-                          </td>
-                          <td class="px-4 py-3">{{lessonType}}</td>
-                          <td class="px-4 py-3">{{stack}}</td>
-                          <td class="px-4 py-3 tabular-nums">{{estimatedMinutes}}</td>
-                          <td class="px-4 py-3 tabular-nums">{{xp}}</td>
-                        </tr>
-                      {{else}}
-                        <tr>
-                          <td colspan="7" class="px-4 py-8 text-center text-sage">No units yet. Import a JSON package.</td>
-                        </tr>
-                      {{/each}}
-                    </tbody>
-                  </table>
-                </div>
+
+                {{#if unitGroups.length}}
+                  <div class="space-y-5">
+                    {{#each unitGroups}}
+                      <section class="overflow-hidden rounded-blob border border-[#d5ddd7] bg-foam/95 shadow-lift" data-unit-group="{{stack}}">
+                        <div class="flex flex-wrap items-center gap-3 border-b border-[#d5ddd7] bg-mist/40 px-4 py-3">
+                          <label class="inline-flex cursor-pointer items-center gap-2">
+                            <input
+                              type="checkbox"
+                              data-bulk-group
+                              aria-label="Select all {{stack}} units"
+                              class="h-4 w-4 accent-fern"
+                            />
+                            <span class="font-display text-base font-semibold text-moss">{{stack}}</span>
+                          </label>
+                          <span class="rounded-full bg-leaf/70 px-2.5 py-0.5 text-xs font-semibold text-moss">
+                            {{count}} unit{{#unless countSingular}}s{{/unless}}
+                          </span>
+                          <p class="ml-auto text-xs text-sage">Click a unit to select · open for edit</p>
+                        </div>
+                        <ul class="divide-y divide-[#e8eee9]" role="list">
+                          {{#each units}}
+                            <li>
+                              <div
+                                class="group flex cursor-pointer items-stretch gap-3 px-4 py-3 transition hover:bg-mist/50 data-[selected=true]:bg-leaf/40"
+                                data-unit-item
+                                data-selected="false"
+                              >
+                                <input
+                                  type="checkbox"
+                                  name="ids"
+                                  value="{{id}}"
+                                  data-bulk-row
+                                  aria-label="Select {{title}}"
+                                  class="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-fern"
+                                />
+                                <div class="min-w-0 flex-1">
+                                  <p class="truncate font-medium text-moss">{{title}}</p>
+                                  <p class="mt-0.5 truncate font-mono text-[11px] text-sage">{{id}}</p>
+                                  <div class="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+                                    <span class="rounded-full bg-mist px-2 py-0.5 font-semibold text-moss">{{lessonType}}</span>
+                                    <span class="rounded-full bg-mist px-2 py-0.5 tabular-nums text-sage">L{{level}}</span>
+                                    <span class="rounded-full bg-mist px-2 py-0.5 tabular-nums text-sage">{{estimatedMinutes}}m</span>
+                                    <span class="rounded-full bg-mist px-2 py-0.5 tabular-nums text-sage">{{xp}} XP</span>
+                                  </div>
+                                </div>
+                                <a
+                                  href="/admin/units/{{id}}"
+                                  data-unit-open
+                                  class="shrink-0 self-center rounded-full border border-moss/20 px-3 py-1.5 text-xs font-semibold text-moss transition hover:bg-leaf/60"
+                                >
+                                  Open
+                                </a>
+                              </div>
+                            </li>
+                          {{/each}}
+                        </ul>
+                      </section>
+                    {{/each}}
+                  </div>
+                {{else}}
+                  <div class="rounded-blob border border-[#d5ddd7] bg-foam/95 px-4 py-10 text-center text-sm text-sage shadow-lift">
+                    No units yet. Import a JSON package.
+                  </div>
+                {{/if}}
               </form>
             </div>
 
@@ -402,6 +431,16 @@
         var rows = Array.prototype.slice.call(form.querySelectorAll('[data-bulk-row]'));
         var submit = form.querySelector('[data-bulk-submit]');
         var count = form.querySelector('[data-bulk-count]');
+        var groups = Array.prototype.slice.call(form.querySelectorAll('[data-unit-group]'));
+
+        function syncGroup(section) {
+          var groupCb = section.querySelector('[data-bulk-group]');
+          var groupRows = Array.prototype.slice.call(section.querySelectorAll('[data-bulk-row]'));
+          if (!groupCb || !groupRows.length) return;
+          var checked = groupRows.filter(function (r) { return r.checked; }).length;
+          groupCb.checked = checked > 0 && checked === groupRows.length;
+          groupCb.indeterminate = checked > 0 && checked < groupRows.length;
+        }
 
         function sync() {
           var checked = rows.filter(function (r) { return r.checked; }).length;
@@ -414,6 +453,11 @@
             all.checked = checked > 0 && checked === rows.length;
             all.indeterminate = checked > 0 && checked < rows.length;
           }
+          form.querySelectorAll('[data-unit-item]').forEach(function (item) {
+            var cb = item.querySelector('[data-bulk-row]');
+            item.setAttribute('data-selected', cb && cb.checked ? 'true' : 'false');
+          });
+          groups.forEach(syncGroup);
         }
 
         if (all) {
@@ -422,6 +466,29 @@
             sync();
           });
         }
+
+        groups.forEach(function (section) {
+          var groupCb = section.querySelector('[data-bulk-group]');
+          if (!groupCb) return;
+          groupCb.addEventListener('change', function () {
+            section.querySelectorAll('[data-bulk-row]').forEach(function (r) {
+              r.checked = groupCb.checked;
+            });
+            sync();
+          });
+        });
+
+        form.querySelectorAll('[data-unit-item]').forEach(function (item) {
+          item.addEventListener('click', function (e) {
+            if (e.target.closest('[data-unit-open]')) return;
+            if (e.target.closest('input[type="checkbox"]')) return;
+            var cb = item.querySelector('[data-bulk-row]');
+            if (!cb) return;
+            cb.checked = !cb.checked;
+            sync();
+          });
+        });
+
         rows.forEach(function (r) { r.addEventListener('change', sync); });
         sync();
       })();

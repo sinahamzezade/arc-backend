@@ -45,7 +45,7 @@ export type OrchestratorDraft = {
 
 export function buildUnitsOrchestratorSystemPrompt(): string {
   return [
-    'Arc personal roadmap orchestrator for a units content pool.',
+    'Arlo personal roadmap orchestrator for a units content pool.',
     'YOU decide which units to INCLUDE and their EXACT ORDER for this learner.',
     'Return JSON only:',
     '{"title":string,"desc":string,"why":string,"phases":[{"k":string,"t":string,"units":[n,...]}]}',

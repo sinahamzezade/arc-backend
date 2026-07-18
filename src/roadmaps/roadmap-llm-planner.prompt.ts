@@ -48,7 +48,7 @@ export type LlmPlannerDraft = {
 
 export function buildRoadmapLlmPlannerSystemPrompt(): string {
   return [
-    'Arc personal roadmap planner.',
+    'Arlo personal roadmap planner.',
     'YOU decide which lessons to INCLUDE and the EXACT ORDER for this learner.',
     'Different answers MUST produce different lesson sets and order.',
     'Return JSON only:',

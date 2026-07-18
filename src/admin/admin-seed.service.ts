@@ -75,7 +75,7 @@ export class AdminSeedService implements OnModuleInit {
       await this.profilesRepo.save(
         this.profilesRepo.create({
           userId: user.id,
-          displayName: 'Arc Ops',
+          displayName: 'Arlo Ops',
           username: 'ops_ctrl_9f2a',
           language: 'en',
           totalXp: 0,
@@ -104,7 +104,7 @@ export class AdminSeedService implements OnModuleInit {
       await this.profilesRepo.save(
         this.profilesRepo.create({
           userId: user.id,
-          displayName: 'Arc Ops',
+          displayName: 'Arlo Ops',
           username: 'ops_ctrl_9f2a',
           language: 'en',
           totalXp: 0,

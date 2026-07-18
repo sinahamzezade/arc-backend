@@ -444,7 +444,7 @@ export const BADGE_CATALOG_SEED: BadgeSeed[] = [
   },
   {
     code: 'arc-ambassador',
-    name: 'Arc Ambassador',
+    name: 'Arlo Ambassador',
     description: 'Reach 25 qualified referrals.',
     category: BadgeCategory.Referral,
     rarity: BadgeRarity.Epic,
