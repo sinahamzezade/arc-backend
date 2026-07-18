@@ -786,6 +786,8 @@ export class SocialService {
       showStudyActivity: boolean;
       allowFriendRequests: boolean;
       allowFollows: boolean;
+      allowVideoCalls: boolean;
+      allowVoiceCalls: boolean;
       allowBattleInvitesFrom: InviteFromPolicy;
       allowStudyInvitesFrom: InviteFromPolicy;
       allowMessagesFrom: MessagesFromPolicy;
@@ -1399,6 +1401,8 @@ export class SocialService {
       showStudyActivity: row.showStudyActivity,
       allowFriendRequests: row.allowFriendRequests,
       allowFollows: row.allowFollows,
+      allowVideoCalls: row.allowVideoCalls,
+      allowVoiceCalls: row.allowVoiceCalls,
       allowBattleInvitesFrom: row.allowBattleInvitesFrom,
       allowStudyInvitesFrom: row.allowStudyInvitesFrom,
       allowMessagesFrom: row.allowMessagesFrom,

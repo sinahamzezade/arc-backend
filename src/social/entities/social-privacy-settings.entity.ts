@@ -76,6 +76,12 @@ export class SocialPrivacySettings {
   @Column({ name: 'allow_follows', type: 'boolean', default: true })
   allowFollows: boolean;
 
+  @Column({ name: 'allow_video_calls', type: 'boolean', default: true })
+  allowVideoCalls: boolean;
+
+  @Column({ name: 'allow_voice_calls', type: 'boolean', default: true })
+  allowVoiceCalls: boolean;
+
   @Column({
     name: 'allow_battle_invites_from',
     type: 'varchar',

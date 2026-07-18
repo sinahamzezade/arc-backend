@@ -84,6 +84,20 @@ export class SocialPermissionService {
     return false;
   }
 
+  /** Callee privacy: allow video/voice calls (defaults on if no row). */
+  async canReceiveCall(
+    calleeId: string,
+    mode: 'audio' | 'video',
+  ): Promise<boolean> {
+    const privacy = await this.privacyRepo.findOne({
+      where: { userId: calleeId },
+    });
+    if (!privacy) return true;
+    return mode === 'video'
+      ? privacy.allowVideoCalls !== false
+      : privacy.allowVoiceCalls !== false;
+  }
+
   /** Battle invites: privacy policy + not blocked. */
   async canBattleInvite(
     challengerId: string,

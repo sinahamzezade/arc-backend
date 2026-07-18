@@ -39,6 +39,15 @@ export class CallSchemaService implements OnModuleInit {
       `);
 
       await this.dataSource.query(`
+        ALTER TABLE social_privacy_settings
+          ADD COLUMN IF NOT EXISTS allow_video_calls boolean NOT NULL DEFAULT true;
+      `);
+      await this.dataSource.query(`
+        ALTER TABLE social_privacy_settings
+          ADD COLUMN IF NOT EXISTS allow_voice_calls boolean NOT NULL DEFAULT true;
+      `);
+
+      await this.dataSource.query(`
         DO $$ BEGIN
           ALTER TYPE notifications_type_enum ADD VALUE IF NOT EXISTS 'incoming_call';
         EXCEPTION WHEN undefined_object THEN NULL;

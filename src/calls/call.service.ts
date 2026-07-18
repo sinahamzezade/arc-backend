@@ -23,6 +23,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { ProfilesService } from '../profiles/profiles.service';
 import { SocialPermissionService } from '../social/social-permission.service';
 import { UsersService } from '../users/users.service';
+import { SystemFlagKey } from '../system-flags/system-flag.keys';
+import { SystemFlagsService } from '../system-flags/system-flags.service';
 import {
   CALL_CONNECTING_STALE_MS,
   CALL_DISCONNECT_GRACE_MS,
@@ -83,7 +85,41 @@ export class CallService {
     private readonly redis: RedisService,
     private readonly config: ConfigService,
     private readonly notifications: NotificationsService,
+    private readonly systemFlags: SystemFlagsService,
   ) {}
+
+  private async assertCallModeEnabled(
+    userId: string,
+    mode: CallMode,
+  ): Promise<void> {
+    if (mode === CallMode.Video) {
+      const on = await this.systemFlags.getBool(
+        SystemFlagKey.VIDEO_CALL_ENABLED,
+        true,
+        userId,
+      );
+      if (!on) {
+        throw new AppException(
+          AuthErrorCode.CALL_NOT_ALLOWED,
+          'Video calls are disabled',
+          HttpStatus.FORBIDDEN,
+        );
+      }
+      return;
+    }
+    const on = await this.systemFlags.getBool(
+      SystemFlagKey.VOICE_CALL_ENABLED,
+      true,
+      userId,
+    );
+    if (!on) {
+      throw new AppException(
+        AuthErrorCode.CALL_NOT_ALLOWED,
+        'Voice calls are disabled',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+  }
 
   async getIceServers(userId: string): Promise<IceServersResponse> {
     const isProd = this.config.get<string>('NODE_ENV') === 'production';
@@ -229,6 +265,7 @@ export class CallService {
       mode: CallMode;
     };
   }> {
+    await this.assertCallModeEnabled(callerId, input.mode);
     await this.assertInviteRate(callerId);
 
     const existing = await this.callsRepo.findOne({
@@ -286,6 +323,16 @@ export class CallService {
           ? AuthErrorCode.CALL_BLOCKED
           : AuthErrorCode.CALL_NOT_ALLOWED,
         'Calling not allowed',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    if (!(await this.permissions.canReceiveCall(peerId, input.mode))) {
+      throw new AppException(
+        AuthErrorCode.CALL_NOT_ALLOWED,
+        input.mode === CallMode.Video
+          ? 'Peer has video calls disabled'
+          : 'Peer has voice calls disabled',
         HttpStatus.FORBIDDEN,
       );
     }
@@ -464,6 +511,7 @@ export class CallService {
     callId: string,
     mode: CallMode,
   ): Promise<{ call: CallDto; peerId: string }> {
+    await this.assertCallModeEnabled(userId, mode);
     const call = await this.requireCall(callId);
     this.assertParticipant(call, userId);
     if (call.state === CallState.Ended) {
@@ -473,11 +521,18 @@ export class CallService {
         HttpStatus.BAD_REQUEST,
       );
     }
+    const peerId = call.callerId === userId ? call.calleeId : call.callerId;
     if (mode === CallMode.Video) {
+      if (!(await this.permissions.canReceiveCall(peerId, CallMode.Video))) {
+        throw new AppException(
+          AuthErrorCode.CALL_NOT_ALLOWED,
+          'Peer has video calls disabled',
+          HttpStatus.FORBIDDEN,
+        );
+      }
       call.mode = CallMode.Video;
       await this.callsRepo.save(call);
     }
-    const peerId = call.callerId === userId ? call.calleeId : call.callerId;
     return { call: this.toDto(call), peerId };
   }
 

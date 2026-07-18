@@ -152,6 +152,21 @@ export class SystemFlagsService implements OnModuleInit {
         defaultValue: this.envBoolDefault('AVATAR_STUDIO_ENABLED', true),
       },
       {
+        key: SystemFlagKey.VIDEO_CALL_ENABLED,
+        valueType: 'boolean',
+        label: 'Video call',
+        description:
+          'Allow starting and upgrading to video calls in direct chats.',
+        defaultValue: this.envBoolDefault('VIDEO_CALL_ENABLED', true),
+      },
+      {
+        key: SystemFlagKey.VOICE_CALL_ENABLED,
+        valueType: 'boolean',
+        label: 'Voice call',
+        description: 'Allow starting voice (audio) calls in direct chats.',
+        defaultValue: this.envBoolDefault('VOICE_CALL_ENABLED', true),
+      },
+      {
         key: SystemFlagKey.LLM_PROVIDER,
         valueType: 'string',
         label: 'LLM · Preferred provider',

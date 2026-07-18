@@ -10,6 +10,8 @@ export const SystemFlagKey = {
   LESSON_BODY_AI_ENABLED: 'lesson_body_ai_enabled',
   SSO_ENABLED: 'sso_enabled',
   AVATAR_STUDIO_ENABLED: 'avatar_studio_enabled',
+  VIDEO_CALL_ENABLED: 'video_call_enabled',
+  VOICE_CALL_ENABLED: 'voice_call_enabled',
   /** Preferred provider for defaults; each model still routes to its owning provider. */
   LLM_PROVIDER: 'llm_provider',
   LLM_INTAKE_MODEL: 'llm_intake_model',
@@ -30,6 +32,8 @@ export const PUBLIC_SYSTEM_FLAG_KEYS = [
   SystemFlagKey.ARLO_AI_ENABLED,
   SystemFlagKey.SSO_ENABLED,
   SystemFlagKey.AVATAR_STUDIO_ENABLED,
+  SystemFlagKey.VIDEO_CALL_ENABLED,
+  SystemFlagKey.VOICE_CALL_ENABLED,
 ] as const;
 
 /** Flags admins can override per user (resolve = user → system). */
@@ -42,6 +46,8 @@ export const USER_OVERRIDABLE_FLAG_KEYS = [
   SystemFlagKey.ARLO_AI_ENABLED,
   SystemFlagKey.LESSON_BODY_AI_ENABLED,
   SystemFlagKey.AVATAR_STUDIO_ENABLED,
+  SystemFlagKey.VIDEO_CALL_ENABLED,
+  SystemFlagKey.VOICE_CALL_ENABLED,
 ] as const;
 
 export const ROADMAP_ENGINE_MODES = ['llm', 'python', 'legacy'] as const;

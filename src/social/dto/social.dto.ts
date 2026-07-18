@@ -136,6 +136,14 @@ export class UpdatePrivacyDto {
   allowFollows?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  allowVideoCalls?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  allowVoiceCalls?: boolean;
+
+  @IsOptional()
   @IsEnum(InviteFromPolicy)
   allowBattleInvitesFrom?: InviteFromPolicy;
 
