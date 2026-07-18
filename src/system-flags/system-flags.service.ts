@@ -8,6 +8,8 @@ import {
 } from './entities/system-flag.entity';
 import { UserFeatureFlag } from './entities/user-feature-flag.entity';
 import {
+  ARLO_LESSON_TYPE_OPTIONS,
+  ARLO_LESSON_TYPES_DEFAULT,
   DEFAULT_LLM_MODEL,
   DEFAULT_LLM_PROVIDER,
   INTAKE_MODES,
@@ -126,6 +128,14 @@ export class SystemFlagsService implements OnModuleInit {
         label: 'Arlo lesson AI',
         description: 'Enable Arlo AI chat during lessons.',
         defaultValue: this.envBoolDefault('ARLO_AI_ENABLED', true),
+      },
+      {
+        key: SystemFlagKey.ARLO_AI_LESSON_TYPES,
+        valueType: 'string',
+        label: 'Arlo · Lesson types',
+        description:
+          'Show the Ask Arlo button only for these lesson types. Master switch above must also be on.',
+        defaultValue: ARLO_LESSON_TYPES_DEFAULT,
       },
       {
         key: SystemFlagKey.LESSON_BODY_AI_ENABLED,
@@ -416,6 +426,11 @@ export class SystemFlagsService implements OnModuleInit {
     }
   }
 
+  /** CSV multi-select flags (admin checkbox grid). */
+  isMultiSelect(key: SystemFlagKeyName): boolean {
+    return key === SystemFlagKey.ARLO_AI_LESSON_TYPES;
+  }
+
   /** Admin view helpers for select options. */
   optionsFor(key: SystemFlagKeyName): string[] | null {
     if (key === SystemFlagKey.ROADMAP_ENGINE_MODE) {
@@ -423,6 +438,9 @@ export class SystemFlagsService implements OnModuleInit {
     }
     if (key === SystemFlagKey.INTAKE_DEFAULT_MODE) {
       return [...INTAKE_MODES];
+    }
+    if (key === SystemFlagKey.ARLO_AI_LESSON_TYPES) {
+      return [...ARLO_LESSON_TYPE_OPTIONS];
     }
     if (key === SystemFlagKey.LLM_PROVIDER) {
       return [...LLM_PROVIDER_IDS];
@@ -450,7 +468,41 @@ export class SystemFlagsService implements OnModuleInit {
     ) {
       return modelLabel(value);
     }
+    if (key === SystemFlagKey.ARLO_AI_LESSON_TYPES) {
+      return value
+        .split('_')
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
+    }
     return value;
+  }
+
+  parseCsvList(raw: string): string[] {
+    return raw
+      .split(/[,\s]+/)
+      .map((part) => part.trim().toLowerCase())
+      .filter(Boolean);
+  }
+
+  /** Master Arlo flag + lesson-type allowlist. */
+  async isArloEnabledForLessonType(
+    lessonType: string,
+    userId?: string | null,
+  ): Promise<boolean> {
+    const master = await this.getBool(
+      SystemFlagKey.ARLO_AI_ENABLED,
+      true,
+      userId,
+    );
+    if (!master) return false;
+    const raw = await this.getString(
+      SystemFlagKey.ARLO_AI_LESSON_TYPES,
+      ARLO_LESSON_TYPES_DEFAULT,
+      userId,
+    );
+    const allowed = this.parseCsvList(raw);
+    if (allowed.length === 0) return false;
+    return allowed.includes(lessonType.trim().toLowerCase());
   }
 
   private normalizeValue(
@@ -461,6 +513,17 @@ export class SystemFlagsService implements OnModuleInit {
     if (valueType === 'boolean') {
       const on = value === '1' || value === 'on' || value === 'true';
       return on ? 'true' : 'false';
+    }
+    if (this.isMultiSelect(key)) {
+      const opts = this.optionsFor(key) ?? [];
+      const allowed = new Set(opts.map((o) => o.toLowerCase()));
+      const picked = this.parseCsvList(value).filter((part) =>
+        allowed.has(part),
+      );
+      const unique = [...new Set(picked)];
+      return unique
+        .map((part) => opts.find((o) => o.toLowerCase() === part) ?? part)
+        .join(',');
     }
     const opts = this.optionsFor(key);
     const trimmed = value.trim();

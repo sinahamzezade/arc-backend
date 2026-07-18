@@ -2458,24 +2458,27 @@ export class AdminController {
   ) {
     const rows = await this.systemFlags.list();
     const flags = rows.map((row) => {
-      const options = this.systemFlags.optionsFor(
-        row.key as (typeof SystemFlagKey)[keyof typeof SystemFlagKey],
-      );
+      const flagKey = row.key as (typeof SystemFlagKey)[keyof typeof SystemFlagKey];
+      const options = this.systemFlags.optionsFor(flagKey);
       const isBoolean = row.valueType === 'boolean';
+      const isMultiSelect = this.systemFlags.isMultiSelect(flagKey);
+      const selectedSet = isMultiSelect
+        ? new Set(this.systemFlags.parseCsvList(row.value))
+        : null;
       return {
         key: row.key,
         label: row.label,
         description: row.description,
         isBoolean,
+        isMultiSelect,
         boolOn: isBoolean && row.value === 'true',
         options: options
           ? options.map((value) => ({
               value,
-              label: this.systemFlags.optionLabel(
-                row.key as (typeof SystemFlagKey)[keyof typeof SystemFlagKey],
-                value,
-              ),
-              selected: value === row.value,
+              label: this.systemFlags.optionLabel(flagKey, value),
+              selected: selectedSet
+                ? selectedSet.has(value.toLowerCase())
+                : value === row.value,
             }))
           : [],
         updatedAt: fmtDate(row.updatedAt) ?? '—',
@@ -2503,6 +2506,13 @@ export class AdminController {
       for (const key of known) {
         const raw = body[key];
         if (raw === undefined) continue;
+        if (this.systemFlags.isMultiSelect(key)) {
+          const parts = (Array.isArray(raw) ? raw : [raw])
+            .map((v) => String(v).trim())
+            .filter(Boolean);
+          updates[key] = parts.join(',');
+          continue;
+        }
         if (Array.isArray(raw)) {
           updates[key] = raw.includes('true')
             ? 'true'

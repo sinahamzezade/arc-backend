@@ -601,16 +601,18 @@ export class LessonsService {
   }
 
   async arloChat(userId: string, lessonId: string, message: string) {
-    if (!(await this.arlo.isFlagEnabled(userId))) {
-      throw new AppException(
-        AuthErrorCode.VALIDATION_ERROR,
-        'Arlo lesson AI is disabled',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
     const { lesson } = await this.requireOwnedLesson(userId, lessonId, {
       allowLocked: true,
     });
+    if (
+      !(await this.arlo.isEnabledForLessonType(lesson.lessonType, userId))
+    ) {
+      throw new AppException(
+        AuthErrorCode.VALIDATION_ERROR,
+        'Arlo lesson AI is disabled for this lesson type',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
     const content = await this.content.ensurePlayContent(lesson);
     const toneCtx = await this.coachPersonality.buildToneContext(userId);
     const coachTone = await this.coachPersonality.selectAndPersistTone(

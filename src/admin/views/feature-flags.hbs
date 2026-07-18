@@ -49,6 +49,27 @@
         border-color: #5b7c6e;
         background: #fff;
       }
+      .flag-multi {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.45rem;
+        margin: 0;
+        padding: 0.75rem;
+        border-radius: 1rem;
+        background: #f3f6f2;
+      }
+      .flag-multi label {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        margin: 0;
+        font-size: 0.8rem;
+        font-weight: 600;
+        letter-spacing: 0;
+        text-transform: none;
+        color: #1a2e28;
+        cursor: pointer;
+      }
       .sr-only {
         position: absolute;
         width: 1px;
@@ -151,6 +172,22 @@
                         />
                         Enabled
                       </label>
+                    {{else if isMultiSelect}}
+                      <input type="hidden" name="{{key}}" value="" />
+                      <div class="flag-multi" role="group" aria-label="{{label}}">
+                        {{#each options}}
+                          <label>
+                            <input
+                              type="checkbox"
+                              name="{{../key}}"
+                              value="{{value}}"
+                              {{#if selected}}checked{{/if}}
+                              class="h-3.5 w-3.5 accent-[#5b7c6e]"
+                            />
+                            {{label}}
+                          </label>
+                        {{/each}}
+                      </div>
                     {{else}}
                       <label for="flag-{{key}}" class="sr-only">{{label}}</label>
                       <select id="flag-{{key}}" name="{{key}}">

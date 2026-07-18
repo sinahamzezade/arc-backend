@@ -40,6 +40,14 @@ export class LessonArloService {
     );
   }
 
+  /** Master Arlo flag + per-lesson-type allowlist. */
+  async isEnabledForLessonType(
+    lessonType: string,
+    userId?: string | null,
+  ): Promise<boolean> {
+    return this.systemFlags.isArloEnabledForLessonType(lessonType, userId);
+  }
+
   async chat(input: {
     userId: string;
     lesson: Lesson;

@@ -7,6 +7,8 @@ export const SystemFlagKey = {
   INTAKE_DEFAULT_MODE: 'intake_default_mode',
   QUESTIONNAIRE_AI_ENABLED: 'questionnaire_ai_enabled',
   ARLO_AI_ENABLED: 'arlo_ai_enabled',
+  /** CSV allowlist of lesson types where Ask Arlo chrome is shown. */
+  ARLO_AI_LESSON_TYPES: 'arlo_ai_lesson_types',
   LESSON_BODY_AI_ENABLED: 'lesson_body_ai_enabled',
   SSO_ENABLED: 'sso_enabled',
   AVATAR_STUDIO_ENABLED: 'avatar_studio_enabled',
@@ -30,6 +32,7 @@ export const PUBLIC_SYSTEM_FLAG_KEYS = [
   SystemFlagKey.INTAKE_CHAT_ENABLED,
   SystemFlagKey.INTAKE_DEFAULT_MODE,
   SystemFlagKey.ARLO_AI_ENABLED,
+  SystemFlagKey.ARLO_AI_LESSON_TYPES,
   SystemFlagKey.SSO_ENABLED,
   SystemFlagKey.AVATAR_STUDIO_ENABLED,
   SystemFlagKey.VIDEO_CALL_ENABLED,
@@ -55,6 +58,24 @@ export type RoadmapEngineMode = (typeof ROADMAP_ENGINE_MODES)[number];
 
 export const INTAKE_MODES = ['form', 'chat'] as const;
 export type IntakeModeFlag = (typeof INTAKE_MODES)[number];
+
+/** Keep in sync with UnitLessonType / LessonTypeDto. */
+export const ARLO_LESSON_TYPE_OPTIONS = [
+  'reading',
+  'practice',
+  'mini_project',
+  'interactive',
+  'quiz',
+  'video',
+  'scenario',
+  'visual_hotspot',
+  'debate',
+  'sandbox_simulation',
+] as const;
+
+export type ArloLessonTypeOption = (typeof ARLO_LESSON_TYPE_OPTIONS)[number];
+
+export const ARLO_LESSON_TYPES_DEFAULT = ARLO_LESSON_TYPE_OPTIONS.join(',');
 
 /** Catalog lives in llm.providers.ts — single place to add providers/models. */
 export {
