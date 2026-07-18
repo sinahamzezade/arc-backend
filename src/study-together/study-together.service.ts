@@ -180,6 +180,60 @@ export class StudyTogetherService {
     return { items: await this.collectPoolReadingStacks(userId) };
   }
 
+  /**
+   * Reading lessons on the creator’s ready roadmap that can start a co-roadmap.
+   * Includes unfinished (`available`) and `completed` — locked excluded.
+   */
+  async listPickableLessons(userId: string) {
+    const lessons = await this.lessonsRepo
+      .createQueryBuilder('l')
+      .innerJoin('l.milestone', 'm')
+      .innerJoin('m.phase', 'p')
+      .innerJoin('p.roadmap', 'r')
+      .where('r.userId = :userId', { userId })
+      .andWhere('r.status = :status', { status: RoadmapStatus.Ready })
+      .andWhere('l.lessonType = :type', { type: 'reading' })
+      .andWhere('l.status IN (:...statuses)', {
+        statuses: [LessonStatus.Available, LessonStatus.Completed],
+      })
+      .andWhere('l.unitId IS NOT NULL')
+      .andWhere('(l.entryAction IS NULL OR l.entryAction <> :st)', {
+        st: 'study_together',
+      })
+      .orderBy('p.orderIndex', 'ASC')
+      .addOrderBy('m.orderIndex', 'ASC')
+      .addOrderBy('l.orderIndex', 'ASC')
+      .getMany();
+
+    const unitIds = [
+      ...new Set(
+        lessons
+          .map((l) => l.unitId?.trim())
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const units =
+      unitIds.length > 0
+        ? await this.unitsRepo.find({ where: { id: In(unitIds) } })
+        : [];
+    const unitById = new Map(units.map((u) => [u.id, u]));
+
+    return {
+      items: lessons.map((l) => {
+        const unit = l.unitId ? unitById.get(l.unitId) : undefined;
+        return {
+          lessonId: l.id,
+          unitId: l.unitId,
+          stack: unit?.stack?.trim() || null,
+          title: l.title,
+          estimatedMinutes: l.estimatedMinutes,
+          status: l.status,
+          category: unit?.domain || unit?.stack || 'general',
+        };
+      }),
+    };
+  }
+
   async createPath(userId: string, dto: CreateStudyPathDto) {
     if (!dto.stack && !dto.unitId && !dto.lessonId) {
       throw new AppException(
@@ -242,12 +296,31 @@ export class StudyTogetherService {
       );
     }
 
-    const firstUnit = readingUnits[0]!;
-    const lessonMeta = await this.ensureStudyReadingLesson(
-      userId,
-      firstUnit.id,
-    );
-    const category = (firstUnit.domain || stack || 'general').slice(0, 64);
+    // Prefer an explicit lesson pick (available or completed — unfinished OK).
+    // Otherwise bind the first reading unit in the stack.
+    let contentStep = 0;
+    let categoryUnit = readingUnits[0]!;
+    let creatorLessonId: string;
+
+    if (dto.lessonId) {
+      const picked = await this.resolveCreatorLesson(userId, dto.lessonId);
+      creatorLessonId = picked.lessonId;
+      if (picked.unitId) {
+        const idx = readingUnits.findIndex((u) => u.id === picked.unitId);
+        if (idx >= 0) {
+          contentStep = idx;
+          categoryUnit = readingUnits[idx]!;
+        }
+      }
+    } else {
+      const lessonMeta = await this.ensureStudyReadingLesson(
+        userId,
+        categoryUnit.id,
+      );
+      creatorLessonId = lessonMeta.id;
+    }
+
+    const category = (categoryUnit.domain || stack || 'general').slice(0, 64);
     const title = domainTitle(stack);
     const message = dto.message?.trim() ? dto.message.trim() : null;
     const now = new Date();
@@ -260,11 +333,11 @@ export class StudyTogetherService {
         creatorId: userId,
         partnerId: dto.partnerId,
         stack,
-        creatorLessonId: lessonMeta.id,
+        creatorLessonId,
         category,
         title,
         status: StudyPathStatus.Invited,
-        contentStep: 0,
+        contentStep,
         stepCount: readingUnits.length,
         progressPercent: 0,
         inviteMessage: message,
@@ -416,6 +489,39 @@ export class StudyTogetherService {
       );
     }
 
+    const readingUnits = await this.listReadingUnitsForStack(path.stack);
+    if (readingUnits.length === 0) {
+      throw new AppException(
+        AuthErrorCode.STUDY_TASK_NOT_AVAILABLE,
+        'No reading unit left on this stack',
+      );
+    }
+
+    // Optional path-step pick before start (0-based unit index).
+    if (dto.contentStep != null) {
+      if (
+        !Number.isInteger(dto.contentStep) ||
+        dto.contentStep < 0 ||
+        dto.contentStep >= readingUnits.length
+      ) {
+        throw new AppException(
+          AuthErrorCode.VALIDATION_ERROR,
+          `contentStep must be 0..${readingUnits.length - 1}`,
+        );
+      }
+      if (path.contentStep !== dto.contentStep) {
+        path.contentStep = dto.contentStep;
+        path.stepCount = readingUnits.length;
+        path.progressPercent = this.computePathProgress(path);
+        await this.pathsRepo.save(path);
+      }
+    } else if (path.contentStep >= readingUnits.length) {
+      throw new AppException(
+        AuthErrorCode.STUDY_INVALID_STATE,
+        'Path already completed',
+      );
+    }
+
     const now = new Date();
     let scheduledStartAt: Date | null = null;
     let scheduledEndAt: Date | null = null;
@@ -455,15 +561,8 @@ export class StudyTogetherService {
     const inviteeId =
       path.creatorId === userId ? path.partnerId : path.creatorId;
 
-    const readingUnits = await this.listReadingUnitsForStack(path.stack);
     const currentUnit =
-      readingUnits[Math.min(path.contentStep, Math.max(readingUnits.length - 1, 0))];
-    if (!currentUnit) {
-      throw new AppException(
-        AuthErrorCode.STUDY_TASK_NOT_AVAILABLE,
-        'No reading unit left on this stack',
-      );
-    }
+      readingUnits[Math.min(path.contentStep, readingUnits.length - 1)]!;
     const currentLesson = await this.ensureStudyReadingLesson(
       path.creatorId,
       currentUnit.id,
@@ -2381,6 +2480,14 @@ export class StudyTogetherService {
       take: 5,
     });
 
+    const readingUnits = await this.listReadingUnitsForStack(path.stack);
+    const steps = readingUnits.map((u, index) => ({
+      index,
+      unitId: u.id,
+      title: u.title,
+      estimatedMinutes: u.estimatedMinutes,
+    }));
+
     const role: 'creator' | 'partner' =
       path.creatorId === viewerId ? 'creator' : 'partner';
 
@@ -2404,6 +2511,7 @@ export class StudyTogetherService {
         initial: partnerInitial,
         avatarUrl: partnerProfile?.avatarUrl ?? null,
       },
+      steps,
       activeSessionId: liveSession?.id ?? null,
       episodes: recentEpisodes.map((s) => ({
         id: s.id,

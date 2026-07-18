@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsBoolean,
   IsDateString,
@@ -105,6 +106,17 @@ export class CreateStudyEpisodeDto {
   @ApiProperty({ enum: START_MODES })
   @IsIn(START_MODES)
   startMode: StudyStartMode;
+
+  @ApiPropertyOptional({
+    description:
+      '0-based path unit index to start on (optional; defaults to path.contentStep)',
+    minimum: 0,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  contentStep?: number;
 
   @ApiPropertyOptional({
     description: 'Required when startMode=scheduled',

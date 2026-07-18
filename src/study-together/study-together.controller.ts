@@ -77,10 +77,19 @@ export class StudyTogetherController {
   @Get('units')
   @ApiOperation({
     summary:
-      'Pickable stacks for Study Together (UI “Unit” = stack, e.g. digital-marketing)',
+      'Pickable stacks for Study Together (fallback when no path lessons). Prefer lessonId on create.',
   })
   listUnits(@CurrentUser() user: AuthUserPayload) {
     return this.study.listPickableUnits(user.userId);
+  }
+
+  @Get('lessons')
+  @ApiOperation({
+    summary:
+      'Pickable reading lessons for Study Together invite (available or completed — unfinished OK)',
+  })
+  listLessons(@CurrentUser() user: AuthUserPayload) {
+    return this.study.listPickableLessons(user.userId);
   }
 
   @Get('paths')
