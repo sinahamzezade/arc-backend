@@ -91,6 +91,11 @@ export class ChatGateway
     this.chat.broadcastPresence = (payload) => {
       this.server.emit('presence', payload);
     };
+    this.chat.broadcastKeysRekeyed = (conversationId, payload) => {
+      this.server
+        .to(this.roomName(conversationId))
+        .emit('keys.rekeyed', payload);
+    };
     this.chat.emitUnreadToUser = (userId, unreadTotal) => {
       this.emitToUser(userId, 'unread.changed', { unreadTotal });
     };

@@ -129,6 +129,10 @@ export class ChatService {
   broadcastPresence: ((
     payload: { userId: string; status: 'online' | 'offline'; lastSeen: string },
   ) => void) | null = null;
+  broadcastKeysRekeyed: ((
+    conversationId: string,
+    payload: { conversationId: string; byUserId: string },
+  ) => void) | null = null;
   emitUnreadToUser: ((userId: string, unreadTotal: number) => void) | null =
     null;
   isUserInConversationRoom: ((userId: string, conversationId: string) => boolean) | null =
@@ -897,6 +901,10 @@ export class ChatService {
   async resetConversationKeyWraps(userId: string, conversationId: string) {
     await this.requireActiveMember(userId, conversationId);
     await this.keyWrapsRepo.delete({ conversationId });
+    this.broadcastKeysRekeyed?.(conversationId, {
+      conversationId,
+      byUserId: userId,
+    });
     return { conversationId, reset: true };
   }
 
@@ -971,13 +979,13 @@ export class ChatService {
       }
     }
 
-    await this.dataSource.transaction(async (manager) => {
+    const inserted = await this.dataSource.transaction(async (manager) => {
       await manager.query(
         `SELECT id FROM conversations WHERE id = $1 FOR UPDATE`,
         [conversationId],
       );
       const repo = manager.getRepository(ChatConversationKeyWrap);
-      let inserted = 0;
+      let insertedCount = 0;
       for (const w of dto.wraps) {
         const row = await repo.findOne({
           where: {
@@ -998,15 +1006,18 @@ export class ChatService {
             keyEpoch: dto.epoch,
           }),
         );
-        inserted += 1;
+        insertedCount += 1;
       }
-      return inserted;
+      return insertedCount;
     });
 
+    const skipped = dto.wraps.length - inserted;
     return {
       conversationId,
       epoch: dto.epoch,
       count: dto.wraps.length,
+      inserted,
+      skipped,
     };
   }
 
