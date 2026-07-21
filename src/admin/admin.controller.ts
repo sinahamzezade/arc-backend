@@ -58,6 +58,8 @@ import { SystemFlagsService } from '../system-flags/system-flags.service';
 import { SystemFlagKey } from '../system-flags/system-flag.keys';
 import { RewardLedgerService } from '../gamification/reward-ledger.service';
 import { LlmUsageService } from '../common/llm/llm-usage.service';
+import { LlmService } from '../common/llm/llm.service';
+import { llmAdminCatalog } from '../common/llm/llm.providers';
 import { UnitsCatalogService } from '../content-pool/units-catalog.service';
 import { isUnitsJsonDocument } from '../content-pool/units-json.types';
 import { UnitsGraphError } from '../content-pool/units-graph.util';
@@ -297,6 +299,7 @@ export class AdminController {
     private readonly systemFlags: SystemFlagsService,
     private readonly rewardLedger: RewardLedgerService,
     private readonly llmUsage: LlmUsageService,
+    private readonly llm: LlmService,
     private readonly unitsCatalog: UnitsCatalogService,
   ) {}
 
@@ -2484,6 +2487,16 @@ export class AdminController {
         updatedAt: fmtDate(row.updatedAt) ?? '—',
       };
     });
+    const catalog = llmAdminCatalog();
+    const openRouterFree = await this.llm.listOpenRouterFreeModels();
+    if (openRouterFree.length > 0) {
+      catalog.byProvider.openrouter = openRouterFree;
+      if (
+        !openRouterFree.some((m) => m.id === catalog.defaults.openrouter)
+      ) {
+        catalog.defaults.openrouter = openRouterFree[0].id;
+      }
+    }
     return {
       title: 'Feature flags',
       email: req.session.adminEmail ?? '',
@@ -2491,6 +2504,17 @@ export class AdminController {
       flags,
       flashOk: ok === '1' ? 'Feature flags saved.' : null,
       flashErr: flashQuery(err),
+      llmCatalogJson: JSON.stringify({
+        ...catalog,
+        modelFlagKeys: [
+          SystemFlagKey.LLM_INTAKE_MODEL,
+          SystemFlagKey.LLM_ROADMAP_MODEL,
+          SystemFlagKey.LLM_ARLO_MODEL,
+          SystemFlagKey.LLM_BATTLE_MODEL,
+          SystemFlagKey.LLM_LESSON_BODY_MODEL,
+        ],
+        providerFlagKey: SystemFlagKey.LLM_PROVIDER,
+      }),
     };
   }
 

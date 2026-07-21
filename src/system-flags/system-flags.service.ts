@@ -21,7 +21,11 @@ import {
   USER_OVERRIDABLE_FLAG_KEYS,
   type SystemFlagKeyName,
 } from './system-flag.keys';
-import { modelLabel } from '../common/llm/llm.providers';
+import {
+  isLlmProviderId,
+  LLM_PROVIDERS,
+  modelLabel,
+} from '../common/llm/llm.providers';
 
 type FlagDef = {
   key: SystemFlagKeyName;
@@ -181,7 +185,7 @@ export class SystemFlagsService implements OnModuleInit {
         valueType: 'string',
         label: 'LLM · Preferred provider',
         description:
-          'Default catalog provider for seeds. Each selected model still routes to its own API (Groq / Cerebras / OpenRouter / …).',
+          'Pick Groq, OpenRouter, Cerebras, etc. Model dropdowns below refresh to that provider catalog. Completions route by the selected model id.',
         defaultValue: this.envOr('LLM_PROVIDER', DEFAULT_LLM_PROVIDER, [
           ...LLM_PROVIDER_IDS,
         ]),
@@ -459,6 +463,9 @@ export class SystemFlagsService implements OnModuleInit {
 
   /** Human label for admin selects (provider-aware). */
   optionLabel(key: SystemFlagKeyName, value: string): string {
+    if (key === SystemFlagKey.LLM_PROVIDER && isLlmProviderId(value)) {
+      return LLM_PROVIDERS[value].label;
+    }
     if (
       key === SystemFlagKey.LLM_INTAKE_MODEL ||
       key === SystemFlagKey.LLM_ROADMAP_MODEL ||
@@ -529,12 +536,27 @@ export class SystemFlagsService implements OnModuleInit {
     const trimmed = value.trim();
     if (opts) {
       const match = opts.find((o) => o.toLowerCase() === trimmed.toLowerCase());
-      if (!match) {
-        throw new Error(`Invalid value for ${key}: ${value}`);
+      if (match) return match;
+      // Live OpenRouter free / author/slug models may not be in static catalog yet
+      if (
+        this.isLlmModelFlag(key) &&
+        /^[\w.-]+\/[\w.:~-]+$/.test(trimmed)
+      ) {
+        return trimmed;
       }
-      return match;
+      throw new Error(`Invalid value for ${key}: ${value}`);
     }
     return trimmed.toLowerCase();
+  }
+
+  private isLlmModelFlag(key: SystemFlagKeyName): boolean {
+    return (
+      key === SystemFlagKey.LLM_INTAKE_MODEL ||
+      key === SystemFlagKey.LLM_ROADMAP_MODEL ||
+      key === SystemFlagKey.LLM_ARLO_MODEL ||
+      key === SystemFlagKey.LLM_BATTLE_MODEL ||
+      key === SystemFlagKey.LLM_LESSON_BODY_MODEL
+    );
   }
 
   private envOr(envKey: string, fallback: string, allowed: string[]): string {

@@ -65,13 +65,25 @@ export const LLM_PROVIDERS: Record<LlmProviderId, LlmProviderDef> = {
     label: 'OpenRouter',
     baseURL: 'https://openrouter.ai/api/v1',
     apiKeyEnv: ['OPENROUTER_API_KEY', 'LLM_API_KEY', 'OPENAI_API_KEY'],
-    defaultModel: 'openai/gpt-4o-mini',
+    // Free tier default — live list refreshed from OpenRouter Models API in admin.
+    defaultModel: 'openai/gpt-oss-20b:free',
+    /** Fallback free chat models; admin prefers live GET /api/v1/models?max_price=0 */
     models: [
-      { id: 'openai/gpt-4o-mini' },
-      { id: 'openai/gpt-4o' },
-      { id: 'google/gemma-4-31b-it:free' },
-      { id: 'meta-llama/llama-3.2-3b-instruct:free' },
-      { id: 'openai/gpt-oss-20b:free' },
+      { id: 'openai/gpt-oss-20b:free', label: 'OpenAI: gpt-oss-20b (free)' },
+      { id: 'google/gemma-4-31b-it:free', label: 'Google: Gemma 4 31B (free)' },
+      { id: 'google/gemma-4-26b-a4b-it:free', label: 'Google: Gemma 4 26B A4B (free)' },
+      { id: 'cohere/north-mini-code:free', label: 'Cohere: North Mini Code (free)' },
+      { id: 'poolside/laguna-xs-2.1:free', label: 'Poolside: Laguna XS 2.1 (free)' },
+      { id: 'poolside/laguna-m.1:free', label: 'Poolside: Laguna M.1 (free)' },
+      { id: 'nvidia/nemotron-3-nano-30b-a3b:free', label: 'NVIDIA: Nemotron 3 Nano 30B A3B (free)' },
+      {
+        id: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+        label: 'NVIDIA: Nemotron 3 Nano Omni (free)',
+      },
+      { id: 'nvidia/nemotron-3-super-120b-a12b:free', label: 'NVIDIA: Nemotron 3 Super (free)' },
+      { id: 'nvidia/nemotron-3-ultra-550b-a55b:free', label: 'NVIDIA: Nemotron 3 Ultra (free)' },
+      { id: 'nvidia/nemotron-nano-9b-v2:free', label: 'NVIDIA: Nemotron Nano 9B V2 (free)' },
+      { id: 'nvidia/nemotron-nano-12b-v2-vl:free', label: 'NVIDIA: Nemotron Nano 12B 2 VL (free)' },
     ],
   },
   openai: {
@@ -128,10 +140,15 @@ export function getProvider(id: LlmProviderId): LlmProviderDef {
 /** Find which provider owns a model id (first match wins). */
 export function findProviderForModel(modelId: string): LlmProviderDef | null {
   const needle = modelId.trim().toLowerCase();
+  if (!needle) return null;
   for (const provider of Object.values(LLM_PROVIDERS)) {
     if (provider.models.some((m) => m.id.toLowerCase() === needle)) {
       return provider;
     }
+  }
+  // OpenRouter free / author/slug variants not yet in local catalog
+  if (needle.endsWith(':free') || needle.startsWith('~')) {
+    return LLM_PROVIDERS.openrouter;
   }
   return null;
 }
@@ -151,4 +168,31 @@ export function modelLabel(modelId: string): string {
 /** Models for one provider (admin filter). */
 export function modelsForProvider(providerId: LlmProviderId): string[] {
   return LLM_PROVIDERS[providerId].models.map((m) => m.id);
+}
+
+/** Admin UI payload: provider → model options + defaults. */
+export function llmAdminCatalog(): {
+  byProvider: Record<
+    LlmProviderId,
+    Array<{ id: string; label: string }>
+  >;
+  defaults: Record<LlmProviderId, string>;
+  providerLabels: Record<LlmProviderId, string>;
+} {
+  const byProvider = {} as Record<
+    LlmProviderId,
+    Array<{ id: string; label: string }>
+  >;
+  const defaults = {} as Record<LlmProviderId, string>;
+  const providerLabels = {} as Record<LlmProviderId, string>;
+  for (const id of LLM_PROVIDER_IDS) {
+    const provider = LLM_PROVIDERS[id];
+    providerLabels[id] = provider.label;
+    defaults[id] = provider.defaultModel;
+    byProvider[id] = provider.models.map((m) => ({
+      id: m.id,
+      label: m.label ?? `${m.id} (${provider.label})`,
+    }));
+  }
+  return { byProvider, defaults, providerLabels };
 }

@@ -122,8 +122,10 @@ services:
   db:
     image: postgres:16
     restart: always
+    # Host 5432 taken by local /Library/PostgreSQL/16 — map 5433 for host tools.
+    # App container still uses DB_HOST=db / DB_PORT=5432 on the compose network.
     ports:
-      - '5432:5432'
+      - '5433:5432'
     environment:
       POSTGRES_USER: arc
       POSTGRES_PASSWORD: arc

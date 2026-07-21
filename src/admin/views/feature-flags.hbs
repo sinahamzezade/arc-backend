@@ -140,12 +140,12 @@
                 <h2 class="font-display text-lg font-semibold">How it works</h2>
               </div>
               <p class="text-sm leading-relaxed text-sage">
-                Flip a boolean or pick a model, then save. Services refresh from the latest values automatically.
+                Change LLM provider (Groq → OpenRouter, etc.) and model lists refresh. OpenRouter loads live free text models from the Models API. Save to apply within ~10s.
               </p>
             </aside>
           </section>
 
-          <form method="post" action="/admin/feature-flags" class="md:w-[94%] md:max-w-5xl">
+          <form method="post" action="/admin/feature-flags" class="md:w-[94%] md:max-w-5xl" id="feature-flags-form">
             <div class="overflow-hidden rounded-blob bg-foam shadow-lift ring-1 ring-[#d5ddd7]">
               <div class="border-b border-[#e4ebe6] bg-[#eef3ef] px-5 py-3">
                 <p class="text-xs font-semibold uppercase tracking-[0.14em] text-sage">Flags</p>
@@ -190,7 +190,7 @@
                       </div>
                     {{else}}
                       <label for="flag-{{key}}" class="sr-only">{{label}}</label>
-                      <select id="flag-{{key}}" name="{{key}}">
+                      <select id="flag-{{key}}" name="{{key}}" data-flag-key="{{key}}">
                         {{#each options}}
                           <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
                         {{/each}}
@@ -209,5 +209,54 @@
         </div>
       </main>
     </div>
+    <script id="llm-catalog-data" type="application/json">{{{llmCatalogJson}}}</script>
+    <script>
+      (function () {
+        var el = document.getElementById('llm-catalog-data');
+        if (!el) return;
+        var catalog;
+        try {
+          catalog = JSON.parse(el.textContent || '{}');
+        } catch (e) {
+          return;
+        }
+        if (!catalog || !catalog.byProvider || !catalog.providerFlagKey) return;
+
+        var providerSelect = document.getElementById('flag-' + catalog.providerFlagKey);
+        if (!providerSelect) return;
+
+        function fillModelSelects(providerId, resetToDefault) {
+          var models = catalog.byProvider[providerId] || [];
+          var fallback = catalog.defaults[providerId] || (models[0] && models[0].id) || '';
+          (catalog.modelFlagKeys || []).forEach(function (key) {
+            var sel = document.getElementById('flag-' + key);
+            if (!sel) return;
+            var prev = sel.value;
+            var keep =
+              !resetToDefault &&
+              models.some(function (m) {
+                return m.id === prev;
+              })
+                ? prev
+                : fallback;
+            sel.innerHTML = '';
+            models.forEach(function (m) {
+              var opt = document.createElement('option');
+              opt.value = m.id;
+              opt.textContent = m.label;
+              if (m.id === keep) opt.selected = true;
+              sel.appendChild(opt);
+            });
+          });
+        }
+
+        // Initial: show only models for current preferred provider
+        fillModelSelects(providerSelect.value, false);
+
+        providerSelect.addEventListener('change', function () {
+          fillModelSelects(providerSelect.value, true);
+        });
+      })();
+    </script>
   </body>
 </html>

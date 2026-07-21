@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import {
@@ -27,15 +27,33 @@ export type LlmChatCompletionRequest =
     models?: string[];
   };
 
+export type OpenRouterModelOption = {
+  id: string;
+  label: string;
+};
+
+type OpenRouterModelsApiRow = {
+  id?: string;
+  name?: string;
+  pricing?: { prompt?: string; completion?: string };
+};
+
 /**
  * OpenAI-compatible multi-provider client.
  * Model id → provider from catalog (`llm.providers.ts`).
  * Optional LLM_BASE_URL / LLM_API_KEY = legacy single-endpoint override when model unknown.
  *
  * @see https://inference-docs.cerebras.ai/resources/openai
+ * @see https://openrouter.ai/docs/guides/overview/models
  */
 @Injectable()
 export class LlmService {
+  private readonly logger = new Logger(LlmService.name);
+  private openRouterFreeCache:
+    | { at: number; models: OpenRouterModelOption[] }
+    | null = null;
+  private static readonly OPENROUTER_FREE_TTL_MS = 10 * 60 * 1000;
+
   constructor(
     private readonly config: ConfigService,
     private readonly systemFlags: SystemFlagsService,
@@ -54,6 +72,70 @@ export class LlmService {
       return findProviderForModel(model)?.id === 'openrouter';
     }
     return Boolean(this.resolveLegacyBaseUrl()?.includes('openrouter.ai'));
+  }
+
+  /**
+   * Live free text models from OpenRouter Models API (`min_price=0&max_price=0`).
+   * Falls back to static catalog on error / missing key.
+   * @see https://openrouter.ai/docs/api/api-reference/models/get-models
+   */
+  async listOpenRouterFreeModels(): Promise<OpenRouterModelOption[]> {
+    const cached = this.openRouterFreeCache;
+    if (
+      cached &&
+      Date.now() - cached.at < LlmService.OPENROUTER_FREE_TTL_MS
+    ) {
+      return cached.models;
+    }
+
+    const apiKey = this.resolveApiKeyForProvider('openrouter');
+    if (!apiKey) {
+      return this.openRouterCatalogFallback();
+    }
+
+    try {
+      const url =
+        'https://openrouter.ai/api/v1/models?output_modalities=text&min_price=0&max_price=0';
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: 'application/json',
+          ...(this.openRouterHeaders(
+            'openrouter',
+            getProvider('openrouter').baseURL,
+          ) ?? {}),
+        },
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!res.ok) {
+        throw new Error(`OpenRouter models HTTP ${res.status}`);
+      }
+      const payload = (await res.json()) as { data?: OpenRouterModelsApiRow[] };
+      const rows = payload.data ?? [];
+      const models: OpenRouterModelOption[] = [];
+      const seen = new Set<string>();
+      for (const row of rows) {
+        const id = String(row.id ?? '').trim();
+        if (!id || seen.has(id)) continue;
+        if (!this.isOpenRouterChatFreeModel(id, row)) continue;
+        seen.add(id);
+        models.push({
+          id,
+          label: String(row.name ?? id).trim() || id,
+        });
+      }
+      models.sort((a, b) => a.label.localeCompare(b.label));
+      if (models.length === 0) {
+        return this.openRouterCatalogFallback();
+      }
+      this.openRouterFreeCache = { at: Date.now(), models };
+      return models;
+    } catch (err) {
+      this.logger.warn(
+        `OpenRouter free models fetch failed: ${err instanceof Error ? err.message : err}`,
+      );
+      return this.openRouterCatalogFallback();
+    }
   }
 
   /** @deprecated Prefer resolveApiKeyForProvider — kept for soft-fail checks */
@@ -134,7 +216,7 @@ export class LlmService {
     const defaults = [
       'openai/gpt-oss-20b:free',
       'google/gemma-4-31b-it:free',
-      'meta-llama/llama-3.2-3b-instruct:free',
+      'google/gemma-4-26b-a4b-it:free',
     ];
     const list = (raw ? raw.split(',') : defaults)
       .map((s) => s.trim())
@@ -183,6 +265,29 @@ export class LlmService {
       completion,
     });
     return completion;
+  }
+
+  private openRouterCatalogFallback(): OpenRouterModelOption[] {
+    const provider = getProvider('openrouter');
+    return provider.models.map((m) => ({
+      id: m.id,
+      label: m.label ?? m.id,
+    }));
+  }
+
+  private isOpenRouterChatFreeModel(
+    id: string,
+    row: OpenRouterModelsApiRow,
+  ): boolean {
+    const lower = id.toLowerCase();
+    // Skip non-chat free endpoints (music / guardrails)
+    if (lower.includes('lyria') || lower.includes('content-safety')) {
+      return false;
+    }
+    const pricing = row.pricing ?? {};
+    const prompt = Number(pricing.prompt ?? 0);
+    const completion = Number(pricing.completion ?? 0);
+    return (prompt === 0 && completion === 0) || lower.endsWith(':free');
   }
 
   private resolveProviderDef(model?: string): LlmProviderDef {
